@@ -1,16 +1,18 @@
 """Kernel management service for Jupyter notebooks."""
 
-import os
+import asyncio
 import logging
+from pathlib import Path
 from typing import Any
+
 import nbformat
 from nbformat.v4 import new_notebook
 
 from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
-from jupyter_server_mcp.server_context import get_server_context, require_server_context
-from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_server_mcp.kernel_utils import get_kernel_info, resolve_kernel_name
 from jupyter_server_mcp.notebook_io import write_notebook
-from jupyter_server_mcp.kernel_utils import resolve_kernel_name, get_kernel_info
+from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_server_mcp.server_context import get_server_context, require_server_context
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +110,7 @@ class KernelManager:
         notebook_path = normalize_path(notebook_path)
 
         # Check if notebook exists
-        notebook_exists = os.path.exists(notebook_path)
+        notebook_exists = Path(notebook_path).exists()
 
         # Get available kernels and resolve kernel name
         available_kernels = await self.list_available_kernels()
@@ -122,9 +124,9 @@ class KernelManager:
             logger.info(f"Creating new notebook: {notebook_path}")
 
             # Ensure directory exists
-            dir_path = os.path.dirname(notebook_path)
-            if dir_path:
-                os.makedirs(dir_path, exist_ok=True)
+            dir_path = Path(notebook_path).parent
+            if dir_path and str(dir_path) != ".":
+                dir_path.mkdir(parents=True, exist_ok=True)
 
             # Determine language info
             language_name, display_name = self._get_kernel_display_info(
@@ -158,7 +160,7 @@ class KernelManager:
         # Return notebook info
         return {
             "path": notebook_path,
-            "name": os.path.basename(notebook_path),
+            "name": Path(notebook_path).name,
             "message": message,
             "exists": notebook_exists,
             "kernel_name": kernel_name,
@@ -225,17 +227,16 @@ class KernelManager:
                 "message": "Notebook session closed and kernel shut down",
                 "kernel_id": kernel_id
             }
-        elif kernel_id:
+        if kernel_id:
             self.kernel_tracker.untrack(notebook_path)
             return {
                 "message": "Notebook session closed (kernel still running)",
                 "kernel_id": kernel_id
             }
-        else:
-            return {
-                "message": "Notebook session closed (no kernel was tracked)",
-                "kernel_id": None
-            }
+        return {
+            "message": "Notebook session closed (no kernel was tracked)",
+            "kernel_id": None
+        }
 
     async def _start_kernel_for_notebook(
         self,
@@ -320,12 +321,11 @@ class KernelManager:
             # Get kernel info
             available_kernels_result = None
             try:
-                import asyncio
                 loop = asyncio.get_event_loop()
                 available_kernels_result = loop.run_until_complete(
                     self.list_available_kernels()
                 )
-            except:
+            except Exception:
                 pass
 
             kernelspecs = (

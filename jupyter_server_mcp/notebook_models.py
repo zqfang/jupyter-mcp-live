@@ -22,8 +22,9 @@ class CellIdentifier:
             self.cell_id is not None
         ]
         if sum(identifiers) != 1:
+            msg = "Provide exactly ONE of: execution_count, position_index, or cell_id"
             raise ValueError(
-                "Provide exactly ONE of: execution_count, position_index, or cell_id"
+                msg
             )
 
     @property
@@ -72,7 +73,7 @@ class ExecutionResult:
 
     def to_filtered_dict(self) -> dict[str, Any]:
         """Convert to dict with filtered outputs for MCP response."""
-        from jupyter_server_mcp.output_filter import OutputFilter
+        from jupyter_server_mcp.output_filter import OutputFilter  # noqa: PLC0415
         result = self.to_dict()
         result["outputs"] = OutputFilter.filter_outputs(self.outputs)
         return result

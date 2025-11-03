@@ -5,7 +5,11 @@ from typing import Any
 
 from jupyter_server_mcp.notebook_adapter import NotebookAdapter
 from jupyter_server_mcp.notebook_models import CellContent
-from jupyter_server_mcp.ydoc_helpers import get_cell_index_by_id_ydoc, YText, YDOC_AVAILABLE
+from jupyter_server_mcp.ydoc_helpers import (
+    YDOC_AVAILABLE,
+    YText,
+    get_cell_index_by_id_ydoc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,8 @@ class YDocAdapter(NotebookAdapter):
             notebook_path: Normalized path to notebook
         """
         if not YDOC_AVAILABLE:
-            raise RuntimeError("YDoc is not available (jupyter_ydoc not installed)")
+            msg = "YDoc is not available (jupyter_ydoc not installed)"
+            raise RuntimeError(msg)
 
         self.ydoc = ydoc
         self._notebook_path = notebook_path
@@ -43,8 +48,9 @@ class YDocAdapter(NotebookAdapter):
     async def read_cell(self, position: int) -> CellContent:
         """Read cell from YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
+            msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(
-                f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
+                msg
             )
 
         ycell = self.ydoc.ycells[position]
@@ -95,8 +101,9 @@ class YDocAdapter(NotebookAdapter):
     async def edit_cell(self, position: int, content: CellContent) -> None:
         """Edit cell in YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
+            msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(
-                f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
+                msg
             )
 
         ycell = self.ydoc.ycells[position]
@@ -122,8 +129,9 @@ class YDocAdapter(NotebookAdapter):
     async def delete_cell(self, position: int) -> None:
         """Delete cell from YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
+            msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(
-                f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
+                msg
             )
 
         self.ydoc.ycells.pop(position)
@@ -137,8 +145,9 @@ class YDocAdapter(NotebookAdapter):
     ) -> None:
         """Update cell outputs in YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
+            msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(
-                f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
+                msg
             )
 
         ycell = self.ydoc.ycells[position]

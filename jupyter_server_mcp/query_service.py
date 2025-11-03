@@ -4,11 +4,11 @@ import logging
 from typing import Any
 
 from jupyter_server_mcp.notebook_adapter import get_notebook_adapter
+from jupyter_server_mcp.notebook_config import QueryType
 from jupyter_server_mcp.notebook_models import CellIdentifier
+from jupyter_server_mcp.output_filter import OutputFilter
 from jupyter_server_mcp.path_utils import normalize_path
 from jupyter_server_mcp.server_context import get_server_context
-from jupyter_server_mcp.output_filter import OutputFilter
-from jupyter_server_mcp.notebook_config import QueryType
 
 logger = logging.getLogger(__name__)
 
@@ -45,23 +45,25 @@ class QueryService:
         """
         if query_type == "view_source":
             return await self.view_source(notebook_path, execution_count, position_index)
-        elif query_type == "check_server":
+        if query_type == "check_server":
             return self.check_server()
-        elif query_type == "list_sessions":
+        if query_type == "list_sessions":
             return await self.list_sessions()
-        elif query_type == "list_kernels":
+        if query_type == "list_kernels":
             # Delegate to kernel manager
-            from jupyter_server_mcp.kernel_manager import KernelManager
+            from jupyter_server_mcp.kernel_manager import KernelManager  # noqa: PLC0415
             km = KernelManager()
             return await km.list_available_kernels()
-        elif query_type == "get_position_index":
+        if query_type == "get_position_index":
             return await self.get_position_index(notebook_path, execution_count, cell_id)
-        else:
-            raise ValueError(
-                f"Invalid query_type: {query_type}. "
-                f"Must be one of: view_source, check_server, list_sessions, "
-                f"list_kernels, get_position_index"
-            )
+        msg = (
+            f"Invalid query_type: {query_type}. "
+            f"Must be one of: view_source, check_server, list_sessions, "
+            f"list_kernels, get_position_index"
+        )
+        raise ValueError(
+            msg
+        )
 
     async def view_source(
         self,
@@ -101,8 +103,9 @@ class QueryService:
         if execution_count is not None:
             result = await adapter.find_cell_by_execution_count(execution_count)
             if result is None:
+                msg = f"No code cell with execution_count={execution_count} found"
                 raise ValueError(
-                    f"No code cell with execution_count={execution_count} found"
+                    msg
                 )
             cell, position = result
         else:
@@ -136,8 +139,7 @@ class QueryService:
         serverapp = get_server_context()
         if serverapp:
             return "Jupyter server is running and accessible"
-        else:
-            return "Jupyter server context not available"
+        return "Jupyter server context not available"
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         """List all notebook sessions on the server.
@@ -145,7 +147,9 @@ class QueryService:
         Returns:
             List of session dicts
         """
-        from jupyter_server_mcp.server_context import require_server_context
+        from jupyter_server_mcp.server_context import (  # noqa: PLC0415
+            require_server_context,
+        )
 
         serverapp = require_server_context()
         session_manager = serverapp.session_manager
@@ -176,10 +180,12 @@ class QueryService:
             ValueError: If cell not found or invalid parameters
         """
         if execution_count is None and cell_id is None:
-            raise ValueError("Must provide either execution_count or cell_id")
+            msg = "Must provide either execution_count or cell_id"
+            raise ValueError(msg)
 
         if execution_count is not None and cell_id is not None:
-            raise ValueError("Provide only ONE of execution_count or cell_id")
+            msg = "Provide only ONE of execution_count or cell_id"
+            raise ValueError(msg)
 
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -187,8 +193,9 @@ class QueryService:
         if execution_count is not None:
             result = await adapter.find_cell_by_execution_count(execution_count)
             if result is None:
+                msg = f"No code cell with execution_count={execution_count} found"
                 raise ValueError(
-                    f"No code cell with execution_count={execution_count} found"
+                    msg
                 )
             _, position = result
             return position
@@ -196,7 +203,8 @@ class QueryService:
         # cell_id is set
         result = await adapter.find_cell_by_id(cell_id)
         if result is None:
-            raise ValueError(f"No cell with id={cell_id} found")
+            msg = f"No cell with id={cell_id} found"
+            raise ValueError(msg)
         _, position = result
         return position
 
@@ -223,13 +231,15 @@ class QueryService:
         elif identifier.cell_id is not None:
             result = await adapter.find_cell_by_id(identifier.cell_id)
             if result is None:
-                raise ValueError(f"Cell with ID {identifier.cell_id} not found")
+                msg = f"Cell with ID {identifier.cell_id} not found"
+                raise ValueError(msg)
             _, position = result
         else:  # execution_count
             result = await adapter.find_cell_by_execution_count(identifier.execution_count)
             if result is None:
+                msg = f"Cell with execution_count={identifier.execution_count} not found"
                 raise ValueError(
-                    f"Cell with execution_count={identifier.execution_count} not found"
+                    msg
                 )
             _, position = result
 

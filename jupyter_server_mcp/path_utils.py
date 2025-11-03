@@ -1,6 +1,6 @@
 """Path normalization utilities."""
 
-import os
+from pathlib import Path
 from urllib.parse import unquote
 
 
@@ -20,22 +20,23 @@ def normalize_path(path: str) -> str:
         ValueError: If path is empty
     """
     if not path or not path.strip():
-        raise ValueError("path cannot be empty")
+        msg = "path cannot be empty"
+        raise ValueError(msg)
 
     # URL decode in case path contains encoded characters
     decoded_path = unquote(path)
 
     # If already absolute, return normalized
-    if os.path.isabs(decoded_path):
-        return os.path.abspath(decoded_path)
+    if Path(decoded_path).is_absolute():
+        return str(Path(decoded_path).resolve())
 
     # Try to resolve relative to Jupyter server root
-    from jupyter_server_mcp.server_context import get_server_context
+    from jupyter_server_mcp.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     if serverapp and hasattr(serverapp, 'root_dir'):
         root_dir = serverapp.root_dir
-        return os.path.abspath(os.path.join(root_dir, decoded_path))
+        return str((Path(root_dir) / decoded_path).resolve())
 
     # Fall back to current working directory
-    return os.path.abspath(decoded_path)
+    return str(Path(decoded_path).resolve())

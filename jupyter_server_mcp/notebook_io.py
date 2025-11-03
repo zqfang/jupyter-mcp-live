@@ -1,7 +1,8 @@
 """Notebook file I/O operations."""
 
-import nbformat
 from typing import Any
+
+import nbformat
 
 
 class NotebookContext:

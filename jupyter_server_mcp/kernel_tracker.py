@@ -1,7 +1,6 @@
 """Kernel tracking for notebook sessions."""
 
 import logging
-from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +14,7 @@ class KernelTracker:
 
     def __init__(self):
         """Initialize kernel tracker."""
-        self._kernels: Dict[str, str] = {}  # Maps notebook_path -> kernel_id
+        self._kernels: dict[str, str] = {}  # Maps notebook_path -> kernel_id
 
     def track(self, notebook_path: str, kernel_id: str) -> None:
         """Track a kernel for a notebook.
@@ -50,7 +49,7 @@ class KernelTracker:
             del self._kernels[notebook_path]
             logger.debug(f"Untracked kernel {kernel_id} for {notebook_path}")
 
-    def get_all_tracked(self) -> Dict[str, str]:
+    def get_all_tracked(self) -> dict[str, str]:
         """Get all tracked kernels.
 
         Returns:

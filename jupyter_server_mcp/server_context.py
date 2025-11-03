@@ -38,8 +38,11 @@ def require_server_context() -> Any:
     """
     serverapp = get_server_context()
     if serverapp is None:
-        raise RuntimeError(
+        msg = (
             "Jupyter server context not available. "
             "Make sure the MCP extension is properly initialized."
+        )
+        raise RuntimeError(
+            msg
         )
     return serverapp

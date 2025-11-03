@@ -28,7 +28,7 @@ async def get_file_id(file_path: str) -> str | None:
     if not YDOC_AVAILABLE:
         return None
 
-    from jupyter_server_mcp.server_context import get_server_context
+    from jupyter_server_mcp.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     if not serverapp:
@@ -62,7 +62,7 @@ async def get_ydoc_room(room_id: str) -> Any | None:
     if not YDOC_AVAILABLE:
         return None
 
-    from jupyter_server_mcp.server_context import get_server_context
+    from jupyter_server_mcp.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     if not serverapp:

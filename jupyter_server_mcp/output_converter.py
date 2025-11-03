@@ -1,6 +1,7 @@
 """Output format conversion utilities."""
 
 from typing import Any
+
 from nbformat.notebooknode import from_dict
 
 

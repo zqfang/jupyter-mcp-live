@@ -1,37 +1,33 @@
 """Test notebook execution tools functionality - refactored for modular architecture."""
 
 import asyncio
-import os
-import tempfile
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import nbformat
 import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 # Import from new modular structure
-from jupyter_server_mcp import notebook_execution_tools
+from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
 from jupyter_server_mcp.notebook_execution_tools import (
+    execute_notebook_code,
+    get_server_context,
     list_available_kernels,
     list_running_kernels,
     modify_notebook_cells,
     query_notebook,
+    read_cell,
+    set_server_context,
     setup_notebook,
     shutdown_notebook,
     switch_notebook_kernel,
-    read_cell,
-    execute_notebook_code,
-    set_server_context,
-    get_server_context,
 )
-
-# Import from new modules
-from jupyter_server_mcp.path_utils import normalize_path
 from jupyter_server_mcp.notebook_io import read_notebook, write_notebook
 from jupyter_server_mcp.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_server_mcp.output_filter import OutputFilter
-from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
+from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_server_mcp.server_context import _server_context
 from jupyter_server_mcp.validation import validate_cell_index, validate_code_cell
 
 
@@ -67,7 +63,6 @@ class MockKernel:
     """Mock kernel for testing."""
 
     def __init__(self, kernel_id, kernel_name="python3"):
-        from datetime import datetime
         self.kernel_id = kernel_id
         self.kernel_name = kernel_name
         self.last_activity = datetime.now()
@@ -97,11 +92,11 @@ class MockKernelClient:
         """Mock stop channels."""
         self.channels_started = False
 
-    async def wait_for_ready(self, timeout=10):
+    async def wait_for_ready(self, timeout=10):  # noqa: ARG002
         """Mock wait for ready."""
         await asyncio.sleep(0.01)
 
-    def execute(self, code):
+    def execute(self, _code):
         """Mock execute - prepares shell reply with execution_count."""
         msg_id = f"msg-id-{self.execution_count}"
         self._current_msg_id = msg_id
@@ -119,20 +114,20 @@ class MockKernelClient:
             }
         })
 
-        exec_count = self.execution_count
         self.execution_count += 1
         return msg_id
 
-    async def get_shell_msg(self, timeout=None):
+    async def get_shell_msg(self, timeout=None):  # noqa: ARG002
         """Mock get shell message - returns execute_reply."""
         await asyncio.sleep(0.01)
 
         if self._shell_messages:
             return self._shell_messages.pop(0)
 
-        raise asyncio.TimeoutError("No shell messages available")
+        msg = "No shell messages available"
+        raise asyncio.TimeoutError(msg)
 
-    async def get_iopub_msg(self, timeout=None):
+    async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
         """Mock get iopub message."""
         await asyncio.sleep(0.01)
 
@@ -172,7 +167,7 @@ class MockServerApp:
         self.kernel_manager = MockKernelManager()
         self.kernel_spec_manager = MockKernelSpecManager()
         self.session_manager = MockSessionManager()
-        self.root_dir = os.getcwd()
+        self.root_dir = str(Path.cwd())
 
 
 class MockSessionManager:
@@ -190,7 +185,7 @@ def temp_notebook(tmp_path):
     """Create a temporary notebook for testing."""
     nb_path = tmp_path / "test.ipynb"
     nb = new_notebook(cells=[])
-    with open(nb_path, "w") as f:
+    with nb_path.open("w") as f:
         nbformat.write(nb, f)
     return str(nb_path)
 
@@ -205,7 +200,6 @@ def mock_serverapp():
 def reset_context():
     """Reset global context before each test."""
     # Reset server context
-    from jupyter_server_mcp.server_context import _server_context
     _server_context["serverapp"] = None
 
     # Reset kernel tracker
@@ -226,7 +220,7 @@ class TestHelperFunctions:
         """Test path normalization."""
         path = "test.ipynb"
         normalized = normalize_path(path)
-        assert os.path.isabs(normalized)
+        assert Path(normalized).is_absolute()
         assert normalized.endswith("test.ipynb")
 
     def test_normalize_path_empty_raises(self):
@@ -437,7 +431,7 @@ class TestSetupNotebook:
         assert result["exists"] is False
         assert result["kernel_name"] == "python3"
         assert "kernel_id" in result
-        assert os.path.exists(nb_path)
+        assert Path(nb_path).exists()
 
     @pytest.mark.asyncio
     async def test_setup_notebook_existing(self, temp_notebook, mock_serverapp):

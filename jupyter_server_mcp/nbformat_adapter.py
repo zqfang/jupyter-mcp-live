@@ -2,12 +2,12 @@
 
 import logging
 from typing import Any
-import nbformat
+
 from nbformat.v4 import new_code_cell, new_markdown_cell
 
 from jupyter_server_mcp.notebook_adapter import NotebookAdapter
-from jupyter_server_mcp.notebook_models import CellContent
 from jupyter_server_mcp.notebook_io import NotebookContext
+from jupyter_server_mcp.notebook_models import CellContent
 from jupyter_server_mcp.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_server_mcp.ydoc_helpers import get_cell_index_by_id_nbformat
 
@@ -43,8 +43,9 @@ class NbformatAdapter(NotebookAdapter):
         """Read cell from notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
+                msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
                 raise IndexError(
-                    f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
+                    msg
                 )
 
             cell = nb.cells[position]
@@ -101,8 +102,9 @@ class NbformatAdapter(NotebookAdapter):
         """Edit cell in notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
+                msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
                 raise IndexError(
-                    f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
+                    msg
                 )
 
             cell = nb.cells[position]
@@ -117,8 +119,9 @@ class NbformatAdapter(NotebookAdapter):
         """Delete cell from notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
+                msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
                 raise IndexError(
-                    f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
+                    msg
                 )
 
             nb.cells.pop(position)
@@ -133,8 +136,9 @@ class NbformatAdapter(NotebookAdapter):
         """Update cell outputs in notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
+                msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
                 raise IndexError(
-                    f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
+                    msg
                 )
 
             cell = nb.cells[position]

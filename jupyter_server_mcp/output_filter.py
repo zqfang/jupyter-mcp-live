@@ -1,7 +1,7 @@
 """Output filtering for MCP responses to reduce token usage."""
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from jupyter_server_mcp.notebook_config import OUTPUT_FILTER_CONFIG
 
@@ -15,7 +15,7 @@ class OutputFilter:
     """
 
     # MIME types that should be considered for filtering
-    FILTERABLE_TYPES = {
+    FILTERABLE_TYPES: ClassVar[set[str]] = {
         "image/png",
         "image/jpeg",
         "image/svg+xml",

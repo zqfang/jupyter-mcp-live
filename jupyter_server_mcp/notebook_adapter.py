@@ -33,7 +33,6 @@ class NotebookAdapter(ABC):
         Raises:
             IndexError: If position is out of range
         """
-        pass
 
     @abstractmethod
     async def add_cell(
@@ -50,7 +49,6 @@ class NotebookAdapter(ABC):
         Returns:
             Position where cell was added
         """
-        pass
 
     @abstractmethod
     async def edit_cell(self, position: int, content: CellContent) -> None:
@@ -63,7 +61,6 @@ class NotebookAdapter(ABC):
         Raises:
             IndexError: If position is out of range
         """
-        pass
 
     @abstractmethod
     async def delete_cell(self, position: int) -> None:
@@ -75,7 +72,6 @@ class NotebookAdapter(ABC):
         Raises:
             IndexError: If position is out of range
         """
-        pass
 
     @abstractmethod
     async def update_cell_outputs(
@@ -94,7 +90,6 @@ class NotebookAdapter(ABC):
         Raises:
             IndexError: If position is out of range
         """
-        pass
 
     @abstractmethod
     async def get_all_cells(self) -> list[CellContent]:
@@ -103,7 +98,6 @@ class NotebookAdapter(ABC):
         Returns:
             List of all cells
         """
-        pass
 
     @abstractmethod
     async def get_cell_count(self) -> int:
@@ -112,7 +106,6 @@ class NotebookAdapter(ABC):
         Returns:
             Cell count
         """
-        pass
 
     @abstractmethod
     async def find_cell_by_id(self, cell_id: str) -> tuple[CellContent, int] | None:
@@ -124,7 +117,6 @@ class NotebookAdapter(ABC):
         Returns:
             (cell, position) tuple or None if not found
         """
-        pass
 
     @abstractmethod
     async def find_cell_by_execution_count(
@@ -139,7 +131,6 @@ class NotebookAdapter(ABC):
         Returns:
             (cell, position) tuple or None if not found
         """
-        pass
 
     @property
     @abstractmethod
@@ -149,7 +140,6 @@ class NotebookAdapter(ABC):
         Returns:
             True for YDoc, False for nbformat
         """
-        pass
 
     @property
     @abstractmethod
@@ -159,7 +149,6 @@ class NotebookAdapter(ABC):
         Returns:
             Normalized notebook path
         """
-        pass
 
 
 async def get_notebook_adapter(notebook_path: str) -> NotebookAdapter:
@@ -174,8 +163,8 @@ async def get_notebook_adapter(notebook_path: str) -> NotebookAdapter:
     Returns:
         Appropriate adapter instance
     """
-    from jupyter_server_mcp.ydoc_adapter import YDocAdapter
-    from jupyter_server_mcp.nbformat_adapter import NbformatAdapter
+    from jupyter_server_mcp.nbformat_adapter import NbformatAdapter  # noqa: PLC0415
+    from jupyter_server_mcp.ydoc_adapter import YDocAdapter  # noqa: PLC0415
 
     notebook_path = normalize_path(notebook_path)
 

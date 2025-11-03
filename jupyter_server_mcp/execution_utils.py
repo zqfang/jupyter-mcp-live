@@ -37,14 +37,13 @@ async def validate_execution_reply(
             logger.warning("Execute_reply indicates error status")
 
         return execution_count
-    else:
-        logger.warning(
-            f"Shell reply validation failed - "
-            f"msg_type={shell_reply.get('header', {}).get('msg_type')}, "
-            f"expected parent_msg_id={msg_id}, "
-            f"got={shell_reply.get('parent_header', {}).get('msg_id')}"
-        )
-        return None
+    logger.warning(
+        f"Shell reply validation failed - "
+        f"msg_type={shell_reply.get('header', {}).get('msg_type')}, "
+        f"expected parent_msg_id={msg_id}, "
+        f"got={shell_reply.get('parent_header', {}).get('msg_id')}"
+    )
+    return None
 
 
 async def collect_outputs(
@@ -96,7 +95,7 @@ async def collect_outputs(
             except (KeyError, TypeError) as e:
                 logger.error(f"Malformed kernel message: {e}")
                 status = "error"
-                error_msg = f"Malformed kernel message: {str(e)}"
+                error_msg = f"Malformed kernel message: {e!s}"
                 break
 
             # Check if this is a reply to our execute request

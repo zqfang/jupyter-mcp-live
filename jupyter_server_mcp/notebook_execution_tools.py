@@ -9,15 +9,16 @@ the MCP-exported function interfaces that are registered as MCP tools.
 
 from typing import Any
 
-# Import services
-from jupyter_server_mcp.server_context import set_server_context, get_server_context
-from jupyter_server_mcp.kernel_manager import KernelManager
 from jupyter_server_mcp.cell_operations import CellOperations
 from jupyter_server_mcp.execution_engine import ExecutionEngine
-from jupyter_server_mcp.query_service import QueryService
-from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_server_mcp.kernel_manager import KernelManager
+from jupyter_server_mcp.notebook_config import CellOperation, ExecutionType, QueryType
 from jupyter_server_mcp.notebook_models import CellIdentifier
-from jupyter_server_mcp.notebook_config import QueryType, ExecutionType, CellOperation
+from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_server_mcp.query_service import QueryService
+
+# Import services
+from jupyter_server_mcp.server_context import get_server_context, set_server_context
 
 # Initialize services (singleton pattern)
 _execution_engine = ExecutionEngine()
@@ -188,18 +189,20 @@ async def execute_notebook_code(
 
     if execution_type == "execute_cell":
         if position_index is None:
-            raise ValueError("position_index required for execute_cell")
+            msg = "position_index required for execute_cell"
+            raise ValueError(msg)
         return await _execution_engine.execute_cell_by_position(
             notebook_path, position_index
         )
-    elif execution_type == "install_packages":
+    if execution_type == "install_packages":
         if not package_names:
-            raise ValueError("package_names required for install_packages")
+            msg = "package_names required for install_packages"
+            raise ValueError(msg)
         return await _execution_engine.install_packages(
             notebook_path, package_names
         )
-    else:
-        raise ValueError(f"Invalid execution_type: {execution_type}")
+    msg = f"Invalid execution_type: {execution_type}"
+    raise ValueError(msg)
 
 
 async def modify_notebook_cells(
@@ -245,39 +248,44 @@ async def modify_notebook_cells(
 
     if operation == "add_code":
         if cell_content is None:
-            raise ValueError("cell_content required for add_code")
+            msg = "cell_content required for add_code"
+            raise ValueError(msg)
         return await _cell_operations.add_code_cell(
             notebook_path, cell_content, position_index, execute
         )
 
-    elif operation == "edit_code":
+    if operation == "edit_code":
         if cell_content is None or position_index is None:
-            raise ValueError("cell_content and position_index required for edit_code")
+            msg = "cell_content and position_index required for edit_code"
+            raise ValueError(msg)
         return await _cell_operations.edit_code_cell(
             notebook_path, position_index, cell_content, execute
         )
 
-    elif operation == "add_markdown":
+    if operation == "add_markdown":
         if cell_content is None:
-            raise ValueError("cell_content required for add_markdown")
+            msg = "cell_content required for add_markdown"
+            raise ValueError(msg)
         return await _cell_operations.add_markdown_cell(
             notebook_path, cell_content, position_index
         )
 
-    elif operation == "edit_markdown":
+    if operation == "edit_markdown":
         if cell_content is None or position_index is None:
-            raise ValueError("cell_content and position_index required for edit_markdown")
+            msg = "cell_content and position_index required for edit_markdown"
+            raise ValueError(msg)
         return await _cell_operations.edit_markdown_cell(
             notebook_path, position_index, cell_content
         )
 
-    elif operation == "delete":
+    if operation == "delete":
         if position_index is None:
-            raise ValueError("position_index required for delete")
+            msg = "position_index required for delete"
+            raise ValueError(msg)
         return await _cell_operations.delete_cell(notebook_path, position_index)
 
-    else:
-        raise ValueError(f"Invalid operation: {operation}")
+    msg = f"Invalid operation: {operation}"
+    raise ValueError(msg)
 
 
 async def query_notebook(
@@ -393,15 +401,15 @@ async def read_cell(
 
 # Export context management functions (used by extension.py)
 __all__ = [
-    "set_server_context",
-    "get_server_context",
-    "list_running_kernels",
-    "list_available_kernels",
-    "setup_notebook",
-    "switch_notebook_kernel",
-    "shutdown_notebook",
     "execute_notebook_code",
+    "get_server_context",
+    "list_available_kernels",
+    "list_running_kernels",
     "modify_notebook_cells",
     "query_notebook",
     "read_cell",
+    "set_server_context",
+    "setup_notebook",
+    "shutdown_notebook",
+    "switch_notebook_kernel",
 ]

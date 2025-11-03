@@ -3,11 +3,11 @@
 import logging
 from typing import Any
 
-from jupyter_server_mcp.notebook_adapter import get_notebook_adapter
-from jupyter_server_mcp.notebook_models import CellContent
 from jupyter_server_mcp.execution_engine import ExecutionEngine
-from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_server_mcp.notebook_adapter import get_notebook_adapter
 from jupyter_server_mcp.notebook_config import EXECUTION_CONFIG
+from jupyter_server_mcp.notebook_models import CellContent
+from jupyter_server_mcp.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,8 @@ class CellOperations:
         # Read existing cell
         existing_cell = await adapter.read_cell(position)
         if existing_cell.cell_type != "code":
-            raise ValueError(f"Cell at position {position} is not a code cell")
+            msg = f"Cell at position {position} is not a code cell"
+            raise ValueError(msg)
 
         # Update content
         cell_content = CellContent(
@@ -202,7 +203,8 @@ class CellOperations:
         # Read existing cell
         existing_cell = await adapter.read_cell(position)
         if existing_cell.cell_type != "markdown":
-            raise ValueError(f"Cell at position {position} is not a markdown cell")
+            msg = f"Cell at position {position} is not a markdown cell"
+            raise ValueError(msg)
 
         # Update content
         cell_content = CellContent(
