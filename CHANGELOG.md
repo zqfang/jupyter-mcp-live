@@ -4,6 +4,50 @@
 
 ## 0.2.0 (Unreleased)
 
+### Enhancements made
+
+- **Custom Kernel Support** - Added intelligent kernel resolution system for AI agents
+  - **New module:** `jupyter_server_mcp/kernel_utils.py` (230 lines)
+  - **Features:**
+    - Smart kernel name resolution with 3-tier strategy (exact match → language match → pattern detection)
+    - Runtime kernel spec querying (no hardcoded mappings)
+    - Support for custom kernel names (e.g., "rapids", "r45", "julia-1.10")
+    - Language-based kernel discovery (request "R" and get best available R kernel)
+    - Pattern-based language detection fallback
+  - **Functions added:**
+    - `detect_kernel_language_from_spec()` - Detect language from kernel specifications
+    - `detect_kernel_language_from_name()` - Pattern-based language detection
+    - `find_kernel_by_language()` - Find kernels matching a language
+    - `resolve_kernel_name()` - Smart kernel name resolution
+    - `get_kernel_info()` - Get kernel language and display name
+  - **Files changed:**
+    - `jupyter_server_mcp/kernel_manager.py` - Integrated smart kernel resolution
+    - `jupyter_server_mcp/notebook_config.py` - Replaced `KERNEL_ALIASES` with `LANGUAGE_PATTERNS`
+  - **Tests added:** 29 comprehensive tests in `tests/test_kernel_utils.py`
+  - **Impact:** AI agents can now create notebooks with any custom kernel name without hardcoded aliases
+  - **Backwards compatible:** All existing kernel names continue to work
+
+### Code Quality Improvements
+
+- **Ruff Linting Cleanup** - 100% reduction in linting errors
+  - **Before:** 140 ruff errors across production and test code
+  - **After:** 0 errors (all checks passed)
+  - **Changes:**
+    - Migrated to modern `pathlib` API (replaced `os.path.*` methods)
+    - Added proper `ClassVar` type annotations for class-level constants
+    - Fixed bare except clauses
+    - Organized imports (auto-fix + manual cleanup)
+    - Added `# noqa: PLC0415` comments for intentional local imports (circular dependency avoidance)
+  - **Files affected:**
+    - `jupyter_server_mcp/kernel_manager.py` - Pathlib migration
+    - `jupyter_server_mcp/path_utils.py` - Complete pathlib rewrite
+    - `jupyter_server_mcp/output_filter.py` - ClassVar type annotations
+    - `jupyter_server_mcp/notebook_adapter.py` - Documented intentional imports
+    - `jupyter_server_mcp/query_service.py` - Documented intentional imports
+    - `jupyter_server_mcp/ydoc_helpers.py` - Documented intentional imports
+    - All test files - Import organization and modern patterns
+  - **Test status:** All 135 tests passing
+
 ### Bug Fixes
 
 - **[CRITICAL]** Fixed code execution failure with "Invalid message type: coroutine" error
@@ -22,6 +66,12 @@
     - `tests/test_notebook_execution_tools.py` (lines 76, 83-145, 343-397)
   - **Affects:** All code execution functions: `execute_cell()`, `modify_notebook_cells()`, `execute_notebook()`, `execute_notebook_code()`
   - **User benefit:** Cells can now be referenced by execution count `[1]`, `[2]`, etc. in JupyterLab UI
+
+### Documentation improvements
+
+- Updated `CLAUDE.md` with comprehensive kernel utilities documentation
+- Added custom kernel support examples and usage patterns
+- Documented 3-tier kernel resolution strategy
 
 
 ## 0.1.2
