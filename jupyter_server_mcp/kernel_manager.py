@@ -10,6 +10,7 @@ from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
 from jupyter_server_mcp.server_context import get_server_context, require_server_context
 from jupyter_server_mcp.path_utils import normalize_path
 from jupyter_server_mcp.notebook_io import write_notebook
+from jupyter_server_mcp.kernel_utils import resolve_kernel_name, get_kernel_info
 
 logger = logging.getLogger(__name__)
 
@@ -109,26 +110,12 @@ class KernelManager:
         # Check if notebook exists
         notebook_exists = os.path.exists(notebook_path)
 
-        # Get available kernels and validate/normalize kernel_name
+        # Get available kernels and resolve kernel name
         available_kernels = await self.list_available_kernels()
         kernelspecs = available_kernels.get("kernelspecs", {})
 
-        # Normalize R kernel names
-        if kernel_name.lower() in ["r", "irkernel"]:
-            for kname in kernelspecs:
-                spec = kernelspecs[kname].get("spec", {})
-                if spec.get("language", "").lower() == "r":
-                    kernel_name = kname
-                    break
-
-        # Validate kernel exists
-        if kernel_name not in kernelspecs:
-            available_names = list(kernelspecs.keys())
-            logger.warning(
-                f"Kernel '{kernel_name}' not found. "
-                f"Available: {available_names}. Falling back to python3"
-            )
-            kernel_name = "python3"
+        # Resolve kernel name (handles exact match, language match, and custom kernels)
+        kernel_name = resolve_kernel_name(kernel_name, kernelspecs, fallback="python3")
 
         if not notebook_exists:
             # Create new empty notebook
@@ -312,23 +299,9 @@ class KernelManager:
         Returns:
             Tuple of (language_name, display_name)
         """
-        # Try to get from kernelspec
-        if kernel_name in kernelspecs:
-            spec = kernelspecs[kernel_name].get("spec", {})
-            language_name = spec.get("language", kernel_name)
-            display_name = spec.get("display_name", kernel_name)
-            return (language_name, display_name)
-
-        # Fall back to heuristics
-        if kernel_name.lower() in ["ir", "r", "irkernel"]:
-            return ("R", "R")
-        elif kernel_name.startswith("python"):
-            display = "Python 3" if kernel_name == "python3" else kernel_name
-            return ("python", display)
-        elif kernel_name.startswith("julia"):
-            return ("julia", kernel_name)
-        else:
-            return (kernel_name, kernel_name)
+        # Use kernel_utils for consistent detection
+        info = get_kernel_info(kernel_name, kernelspecs)
+        return (info["language"], info["display_name"])
 
     def _update_notebook_kernel_metadata(
         self,

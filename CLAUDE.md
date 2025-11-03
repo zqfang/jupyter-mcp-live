@@ -126,7 +126,8 @@ jupyter-server-mcp/
 │   │   ├── server_context.py         # Server context management
 │   │   ├── path_utils.py             # Path normalization
 │   │   ├── validation.py             # Validation utilities
-│   │   └── kernel_tracker.py         # Kernel tracking
+│   │   ├── kernel_tracker.py         # Kernel tracking
+│   │   └── kernel_utils.py           # Kernel detection & language resolution
 │   │
 │   ├── I/O & Conversion
 │   │   ├── notebook_io.py            # File I/O
@@ -150,7 +151,8 @@ jupyter-server-mcp/
 │
 ├── tests/
 │   ├── test_notebook_execution_tools.py  # Main test suite (46 tests)
-│   └── test_refactored_imports.py        # Import validation (10 tests)
+│   ├── test_refactored_imports.py        # Import validation (10 tests)
+│   └── test_kernel_utils.py              # Kernel utilities tests (29 tests)
 │
 ├── examples/
 │   └── jupyter_config_with_execution_tools.py
@@ -238,6 +240,14 @@ jupyter-server-mcp/
 - Configurable thresholds
 - Placeholder generation
 
+**kernel_utils.py** (230 lines) **NEW!**
+- Smart kernel name resolution
+- Language detection from kernel specs
+- Pattern-based language detection (fallback)
+- Find kernels by language
+- Support for custom kernel names (rapids, r45, etc.)
+- AI agent-friendly kernel resolution
+
 ---
 
 ## Key Features
@@ -296,11 +306,41 @@ if adapter.is_collaborative:
 
 ### 3. **Multi-Kernel Support**
 
-Supports multiple kernel languages:
-- Python (python3, python3.11, python3.12)
-- R (ir, irkernel, r)
-- Julia (julia-1.9, julia-1.10)
+Supports multiple kernel languages with intelligent detection:
+- Python (python3, python3.11, rapids, etc.)
+- R (ir, irkernel, r, r45, etc.)
+- Julia (julia-1.9, julia-1.10, etc.)
 - JavaScript (and others via Jupyter kernel specs)
+
+**Smart Kernel Resolution** (New!):
+```python
+from jupyter_server_mcp.kernel_utils import resolve_kernel_name
+
+# Handles exact match, language match, and custom kernels
+kernel_name = resolve_kernel_name("rapids", kernelspecs)  # → "rapids"
+kernel_name = resolve_kernel_name("r", kernelspecs)       # → "r45" (if available)
+kernel_name = resolve_kernel_name("python", kernelspecs)  # → "python3"
+```
+
+**Kernel Language Detection**:
+```python
+from jupyter_server_mcp.kernel_utils import detect_kernel_language_from_spec, get_kernel_info
+
+# Detect from kernel spec
+spec = {"spec": {"language": "python", "display_name": "RAPIDS"}}
+lang = detect_kernel_language_from_spec(spec)  # → "python"
+
+# Get full kernel info
+info = get_kernel_info("rapids", kernelspecs)
+# → {"language": "python", "display_name": "RAPIDS (Python)"}
+```
+
+**Key Features**:
+- **Custom Kernel Support**: Works with any kernel name (rapids, r45, etc.)
+- **Language-Based Resolution**: Request "R" and get best available R kernel
+- **Pattern Detection**: Detects language from kernel names (r45 → R, python3 → python)
+- **Spec Querying**: Reads actual kernel specs at runtime (no hardcoded mappings)
+- **AI-Friendly**: Perfect for AI agents creating notebooks with custom kernels
 
 **Kernel Tracking**:
 ```python
@@ -616,6 +656,26 @@ from jupyter_server_mcp.output_filter import OutputFilter
 filtered = OutputFilter.filter_outputs(outputs)
 ```
 
+**5. Use Kernel Utilities for Custom Kernels**:
+```python
+from jupyter_server_mcp.kernel_utils import resolve_kernel_name, get_kernel_info
+
+# AI agent wants to create notebook with custom kernel
+async def create_notebook_with_kernel(path: str, requested_kernel: str):
+    # Get available kernels
+    kernels = await list_available_kernels()
+    kernelspecs = kernels["kernelspecs"]
+
+    # Resolve kernel name (handles "rapids", "r45", or language names like "R")
+    kernel_name = resolve_kernel_name(requested_kernel, kernelspecs)
+
+    # Get kernel info for metadata
+    info = get_kernel_info(kernel_name, kernelspecs)
+
+    # Create notebook with resolved kernel
+    return await setup_notebook(path, kernel_name)
+```
+
 ### Adding a New MCP Tool
 
 1. **Create the service method** (in appropriate service module)
@@ -919,6 +979,7 @@ cat notebook.ipynb | jq '.cells[0].outputs'
 - **Output Filter**: [output_filter.py](jupyter_server_mcp/output_filter.py)
 - **Path Utils**: [path_utils.py](jupyter_server_mcp/path_utils.py)
 - **Validation**: [validation.py](jupyter_server_mcp/validation.py)
+- **Kernel Utils**: [kernel_utils.py](jupyter_server_mcp/kernel_utils.py) **NEW!**
 
 ---
 

@@ -13,16 +13,13 @@ class KernelLanguage(Enum):
     JAVASCRIPT = "javascript"
 
 
-# Kernel name aliases for common variations
-KERNEL_ALIASES = {
-    "ir": KernelLanguage.R,
-    "r": KernelLanguage.R,
-    "irkernel": KernelLanguage.R,
-    "python3": KernelLanguage.PYTHON,
-    "python3.11": KernelLanguage.PYTHON,
-    "python3.12": KernelLanguage.PYTHON,
-    "julia-1.9": KernelLanguage.JULIA,
-    "julia-1.10": KernelLanguage.JULIA,
+# Language detection patterns for kernel names
+# These are used as fallback heuristics when kernel spec is not available
+LANGUAGE_PATTERNS = {
+    "python": ["python", "py", "ipython", "ipykernel"],
+    "R": ["r", "ir", "irkernel"],
+    "julia": ["julia", "jl"],
+    "javascript": ["javascript", "js", "node"],
 }
 
 
