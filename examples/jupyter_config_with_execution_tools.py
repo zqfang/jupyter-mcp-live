@@ -43,14 +43,6 @@ c.MCPExtensionApp.mcp_tools = [
     # "jupyter_ai_tools.toolkits.file_system:ls",
     # "jupyter_ai_tools.toolkits.file_system:glob",
 
-    # Optional: Add notebook manipulation tools from jupyter-ai-tools (if installed)
-    # "jupyter_ai_tools.toolkits.notebook:read_notebook",
-    # "jupyter_ai_tools.toolkits.notebook:edit_cell",
-    # "jupyter_ai_tools.toolkits.notebook:add_cell", 
-    # "jupyter_ai_tools.toolkits.notebook:delete_cell",
-    # "jupyter_ai_tools.toolkits.notebook:create_notebook",
-
-
     # JupyterLab operations (jupyterlab-commands-toolkit)
     # "jupyterlab_commands_toolkit.tools:clear_all_outputs_in_notebook",
     # "jupyterlab_commands_toolkit.tools:open_document",
