@@ -134,7 +134,7 @@ c.ServerApp.ip = '0.0.0.0'
 c.ServerApp.open_browser = False
 
 # Set a custom port for Jupyter Lab (separate from MCP port)
-c.ServerApp.port = 8888
+c.ServerApp.port = 8000
 
 # Allow cross-origin requests (if accessing from different origins)
 c.ServerApp.allow_origin = '*'
