@@ -52,7 +52,10 @@ class MockKernelManager:
 
     def get_kernel(self, kernel_id):
         """Mock get kernel."""
-        return self.kernels.get(kernel_id)
+        if kernel_id not in self.kernels:
+            msg = f"Kernel {kernel_id} not found"
+            raise KeyError(msg)
+        return self.kernels[kernel_id]
 
     def list_kernel_ids(self):
         """Mock list kernel IDs."""
@@ -173,11 +176,32 @@ class MockServerApp:
 class MockSessionManager:
     """Mock session manager."""
 
+    def __init__(self):
+        """Initialize with empty sessions list."""
+        self.sessions = []
+
     async def list_sessions(self):
         """Mock list sessions - async generator."""
-        # Empty async generator
-        if False:
-            yield
+        for session in self.sessions:
+            yield session
+
+    def add_session(self, notebook_path, kernel_id, kernel_name="python3"):
+        """Add a mock session for testing."""
+        session = {
+            "id": f"session-{len(self.sessions)}",
+            "path": notebook_path,
+            "name": Path(notebook_path).name,
+            "type": "notebook",
+            "kernel": {
+                "id": kernel_id,
+                "name": kernel_name,
+                "last_activity": datetime.now().isoformat(),
+                "execution_state": "idle",
+                "connections": 1
+            }
+        }
+        self.sessions.append(session)
+        return session
 
 
 @pytest.fixture
@@ -449,6 +473,93 @@ class TestSetupNotebook:
 
         result = await setup_notebook(str(nb_path), kernel_name="ir")
         assert result["kernel_name"] == "ir"
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_reuses_existing_kernel(self, temp_notebook, mock_serverapp):
+        """Test that setup_notebook reuses an existing kernel from a session."""
+        set_server_context(mock_serverapp)
+
+        # Simulate a notebook already open with a kernel
+        # First, add a kernel to the mock kernel manager
+        existing_kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+
+        # Add a session for the notebook with this kernel
+        normalized_path = normalize_path(temp_notebook)
+        mock_serverapp.session_manager.add_session(
+            normalized_path, existing_kernel_id, "python3"
+        )
+
+        # Now call setup_notebook - it should reuse the existing kernel
+        result = await setup_notebook(temp_notebook, kernel_name="python3")
+
+        # Verify the existing kernel was reused
+        assert result["kernel_id"] == existing_kernel_id
+        assert result["reused_kernel"] is True
+        assert "reused existing kernel" in result["message"]
+
+        # Verify no new kernel was started (should still have only 1 kernel)
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_starts_new_when_no_session(self, temp_notebook, mock_serverapp):
+        """Test that setup_notebook starts a new kernel when no session exists."""
+        set_server_context(mock_serverapp)
+
+        # Call setup_notebook without any existing session
+        result = await setup_notebook(temp_notebook, kernel_name="python3")
+
+        # Verify a new kernel was started
+        assert result["kernel_id"] is not None
+        assert result["reused_kernel"] is False
+        assert "reused" not in result["message"]
+
+        # Verify a kernel was created
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_force_new_kernel(self, temp_notebook, mock_serverapp):
+        """Test force_new_kernel parameter creates a new kernel even when one exists."""
+        set_server_context(mock_serverapp)
+
+        # Simulate a notebook already open with a kernel
+        existing_kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+        normalized_path = normalize_path(temp_notebook)
+        mock_serverapp.session_manager.add_session(
+            normalized_path, existing_kernel_id, "python3"
+        )
+
+        # Call setup_notebook with force_new_kernel=True
+        result = await setup_notebook(temp_notebook, kernel_name="python3", force_new_kernel=True)
+
+        # Verify a NEW kernel was started (not the existing one)
+        assert result["kernel_id"] != existing_kernel_id
+        assert result["reused_kernel"] is False
+
+        # Verify a new kernel was created (should now have 2 kernels)
+        assert len(mock_serverapp.kernel_manager.kernels) == 2
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_handles_dead_kernel(self, temp_notebook, mock_serverapp):
+        """Test that setup_notebook handles a dead kernel gracefully."""
+        set_server_context(mock_serverapp)
+
+        # Add a session with a kernel ID that doesn't exist in kernel_manager
+        normalized_path = normalize_path(temp_notebook)
+        dead_kernel_id = "kernel-999-dead"
+        mock_serverapp.session_manager.add_session(
+            normalized_path, dead_kernel_id, "python3"
+        )
+
+        # Call setup_notebook - should detect dead kernel and start new one
+        result = await setup_notebook(temp_notebook, kernel_name="python3")
+
+        # Verify a new kernel was started (not the dead one)
+        assert result["kernel_id"] != dead_kernel_id
+        assert result["kernel_id"] is not None
+        assert result["reused_kernel"] is False
+
+        # Verify a new kernel was created
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
 
 
 class TestSwitchNotebookKernel:

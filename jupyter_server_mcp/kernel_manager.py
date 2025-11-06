@@ -292,29 +292,80 @@ class KernelManager:
         """
         serverapp = get_server_context()
         if not serverapp:
+            logger.debug("No server context available for checking existing kernel")
             return None
 
         try:
             session_manager = serverapp.session_manager
 
+            # Get the notebook filename for comparison
+            notebook_name = Path(notebook_path).name
+
+            logger.debug(f"Checking for existing kernel for: {notebook_path}")
+            logger.debug(f"Notebook name: {notebook_name}")
+
             # List all sessions and find matching notebook
+            session_count = 0
             async for session in session_manager.list_sessions():
+                session_count += 1
                 session_path = session.get("path", "")
+                session_name = session.get("name", "")
+                kernel_info = session.get("kernel", {})
+                kernel_id = kernel_info.get("id")
 
-                # Compare paths (both should already be normalized)
+                logger.debug(
+                    f"Session {session_count}: path='{session_path}', "
+                    f"name='{session_name}', kernel_id={kernel_id}"
+                )
+
+                # Try multiple path matching strategies:
+                # 1. Exact match on full path
+                # 2. Match on normalized paths
+                # 3. Match on filename only
+                # 4. Match using os.path.samefile (for symlinks/relative paths)
+
+                path_match = False
+
+                # Strategy 1: Exact match
                 if session_path == notebook_path:
-                    kernel_info = session.get("kernel", {})
-                    kernel_id = kernel_info.get("id")
+                    path_match = True
+                    logger.debug(f"  -> Matched via exact path comparison")
 
-                    if kernel_id:
-                        logger.debug(
-                            f"Found existing session for {notebook_path} "
-                            f"with kernel {kernel_id}"
-                        )
-                        return kernel_id
+                # Strategy 2: Both normalized
+                elif normalize_path(session_path) == notebook_path:
+                    path_match = True
+                    logger.debug(f"  -> Matched via normalized path comparison")
+
+                # Strategy 3: Filename match (when paths are relative/different)
+                elif session_name == notebook_name or Path(session_path).name == notebook_name:
+                    path_match = True
+                    logger.debug(f"  -> Matched via filename comparison")
+
+                # Strategy 4: samefile (handles symlinks, relative paths)
+                else:
+                    try:
+                        if Path(session_path).exists() and Path(notebook_path).exists():
+                            if Path(session_path).samefile(Path(notebook_path)):
+                                path_match = True
+                                logger.debug(f"  -> Matched via samefile comparison")
+                    except (OSError, ValueError):
+                        # One of the paths doesn't exist or comparison failed
+                        pass
+
+                if path_match and kernel_id:
+                    logger.info(
+                        f"Found existing session for {notebook_path} "
+                        f"with kernel {kernel_id} (matched on: {session_path})"
+                    )
+                    return kernel_id
+
+            logger.debug(
+                f"No existing kernel found for {notebook_path} "
+                f"(checked {session_count} sessions)"
+            )
 
         except Exception as e:
-            logger.debug(f"Error checking for existing kernel: {e}")
+            logger.warning(f"Error checking for existing kernel: {e}", exc_info=True)
 
         return None
 

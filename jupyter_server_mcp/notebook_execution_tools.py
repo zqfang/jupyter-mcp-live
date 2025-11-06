@@ -49,6 +49,29 @@ async def list_available_kernels() -> dict[str, Any]:
     return await _kernel_manager.list_available_kernels()
 
 
+async def list_notebook_sessions() -> list[dict[str, Any]]:
+    """List all active notebook sessions with their kernels.
+
+    This is useful for debugging kernel reuse - you can see which notebooks
+    are currently open and which kernels they're using.
+
+    Returns:
+        List of session dicts, each containing:
+        - id: Session ID
+        - path: Notebook path
+        - name: Notebook filename
+        - type: Session type (usually "notebook")
+        - kernel: Dict with kernel info (id, name, execution_state, etc.)
+
+    Example:
+        sessions = await list_notebook_sessions()
+        for session in sessions:
+            print(f"Notebook: {session['path']}")
+            print(f"Kernel: {session['kernel']['id']} ({session['kernel']['name']})")
+    """
+    return await _query_service.list_sessions()
+
+
 async def setup_notebook(
     notebook_path: str,
     kernel_name: str = "python3",
