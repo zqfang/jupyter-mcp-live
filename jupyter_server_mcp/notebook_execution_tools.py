@@ -86,10 +86,10 @@ async def setup_notebook(
     instead of creating a new one, preserving kernel state and avoiding conflicts.
 
     **CALL THIS FIRST** - This tool must be called before using other notebook tools
-    to establish the server URL connection. All subsequent notebook operations will
+    to establish the server connection. All subsequent notebook operations will
     use the server URL stored by this tool.
 
-    This tool creates an empty notebook. To add content, use the modify_notebook_cells
+    This tool creates an empty notebook or reuses an existing one. To add content, use the modify_notebook_cells
     tool after creation.
 
     Example usage:
@@ -385,6 +385,9 @@ async def query_notebook(
 
         # List available kernels
         await query_notebook("my_notebook.ipynb", "list_kernels")
+
+        # List active notebook sessions
+        await query_notebook("my_notebook.ipynb", "list_sessions")
 
     Raises:
         ValueError: If invalid query_type or missing required parameters

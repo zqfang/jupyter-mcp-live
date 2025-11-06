@@ -296,25 +296,28 @@ class KernelManager:
             return None
 
         try:
-            session_manager = serverapp.session_manager
+            # Use QueryService to get sessions (cleaner than direct session_manager access)
+            from jupyter_server_mcp.query_service import QueryService  # noqa: PLC0415
+            query_service = QueryService()
+
+            sessions = await query_service.list_sessions()
 
             # Get the notebook filename for comparison
             notebook_name = Path(notebook_path).name
 
             logger.debug(f"Checking for existing kernel for: {notebook_path}")
             logger.debug(f"Notebook name: {notebook_name}")
+            logger.debug(f"Found {len(sessions)} active sessions")
 
-            # List all sessions and find matching notebook
-            session_count = 0
-            async for session in session_manager.list_sessions():
-                session_count += 1
+            # Find matching notebook session
+            for idx, session in enumerate(sessions, 1):
                 session_path = session.get("path", "")
                 session_name = session.get("name", "")
                 kernel_info = session.get("kernel", {})
                 kernel_id = kernel_info.get("id")
 
                 logger.debug(
-                    f"Session {session_count}: path='{session_path}', "
+                    f"Session {idx}: path='{session_path}', "
                     f"name='{session_name}', kernel_id={kernel_id}"
                 )
 
@@ -329,25 +332,24 @@ class KernelManager:
                 # Strategy 1: Exact match
                 if session_path == notebook_path:
                     path_match = True
-                    logger.debug(f"  -> Matched via exact path comparison")
+                    logger.debug("  -> Matched via exact path comparison")
 
                 # Strategy 2: Both normalized
                 elif normalize_path(session_path) == notebook_path:
                     path_match = True
-                    logger.debug(f"  -> Matched via normalized path comparison")
+                    logger.debug("  -> Matched via normalized path comparison")
 
                 # Strategy 3: Filename match (when paths are relative/different)
                 elif session_name == notebook_name or Path(session_path).name == notebook_name:
                     path_match = True
-                    logger.debug(f"  -> Matched via filename comparison")
+                    logger.debug("  -> Matched via filename comparison")
 
                 # Strategy 4: samefile (handles symlinks, relative paths)
                 else:
                     try:
-                        if Path(session_path).exists() and Path(notebook_path).exists():
-                            if Path(session_path).samefile(Path(notebook_path)):
-                                path_match = True
-                                logger.debug(f"  -> Matched via samefile comparison")
+                        if Path(session_path).exists() and Path(notebook_path).exists() and Path(session_path).samefile(Path(notebook_path)):
+                            path_match = True
+                            logger.debug("  -> Matched via samefile comparison")
                     except (OSError, ValueError):
                         # One of the paths doesn't exist or comparison failed
                         pass
@@ -361,7 +363,7 @@ class KernelManager:
 
             logger.debug(
                 f"No existing kernel found for {notebook_path} "
-                f"(checked {session_count} sessions)"
+                f"(checked {len(sessions)} sessions)"
             )
 
         except Exception as e:

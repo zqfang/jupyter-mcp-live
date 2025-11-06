@@ -27,7 +27,7 @@ c.MCPExtensionApp.mcp_port = 8080
 
 c.MCPExtensionApp.mcp_tools = [
     # Notebook execution and kernel management tools
-    "jupyter_server_mcp.notebook_execution_tools:list_running_kernels",
+    "jupyter_server_mcp.notebook_execution_tools:list_notebook_sessions",
     "jupyter_server_mcp.notebook_execution_tools:list_available_kernels",
     "jupyter_server_mcp.notebook_execution_tools:execute_notebook_code",
     "jupyter_server_mcp.notebook_execution_tools:setup_notebook",
