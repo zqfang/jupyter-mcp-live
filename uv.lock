@@ -1,14 +1,11 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
     "python_full_version >= '3.11' and python_full_version < '3.14'",
     "python_full_version < '3.11'",
 ]
-
-[options]
-prerelease-mode = "allow"
 
 [[package]]
 name = "annotated-types"
@@ -1149,10 +1146,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-collaborative = [
-    { name = "jupyter-ydoc" },
-    { name = "pycrdt" },
-]
 dev = [
     { name = "ruff" },
 ]
@@ -1170,10 +1163,8 @@ requires-dist = [
     { name = "jupyter-collaboration" },
     { name = "jupyter-server", specifier = ">=1.6,<3" },
     { name = "jupyter-ydoc", specifier = ">=2.0.0" },
-    { name = "jupyter-ydoc", marker = "extra == 'collaborative'", specifier = ">=2.0.0" },
     { name = "nbformat", specifier = ">=5.0" },
     { name = "pycrdt", specifier = ">=0.8.0" },
-    { name = "pycrdt", marker = "extra == 'collaborative'", specifier = ">=0.8.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.21.0" },
     { name = "pytest-jupyter", extras = ["server"], marker = "extra == 'test'", specifier = ">=0.6" },
@@ -1181,7 +1172,7 @@ requires-dist = [
     { name = "pytest-tornasync", marker = "extra == 'test'", specifier = ">=0.6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
 ]
-provides-extras = ["collaborative", "dev", "test"]
+provides-extras = ["dev", "test"]
 
 [[package]]
 name = "jupyter-server-terminals"
