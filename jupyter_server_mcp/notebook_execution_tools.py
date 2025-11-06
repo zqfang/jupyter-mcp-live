@@ -51,11 +51,16 @@ async def list_available_kernels() -> dict[str, Any]:
 
 async def setup_notebook(
     notebook_path: str,
-    kernel_name: str = "python3"
+    kernel_name: str = "python3",
+    force_new_kernel: bool = False
 ) -> dict[str, Any]:
-    """Setup a notebook (create if needed) and start kernel.
+    """Setup a notebook (create if needed) and start or reuse kernel.
 
     Will create a new empty Jupyter notebook if it doesn't exist.
+
+    **KERNEL REUSE**: By default, this function will check if the notebook already has
+    a running kernel session (e.g., from JupyterLab). If so, it will reuse that kernel
+    instead of creating a new one, preserving kernel state and avoiding conflicts.
 
     **CALL THIS FIRST** - This tool must be called before using other notebook tools
     to establish the server URL connection. All subsequent notebook operations will
@@ -76,12 +81,18 @@ async def setup_notebook(
         await setup_notebook("demo_r.ipynb", kernel_name="ir")
         await modify_notebook_cells("demo_r.ipynb", "add_code", "library(ggplot2)")
 
+        # Force a new kernel even if one exists:
+        await setup_notebook("demo.ipynb", force_new_kernel=True)
+
     Args:
         notebook_path: Path to the notebook (relative or absolute)
         kernel_name: Name of the kernel to use (default: "python3")
                      - Examples: "python3", "python3.11", "ir" (R), "julia-1.10"
                      - For R kernels, you can use "r", "ir", or "irkernel"
                      - To discover available kernels, call list_available_kernels() first
+                     - Only used when starting a new kernel (ignored if reusing existing)
+        force_new_kernel: If True, always start a new kernel even if one exists (default: False)
+                          Use this if you need a fresh kernel state.
 
     Agent guidance:
         - Always honor an explicitly provided `kernel_name` from the user.
@@ -89,11 +100,19 @@ async def setup_notebook(
           `list_available_kernels` and selecting the closest matching kernelspec key.
         - For R kernels, you can use "r", "ir", or "irkernel" - the system will auto-detect the correct available kernel.
         - If setup fails due to an unknown kernel, surface the list from `list_available_kernels` in the error/help message.
+        - If the notebook is already open in JupyterLab, this will reuse its kernel unless force_new_kernel=True.
 
     Returns:
-        dict: Information about the notebook and status message.
+        dict: Information about the notebook and status message, including:
+            - path: Normalized notebook path
+            - name: Notebook filename
+            - message: Status message
+            - exists: Whether notebook existed before this call
+            - kernel_name: Name of the kernel being used
+            - kernel_id: ID of the kernel
+            - reused_kernel: bool indicating if an existing kernel was reused
     """
-    return await _kernel_manager.setup_notebook(notebook_path, kernel_name)
+    return await _kernel_manager.setup_notebook(notebook_path, kernel_name, force_new_kernel)
 
 
 async def switch_notebook_kernel(
