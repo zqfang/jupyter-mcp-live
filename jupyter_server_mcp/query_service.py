@@ -155,7 +155,7 @@ class QueryService:
         session_manager = serverapp.session_manager
 
         sessions = []
-        async for session in session_manager.list_sessions():
+        for session in await session_manager.list_sessions():
             sessions.append(dict(session))
 
         return sessions

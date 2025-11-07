@@ -181,9 +181,8 @@ class MockSessionManager:
         self.sessions = []
 
     async def list_sessions(self):
-        """Mock list sessions - async generator."""
-        for session in self.sessions:
-            yield session
+        """Mock list sessions - returns list like real Jupyter Server."""
+        return list(self.sessions)
 
     def add_session(self, notebook_path, kernel_id, kernel_name="python3"):
         """Add a mock session for testing."""

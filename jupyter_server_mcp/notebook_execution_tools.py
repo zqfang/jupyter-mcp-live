@@ -63,7 +63,7 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
         - type: Session type (usually "notebook")
         - kernel: Dict with kernel info (id, name, execution_state, etc.)
 
-    Example:
+    Example usage:
         sessions = await list_notebook_sessions()
         for session in sessions:
             print(f"Notebook: {session['path']}")
