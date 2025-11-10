@@ -101,9 +101,17 @@ class KernelManager:
     ) -> dict[str, Any]:
         """Setup a notebook (create if needed) and start or reuse kernel.
 
-        This function will first check if the notebook already has a running kernel
-        session (e.g., from JupyterLab). If so, it will reuse that kernel instead
-        of creating a new one, preserving kernel state and avoiding conflicts.
+        This function supports collaborative usage by checking for existing kernel
+        sessions first. If a kernel is already running for the notebook (e.g., from
+        JupyterLab or another user), it will reuse that kernel instead of creating
+        a new one, preserving kernel state and avoiding conflicts.
+
+        Workflow:
+        1. Check if notebook file exists
+        2. Check if notebook has an existing kernel session (via list_sessions)
+        3. If notebook doesn't exist: create new notebook and start new kernel
+        4. If notebook exists with running kernel: reuse the existing kernel
+        5. If notebook exists without kernel: start new kernel
 
         Args:
             notebook_path: Path to notebook
@@ -116,18 +124,52 @@ class KernelManager:
         """
         notebook_path = normalize_path(notebook_path)
 
-        # Check if notebook exists
+        # Step 1: Check if notebook file exists
         notebook_exists = Path(notebook_path).exists()
+        logger.info(f"Notebook exists: {notebook_exists} - {notebook_path}")
 
         # Get available kernels and resolve kernel name
         available_kernels = await self.list_available_kernels()
         kernelspecs = available_kernels.get("kernelspecs", {})
-
-        # Resolve kernel name (handles exact match, language match, and custom kernels)
         kernel_name = resolve_kernel_name(kernel_name, kernelspecs, fallback="python3")
 
+        # Step 2: Check for existing kernel session (unless force_new_kernel is True)
+        kernel_id = None
+        reused_kernel = False
+        existing_session = None
+
+        if not force_new_kernel:
+            existing_session = await self._find_session_for_notebook(notebook_path)
+
+            if existing_session:
+                kernel_info = existing_session.get("kernel", {})
+                kernel_id = kernel_info.get("id")
+                existing_kernel_name = kernel_info.get("name", kernel_name)
+
+                # Verify kernel is still alive
+                serverapp = get_server_context()
+                if serverapp and kernel_id:
+                    try:
+                        # Verify kernel exists and is accessible
+                        serverapp.kernel_manager.get_kernel(kernel_id)
+                        # Track existing kernel
+                        self.kernel_tracker.track(notebook_path, kernel_id)
+                        reused_kernel = True
+                        kernel_name = existing_kernel_name
+                        logger.info(
+                            f"Reusing existing kernel {kernel_id} ({kernel_name}) "
+                            f"for {notebook_path}"
+                        )
+                    except KeyError:
+                        # Kernel died, reset to start new one
+                        logger.info(
+                            f"Existing kernel {kernel_id} not found, will start new kernel"
+                        )
+                        kernel_id = None
+
+        # Step 3: Handle notebook creation/setup based on existence and kernel state
         if not notebook_exists:
-            # Create new empty notebook
+            # Step 3a: Create new notebook and start new kernel
             logger.info(f"Creating new notebook: {notebook_path}")
 
             # Ensure directory exists
@@ -156,45 +198,22 @@ class KernelManager:
             )
 
             write_notebook(notebook_path, nb)
+
+            # Start new kernel for the new notebook
+            if kernel_id is None:
+                kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+
             message = f"Notebook {notebook_path} created with kernel {kernel_name}"
         else:
-            logger.info(f"Notebook {notebook_path} already exists")
-            message = f"Notebook {notebook_path} already exists"
-
-        # Check for existing kernel session first (unless force_new_kernel is True)
-        kernel_id = None
-        reused_kernel = False
-
-        if not force_new_kernel:
-            existing_kernel_id = await self._get_existing_kernel(notebook_path)
-            if existing_kernel_id:
-                # Verify kernel is still alive
-                serverapp = get_server_context()
-                if serverapp:
-                    try:
-                        kernel = serverapp.kernel_manager.get_kernel(existing_kernel_id)
-                        # Track existing kernel
-                        self.kernel_tracker.track(notebook_path, existing_kernel_id)
-                        kernel_id = existing_kernel_id
-                        reused_kernel = True
-                        # Get the actual kernel name from the existing kernel
-                        if hasattr(kernel, "kernel_name"):
-                            kernel_name = kernel.kernel_name
-                        logger.info(
-                            f"Reusing existing kernel {kernel_id} ({kernel_name}) "
-                            f"for {notebook_path}"
-                        )
-                        message += f" (reused existing kernel {kernel_name})"
-                    except KeyError:
-                        # Kernel died, will start new one
-                        logger.info(
-                            f"Existing kernel {existing_kernel_id} not found, "
-                            f"starting new kernel"
-                        )
-
-        # Start a new kernel if no existing kernel was found/reused
-        if kernel_id is None:
-            kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+            # Step 3b/3c: Notebook exists
+            if reused_kernel:
+                # Step 3b: Reusing existing kernel
+                message = f"Notebook {notebook_path} exists (reused existing kernel {kernel_name})"
+            else:
+                # Step 3c: Start new kernel for existing notebook
+                if kernel_id is None:
+                    kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+                message = f"Notebook {notebook_path} exists (started new kernel {kernel_name})"
 
         # Return notebook info
         return {
@@ -278,25 +297,29 @@ class KernelManager:
             "kernel_id": None
         }
 
-    async def _get_existing_kernel(self, notebook_path: str) -> str | None:
-        """Check if notebook already has a running kernel via session.
+    async def _find_session_for_notebook(
+        self, notebook_path: str
+    ) -> dict[str, Any] | None:
+        """Find existing session for a notebook using QueryService.
 
-        This checks Jupyter's session manager to see if the notebook already has
-        an active session with a running kernel (e.g., from JupyterLab).
+        This checks Jupyter's session manager via QueryService to see if the notebook
+        already has an active session with a running kernel (e.g., from JupyterLab or
+        another user). This enables collaborative usage where multiple clients can
+        share the same kernel.
 
         Args:
             notebook_path: Path to notebook (already normalized)
 
         Returns:
-            Kernel ID if existing session found, None otherwise
+            Session dict if found, None otherwise
         """
         serverapp = get_server_context()
         if not serverapp:
-            logger.debug("No server context available for checking existing kernel")
+            logger.debug("No server context available for checking existing session")
             return None
 
         try:
-            # Use QueryService to get sessions (cleaner than direct session_manager access)
+            # Use QueryService to list all active sessions
             from jupyter_server_mcp.query_service import QueryService  # noqa: PLC0415
             query_service = QueryService()
 
@@ -305,19 +328,18 @@ class KernelManager:
             # Get the notebook filename for comparison
             notebook_name = Path(notebook_path).name
 
-            logger.debug(f"Checking for existing kernel for: {notebook_path}")
-            logger.debug(f"Notebook name: {notebook_name}")
+            logger.debug(f"Checking for existing session for: {notebook_path}")
             logger.debug(f"Found {len(sessions)} active sessions")
 
             # Find matching notebook session
-            for idx, session in enumerate(sessions, 1):
+            for session in sessions:
                 session_path = session.get("path", "")
                 session_name = session.get("name", "")
                 kernel_info = session.get("kernel", {})
                 kernel_id = kernel_info.get("id")
 
                 logger.debug(
-                    f"Session {idx}: path='{session_path}', "
+                    f"Checking session: path='{session_path}', "
                     f"name='{session_name}', kernel_id={kernel_id}"
                 )
 
@@ -325,7 +347,7 @@ class KernelManager:
                 # 1. Exact match on full path
                 # 2. Match on normalized paths
                 # 3. Match on filename only
-                # 4. Match using os.path.samefile (for symlinks/relative paths)
+                # 4. Match using samefile (for symlinks/relative paths)
 
                 path_match = False
 
@@ -347,7 +369,9 @@ class KernelManager:
                 # Strategy 4: samefile (handles symlinks, relative paths)
                 else:
                     try:
-                        if Path(session_path).exists() and Path(notebook_path).exists() and Path(session_path).samefile(Path(notebook_path)):
+                        if (Path(session_path).exists()
+                            and Path(notebook_path).exists()
+                            and Path(session_path).samefile(Path(notebook_path))):
                             path_match = True
                             logger.debug("  -> Matched via samefile comparison")
                     except (OSError, ValueError):
@@ -359,15 +383,15 @@ class KernelManager:
                         f"Found existing session for {notebook_path} "
                         f"with kernel {kernel_id} (matched on: {session_path})"
                     )
-                    return kernel_id
+                    return session
 
             logger.debug(
-                f"No existing kernel found for {notebook_path} "
+                f"No existing session found for {notebook_path} "
                 f"(checked {len(sessions)} sessions)"
             )
 
         except Exception as e:
-            logger.warning(f"Error checking for existing kernel: {e}", exc_info=True)
+            logger.warning(f"Error checking for existing session: {e}", exc_info=True)
 
         return None
 
