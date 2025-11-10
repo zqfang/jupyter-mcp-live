@@ -4,7 +4,7 @@ import asyncio
 import logging
 from typing import Any
 
-from jupyter_server_mcp.notebook_config import EXECUTION_CONFIG
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
 logger = logging.getLogger(__name__)
 

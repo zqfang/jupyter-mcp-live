@@ -31,7 +31,7 @@ def normalize_path(path: str) -> str:
         return str(Path(decoded_path).resolve())
 
     # Try to resolve relative to Jupyter server root
-    from jupyter_server_mcp.server_context import get_server_context  # noqa: PLC0415
+    from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     if serverapp and hasattr(serverapp, 'root_dir'):

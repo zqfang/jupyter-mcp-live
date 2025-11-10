@@ -1,8 +1,8 @@
-# Jupyter Server MCP - Project Overview
+# Jupyter MCP Executor - Project Overview
 
-**Last Updated**: 2025-11-02
-**Version**: 0.1.x
-**Status**: Production Ready - Recently Refactored
+**Last Updated**: 2025-11-09
+**Version**: 0.2.x
+**Status**: Production Ready - Recently Renamed & Refactored
 
 ---
 
@@ -59,8 +59,8 @@
 ┌────────────────────▼────────────────────────────────┐
 │      notebook_execution_tools.py (MCP Interface)    │
 │  ┌──────────────────────────────────────────────┐  │
-│  │  • list_running_kernels()                    │  │
-│  │  • list_available_kernels()                  │  │
+│  │  • list_notebook_kernels()                   │  │
+│  │  • list_notebook_sessions()                  │  │
 │  │  • setup_notebook()                          │  │
 │  │  • execute_notebook_code()                   │  │
 │  │  • modify_notebook_cells()                   │  │
@@ -112,8 +112,8 @@
 ### Project Layout
 
 ```
-jupyter-server-mcp/
-├── jupyter_server_mcp/
+jupyter-mcp-executor/
+├── jupyter_mcp_executor/
 │   ├── __init__.py
 │   ├── extension.py                  # Jupyter server extension
 │   ├── mcp_server.py                 # FastMCP server
@@ -314,7 +314,7 @@ Supports multiple kernel languages with intelligent detection:
 
 **Smart Kernel Resolution** (New!):
 ```python
-from jupyter_server_mcp.kernel_utils import resolve_kernel_name
+from jupyter_mcp_executor.kernel_utils import resolve_kernel_name
 
 # Handles exact match, language match, and custom kernels
 kernel_name = resolve_kernel_name("rapids", kernelspecs)  # → "rapids"
@@ -324,7 +324,7 @@ kernel_name = resolve_kernel_name("python", kernelspecs)  # → "python3"
 
 **Kernel Language Detection**:
 ```python
-from jupyter_server_mcp.kernel_utils import detect_kernel_language_from_spec, get_kernel_info
+from jupyter_mcp_executor.kernel_utils import detect_kernel_language_from_spec, get_kernel_info
 
 # Detect from kernel spec
 spec = {"spec": {"language": "python", "display_name": "RAPIDS"}}
@@ -396,17 +396,33 @@ class ExecutionResult:
 
 All functions in `notebook_execution_tools.py` are exposed as MCP tools:
 
-#### 1. **list_running_kernels()**
-```python
-Returns: {"kernels": [{"id": str, "name": str, ...}]}
-```
+#### 1. **list_notebook_kernels()**
 
-#### 2. **list_available_kernels()**
 ```python
 Returns: {"kernelspecs": {kernel_name: spec_dict}}
 ```
 
+#### 2. **list_notebook_sessions()**
+
+```python
+Returns: [
+    {
+        "id": str,
+        "path": str,
+        "name": str,
+        "type": str,
+        "kernel": {
+            "id": str,
+            "name": str,
+            "execution_state": str,
+            "connections": int
+        }
+    }
+]
+```
+
 #### 3. **setup_notebook(notebook_path, kernel_name="python3")**
+
 ```python
 # Creates notebook if doesn't exist, starts kernel
 Returns: {
@@ -418,6 +434,7 @@ Returns: {
 ```
 
 #### 4. **execute_notebook_code(notebook_path, execution_type, ...)**
+
 ```python
 # execution_type: "execute_cell" | "install_packages"
 
@@ -436,6 +453,7 @@ Returns: str (installation message)
 ```
 
 #### 5. **modify_notebook_cells(notebook_path, operation, cell_content, ...)**
+
 ```python
 # operation: "add_code" | "edit_code" | "add_markdown" |
 #            "edit_markdown" | "delete"
@@ -459,6 +477,7 @@ Returns: {"message": str}
 ```
 
 #### 6. **query_notebook(notebook_path, query_type, ...)**
+
 ```python
 # query_type: "view_source" | "check_server" | "list_sessions" |
 #             "list_kernels" | "get_position_index"
@@ -477,6 +496,7 @@ Returns: {"cell_type": str, "source": str, "execution_count": 5, ...}
 ```
 
 #### 7. **read_cell(notebook_path, position_index/cell_id/execution_count)**
+
 ```python
 # Convenience function - simpler than query_notebook
 
@@ -495,6 +515,7 @@ Returns: {
 ```
 
 #### 8. **switch_notebook_kernel(notebook_path, kernel_name)**
+
 ```python
 # Switches kernel and updates notebook metadata
 Returns: {
@@ -505,6 +526,7 @@ Returns: {
 ```
 
 #### 9. **shutdown_notebook(notebook_path, shutdown_kernel=True)**
+
 ```python
 Returns: {
     "message": str,
@@ -517,8 +539,8 @@ Returns: {
 Tools are registered in `mcp_server.py`:
 
 ```python
-mcp.tool()(notebook_execution_tools.list_running_kernels)
-mcp.tool()(notebook_execution_tools.list_available_kernels)
+mcp.tool()(notebook_execution_tools.list_notebook_kernels)
+mcp.tool()(notebook_execution_tools.list_notebook_sessions)
 mcp.tool()(notebook_execution_tools.setup_notebook)
 mcp.tool()(notebook_execution_tools.execute_notebook_code)
 mcp.tool()(notebook_execution_tools.modify_notebook_cells)
@@ -563,7 +585,7 @@ Enable the extension in `jupyter_server_config.py`:
 
 ```python
 c.ServerApp.jpserver_extensions = {
-    "jupyter_server_mcp": True
+    "jupyter_mcp_executor": True
 }
 ```
 
@@ -572,14 +594,14 @@ Or use the example config:
 ```python
 # examples/jupyter_config_with_execution_tools.py
 c.MCP.tools = [
-    "jupyter_server_mcp.notebook_execution_tools:list_running_kernels",
-    "jupyter_server_mcp.notebook_execution_tools:list_available_kernels",
-    "jupyter_server_mcp.notebook_execution_tools:execute_notebook_code",
-    "jupyter_server_mcp.notebook_execution_tools:setup_notebook",
-    "jupyter_server_mcp.notebook_execution_tools:switch_notebook_kernel",
-    "jupyter_server_mcp.notebook_execution_tools:shutdown_notebook",
-    "jupyter_server_mcp.notebook_execution_tools:modify_notebook_cells",
-    "jupyter_server_mcp.notebook_execution_tools:query_notebook",
+    "jupyter_mcp_executor.notebook_execution_tools:list_notebook_kernels",
+    "jupyter_mcp_executor.notebook_execution_tools:list_notebook_sessions",
+    "jupyter_mcp_executor.notebook_execution_tools:execute_notebook_code",
+    "jupyter_mcp_executor.notebook_execution_tools:setup_notebook",
+    "jupyter_mcp_executor.notebook_execution_tools:switch_notebook_kernel",
+    "jupyter_mcp_executor.notebook_execution_tools:shutdown_notebook",
+    "jupyter_mcp_executor.notebook_execution_tools:modify_notebook_cells",
+    "jupyter_mcp_executor.notebook_execution_tools:query_notebook",
 ]
 ```
 
@@ -602,7 +624,7 @@ jupyter server --config examples/jupyter_config_with_execution_tools.py
 ```bash
 # Clone repository
 git clone <repo-url>
-cd jupyter-server-mcp
+cd jupyter-mcp-executor
 
 # Create virtual environment
 python3.10 -m venv .venv
@@ -620,7 +642,7 @@ uv pip install -e ".[dev]"
 **1. Use the Adapter Pattern**:
 ```python
 # Always use the adapter factory
-from jupyter_server_mcp.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 
 async def my_operation(notebook_path: str):
     adapter = await get_notebook_adapter(notebook_path)
@@ -630,7 +652,7 @@ async def my_operation(notebook_path: str):
 
 **2. Use Data Models**:
 ```python
-from jupyter_server_mcp.notebook_models import CellIdentifier, CellContent
+from jupyter_mcp_executor.notebook_models import CellIdentifier, CellContent
 
 # Type-safe identifiers
 identifier = CellIdentifier(position_index=0)
@@ -644,26 +666,26 @@ content = CellContent(
 
 **3. Use Configuration Constants**:
 ```python
-from jupyter_server_mcp.notebook_config import EXECUTION_CONFIG
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
 timeout = EXECUTION_CONFIG.default_timeout  # Not magic number!
 ```
 
 **4. Filter Outputs**:
 ```python
-from jupyter_server_mcp.output_filter import OutputFilter
+from jupyter_mcp_executor.output_filter import OutputFilter
 
 filtered = OutputFilter.filter_outputs(outputs)
 ```
 
 **5. Use Kernel Utilities for Custom Kernels**:
 ```python
-from jupyter_server_mcp.kernel_utils import resolve_kernel_name, get_kernel_info
+from jupyter_mcp_executor.kernel_utils import resolve_kernel_name, get_kernel_info
 
 # AI agent wants to create notebook with custom kernel
 async def create_notebook_with_kernel(path: str, requested_kernel: str):
     # Get available kernels
-    kernels = await list_available_kernels()
+    kernels = await list_notebook_kernels()
     kernelspecs = kernels["kernelspecs"]
 
     # Resolve kernel name (handles "rapids", "r45", or language names like "R")
@@ -715,12 +737,12 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 # Or for specific modules
-logging.getLogger("jupyter_server_mcp.execution_engine").setLevel(logging.DEBUG)
+logging.getLogger("jupyter_mcp_executor.execution_engine").setLevel(logging.DEBUG)
 ```
 
 **Check YDoc Path**:
 ```python
-from jupyter_server_mcp.ydoc_helpers import get_ynotebook
+from jupyter_mcp_executor.ydoc_helpers import get_ynotebook
 
 ydoc = await get_ynotebook(notebook_path)
 if ydoc:
@@ -731,7 +753,7 @@ else:
 
 **Inspect Kernel Tracker**:
 ```python
-from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 
 tracker = get_kernel_tracker()
 print(tracker.get_all_tracked())
@@ -754,7 +776,7 @@ pytest tests/test_notebook_execution_tools.py -v
 pytest tests/test_refactored_imports.py -v
 
 # Run with coverage
-pytest --cov=jupyter_server_mcp --cov-report=html
+pytest --cov=jupyter_mcp_executor --cov-report=html
 ```
 
 ### Test Structure
@@ -870,7 +892,7 @@ DEBUG:Persisting cell outputs to disk
 
 **Solution**:
 ```python
-from jupyter_server_mcp.server_context import set_server_context
+from jupyter_mcp_executor.server_context import set_server_context
 
 # In extension.py
 set_server_context(serverapp)
@@ -896,10 +918,10 @@ set_server_context(serverapp)
 **Solution**: Update imports to new structure:
 ```python
 # Old (internal)
-from jupyter_server_mcp.notebook_execution_tools import _normalize_path
+from jupyter_mcp_executor.notebook_execution_tools import _normalize_path
 
 # New (public)
-from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_mcp_executor.path_utils import normalize_path
 ```
 
 **Verification**:
@@ -919,8 +941,8 @@ pytest tests/test_refactored_imports.py -v
 # In test file
 @pytest.fixture(autouse=True)
 def reset_context():
-    from jupyter_server_mcp.server_context import _server_context
-    from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
+    from jupyter_mcp_executor.server_context import _server_context
+    from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 
     _server_context["serverapp"] = None
     get_kernel_tracker()._kernels = {}
@@ -935,7 +957,7 @@ def reset_context():
 
 **Check Adapter Selection**:
 ```python
-from jupyter_server_mcp.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 
 adapter = await get_notebook_adapter(notebook_path)
 print(f"Using: {adapter.__class__.__name__}")
@@ -965,21 +987,21 @@ cat notebook.ipynb | jq '.cells[0].outputs'
 ## API Reference Quick Links
 
 ### Core Services
-- **KernelManager**: [kernel_manager.py](jupyter_server_mcp/kernel_manager.py)
-- **ExecutionEngine**: [execution_engine.py](jupyter_server_mcp/execution_engine.py)
-- **CellOperations**: [cell_operations.py](jupyter_server_mcp/cell_operations.py)
-- **QueryService**: [query_service.py](jupyter_server_mcp/query_service.py)
+- **KernelManager**: [kernel_manager.py](jupyter_mcp_executor/kernel_manager.py)
+- **ExecutionEngine**: [execution_engine.py](jupyter_mcp_executor/execution_engine.py)
+- **CellOperations**: [cell_operations.py](jupyter_mcp_executor/cell_operations.py)
+- **QueryService**: [query_service.py](jupyter_mcp_executor/query_service.py)
 
 ### Adapters
-- **NotebookAdapter**: [notebook_adapter.py](jupyter_server_mcp/notebook_adapter.py)
-- **YDocAdapter**: [ydoc_adapter.py](jupyter_server_mcp/ydoc_adapter.py)
-- **NbformatAdapter**: [nbformat_adapter.py](jupyter_server_mcp/nbformat_adapter.py)
+- **NotebookAdapter**: [notebook_adapter.py](jupyter_mcp_executor/notebook_adapter.py)
+- **YDocAdapter**: [ydoc_adapter.py](jupyter_mcp_executor/ydoc_adapter.py)
+- **NbformatAdapter**: [nbformat_adapter.py](jupyter_mcp_executor/nbformat_adapter.py)
 
 ### Utilities
-- **Output Filter**: [output_filter.py](jupyter_server_mcp/output_filter.py)
-- **Path Utils**: [path_utils.py](jupyter_server_mcp/path_utils.py)
-- **Validation**: [validation.py](jupyter_server_mcp/validation.py)
-- **Kernel Utils**: [kernel_utils.py](jupyter_server_mcp/kernel_utils.py) **NEW!**
+- **Output Filter**: [output_filter.py](jupyter_mcp_executor/output_filter.py)
+- **Path Utils**: [path_utils.py](jupyter_mcp_executor/path_utils.py)
+- **Validation**: [validation.py](jupyter_mcp_executor/validation.py)
+- **Kernel Utils**: [kernel_utils.py](jupyter_mcp_executor/kernel_utils.py) **NEW!**
 
 ---
 

@@ -73,7 +73,7 @@ class ExecutionResult:
 
     def to_filtered_dict(self) -> dict[str, Any]:
         """Convert to dict with filtered outputs for MCP response."""
-        from jupyter_server_mcp.output_filter import OutputFilter  # noqa: PLC0415
+        from jupyter_mcp_executor.output_filter import OutputFilter  # noqa: PLC0415
         result = self.to_dict()
         result["outputs"] = OutputFilter.filter_outputs(self.outputs)
         return result

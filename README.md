@@ -1,28 +1,37 @@
-# Jupyter Server MCP Extension
+# Jupyter MCP Executor
 
-A configurable MCP (Model Context Protocol) server extension for Jupyter Server that allows dynamic registration of Python functions as tools accessible to MCP clients from a running Jupyter Server.
+A powerful MCP (Model Context Protocol) server for executing code in Jupyter notebooks. This extension enables AI assistants and other MCP clients to programmatically create, modify, and execute code across multiple kernel types (Python, R, Julia, and more) through a running Jupyter Server.
 
 https://github.com/user-attachments/assets/aa779b1c-a443-48d7-b3eb-13f27a4333b3
 
 ## Overview
 
-This extension provides a simplified, trait-based approach to exposing Jupyter functionality through the MCP protocol. It can dynamically load and register tools from various Python packages, making them available to AI assistants and other MCP clients.
+Jupyter MCP Executor provides a comprehensive toolkit for AI-assisted coding workflows. It enables AI assistants to:
+
+- **Execute code** in any Jupyter kernel (Python, R, Julia, etc.)
+- **Create and modify** notebook cells programmatically
+- **Manage kernels** - start, stop, switch between different kernel types
+- **Query notebooks** - read cells, view outputs, check execution status
+- **Install packages** directly into kernel environments
+
+Perfect for building AI-powered data analysis tools, automated notebook workflows, and interactive coding assistants.
 
 ## Key Features
 
-- **Simplified Architecture**: Direct function registration without complex abstractions
-- **Configurable Tool Loading**: Register tools via string specifications (`module:function`)
-- **Automatic Tool Discovery**: Python packages can expose tools via entrypoints
-- **Jupyter Integration**: Seamless integration with Jupyter Server extension system
-- **HTTP Transport**: FastMCP-based HTTP server with proper MCP protocol support
-- **Traitlets Configuration**: Full configuration support through Jupyter's traitlets system
+- **Multi-Kernel Support**: Execute code in Python, R, Julia, and any Jupyter-supported kernel
+- **Collaborative Editing**: Full support for YDoc - works seamlessly when notebooks are open in JupyterLab
+- **Kernel Management**: Automatic kernel reuse, smart kernel resolution, and session management
+- **Complete Notebook Control**: Create, read, update, and delete cells programmatically
+- **Output Filtering**: Intelligent filtering of large outputs to optimize token usage
+- **MCP Protocol**: Standard MCP interface for AI assistant integration
+- **Production Ready**: Comprehensive test suite, modular architecture, and detailed documentation
 
 ## Installation
 
 ### Option 1: Standard Installation
 
 ```bash
-pip install jupyter-server-mcp
+pip install jupyter-mcp-executor
 ```
 
 ### Option 2: Development Setup with uv (Recommended)
@@ -52,14 +61,14 @@ c.MCPExtensionApp.mcp_tools = [
     "time:time",
 
     # Notebook execution and kernel management tools
-    "jupyter_server_mcp.notebook_execution_tools:list_running_kernels",
-    "jupyter_server_mcp.notebook_execution_tools:list_available_kernels",
-    "jupyter_server_mcp.notebook_execution_tools:execute_notebook_code",
-    "jupyter_server_mcp.notebook_execution_tools:setup_notebook",
-    "jupyter_server_mcp.notebook_execution_tools:switch_notebook_kernel",
-    "jupyter_server_mcp.notebook_execution_tools:shutdown_notebook",
-    "jupyter_server_mcp.notebook_execution_tools:modify_notebook_cells",
-    "jupyter_server_mcp.notebook_execution_tools:query_notebook"
+    "jupyter_mcp_executor.notebook_execution_tools:list_running_kernels",
+    "jupyter_mcp_executor.notebook_execution_tools:list_notebook_kernels",
+    "jupyter_mcp_executor.notebook_execution_tools:execute_notebook_code",
+    "jupyter_mcp_executor.notebook_execution_tools:setup_notebook",
+    "jupyter_mcp_executor.notebook_execution_tools:switch_notebook_kernel",
+    "jupyter_mcp_executor.notebook_execution_tools:shutdown_notebook",
+    "jupyter_mcp_executor.notebook_execution_tools:modify_notebook_cells",
+    "jupyter_mcp_executor.notebook_execution_tools:query_notebook"
 ]
 ```
 
@@ -110,12 +119,12 @@ Add the following to `.gemini/settings.json`:
 
 ### Core Components
 
-#### MCPServer (`jupyter_server_mcp.mcp_server.MCPServer`)
+#### MCPServer (`jupyter_mcp_executor.mcp_server.MCPServer`)
 
 A simplified LoggingConfigurable class that manages FastMCP integration:
 
 ```python
-from jupyter_server_mcp.mcp_server import MCPServer
+from jupyter_mcp_executor.mcp_server import MCPServer
 
 # Create server
 server = MCPServer(name="My Server", port=8080)
@@ -136,7 +145,7 @@ await server.start_server()
 - `list_tools()` - Get list of registered tools
 - `start_server(host=None)` - Start the HTTP MCP server
 
-#### MCPExtensionApp (`jupyter_server_mcp.extension.MCPExtensionApp`)
+#### MCPExtensionApp (`jupyter_mcp_executor.extension.MCPExtensionApp`)
 
 Jupyter Server extension that manages the MCP server lifecycle:
 
@@ -163,12 +172,12 @@ c.MCPExtensionApp.mcp_tools = [
 
 #### 2. Automatic Discovery via Entrypoints
 
-Python packages can expose tools automatically using the `jupyter_server_mcp.tools` entrypoint group.
+Python packages can expose tools automatically using the `jupyter_mcp_executor.tools` entrypoint group.
 
 **In your package's `pyproject.toml`:**
 
 ```toml
-[project.entry-points."jupyter_server_mcp.tools"]
+[project.entry-points."jupyter_mcp_executor.tools"]
 my_package_tools = "my_package.tools:TOOLS"
 ```
 
@@ -255,14 +264,14 @@ pip install -e ".[dev]"
 pytest tests/ -v
 
 # Run with coverage
-pytest --cov=jupyter_server_mcp tests/
+pytest --cov=jupyter_mcp_executor tests/
 ```
 
 ### Project Structure
 
 ```
-jupyter_server_mcp/
-├── jupyter_server_mcp/
+jupyter_mcp_executor/
+├── jupyter_mcp_executor/
 │   ├── __init__.py
 │   ├── mcp_server.py      # Core MCP server implementation
 │   └── extension.py       # Jupyter Server extension

@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from tornado.web import Application
 
-from jupyter_server_mcp.extension import MCPExtensionApp
-from jupyter_server_mcp.mcp_server import MCPServer
+from jupyter_mcp_executor.extension import MCPExtensionApp
+from jupyter_mcp_executor.mcp_server import MCPServer
 
 
 @pytest.fixture(scope="session")

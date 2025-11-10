@@ -25,8 +25,8 @@ If the package is published to PyPI:
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install jupyter-server-mcp
-uv pip install jupyter-server-mcp
+# Install jupyter-mcp-executor
+uv pip install jupyter-mcp-executor
 ```
 
 ### Option 2: Development Installation (Recommended for Contributors)
@@ -38,8 +38,8 @@ For local development with the latest code:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone the repository
-git clone https://github.com/yourusername/jupyter-server-mcp.git
-cd jupyter-server-mcp
+git clone https://github.com/yourusername/jupyter-mcp-executor.git
+cd jupyter-mcp-executor
 
 # Create a virtual environment with uv
 uv venv
@@ -82,13 +82,13 @@ After installation, verify that the extension is properly installed:
 
 ```bash
 # Check if the package is installed
-uv pip list | grep jupyter-server-mcp
+uv pip list | grep jupyter-mcp-executor
 
 # Start Jupyter and check if the extension loads
 jupyter server extension list
 ```
 
-You should see `jupyter_server_mcp` in the list of enabled extensions.
+You should see `jupyter_mcp_executor` in the list of enabled extensions.
 
 ## Quick Start After Installation
 
@@ -167,7 +167,7 @@ If you installed with test dependencies:
 pytest tests/ -v
 
 # Run with coverage
-pytest --cov=jupyter_server_mcp tests/
+pytest --cov=jupyter_mcp_executor tests/
 
 # Run specific test file
 pytest tests/test_mcp_server.py -v
@@ -178,13 +178,13 @@ pytest tests/test_mcp_server.py -v
 ### For PyPI Installation
 
 ```bash
-uv pip install --upgrade jupyter-server-mcp
+uv pip install --upgrade jupyter-mcp-executor
 ```
 
 ### For Development Installation
 
 ```bash
-cd jupyter-server-mcp
+cd jupyter-mcp-executor
 git pull origin main
 uv pip install -e ".[test,dev]"
 ```
@@ -236,7 +236,7 @@ source ~/.bashrc  # or source ~/.zshrc
 ## Uninstallation
 
 ```bash
-uv pip uninstall jupyter-server-mcp
+uv pip uninstall jupyter-mcp-executor
 ```
 
 ## Additional Resources
@@ -252,11 +252,11 @@ If you prefer to use pip instead of uv:
 
 ```bash
 # PyPI installation
-pip install jupyter-server-mcp
+pip install jupyter-mcp-executor
 
 # Development installation
-git clone https://github.com/yourusername/jupyter-server-mcp.git
-cd jupyter-server-mcp
+git clone https://github.com/yourusername/jupyter-mcp-executor.git
+cd jupyter-mcp-executor
 pip install -e ".[test,dev]"
 ```
 

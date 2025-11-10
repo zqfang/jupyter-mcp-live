@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from jupyter_server_mcp.extension import MCPExtensionApp
+from jupyter_mcp_executor.extension import MCPExtensionApp
 
 
 class TestMCPExtensionApp:
@@ -15,7 +15,7 @@ class TestMCPExtensionApp:
         """Test creating extension with defaults."""
         extension = MCPExtensionApp()
 
-        assert extension.name == "jupyter_server_mcp"
+        assert extension.name == "jupyter_mcp_executor"
         assert extension.mcp_port == 3001
         assert extension.mcp_name == "Jupyter MCP Server"
 
@@ -59,7 +59,7 @@ class TestMCPExtensionLifecycle:
         extension.mcp_name = "Test Server"
 
         # Mock the MCP server creation to avoid actual server startup
-        with patch("jupyter_server_mcp.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
             mock_server = Mock()
             mock_server.start_server = AsyncMock()
             mock_server._registered_tools = []  # Use list instead of Mock
@@ -85,7 +85,7 @@ class TestMCPExtensionLifecycle:
         extension = MCPExtensionApp()
 
         # Mock server creation to raise an exception
-        with patch("jupyter_server_mcp.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
             mock_mcp_class.side_effect = Exception("Server creation failed")
 
             with pytest.raises(Exception, match="Server creation failed"):
@@ -150,7 +150,7 @@ class TestMCPExtensionLifecycle:
         extension.mcp_name = "Lifecycle Test Server"
 
         # Mock the MCP server
-        with patch("jupyter_server_mcp.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
             mock_server = Mock()
             mock_server.start_server = AsyncMock()
             mock_server._registered_tools = []  # Use list instead of Mock
@@ -265,7 +265,7 @@ class TestToolLoading:
         extension.mcp_tools = ["os:getcwd", "math:sqrt"]
 
         # Capture log output
-        with patch("jupyter_server_mcp.extension.logger") as mock_logger:
+        with patch("jupyter_mcp_executor.extension.logger") as mock_logger:
             extension._register_tools(extension.mcp_tools, source="configuration")
 
             # Should register both tools
@@ -286,7 +286,7 @@ class TestToolLoading:
         extension.mcp_server_instance = Mock()
         extension.mcp_tools = ["os:getcwd", "invalid:function", "math:sqrt"]
 
-        with patch("jupyter_server_mcp.extension.logger") as mock_logger:
+        with patch("jupyter_mcp_executor.extension.logger") as mock_logger:
             extension._register_tools(extension.mcp_tools, source="configuration")
 
             # Should register 2 valid tools (os:getcwd and math:sqrt)
@@ -310,7 +310,7 @@ class TestExtensionWithTools:
         extension.mcp_name = "Test Server With Tools"
         extension.mcp_tools = ["os:getcwd", "math:sqrt"]
 
-        with patch("jupyter_server_mcp.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
             mock_server = Mock()
             mock_server.start_server = AsyncMock()
             mock_server._registered_tools = {
@@ -336,7 +336,7 @@ class TestExtensionWithTools:
         extension.mcp_port = 3088
         extension.mcp_tools = []
 
-        with patch("jupyter_server_mcp.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
             mock_server = Mock()
             mock_server.start_server = AsyncMock()
             mock_server._registered_tools = {}
@@ -406,7 +406,7 @@ class TestEntrypointDiscovery:
                 ]
             )
 
-            with patch("jupyter_server_mcp.extension.logger"):
+            with patch("jupyter_mcp_executor.extension.logger"):
                 tools = extension._discover_entrypoint_tools()
                 # Should only get the valid one
                 assert tools == ["os:getcwd"]
@@ -430,7 +430,7 @@ class TestEntrypointDiscovery:
 
         discovered_tools = ["os:getcwd"]
 
-        with patch("jupyter_server_mcp.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
             mock_server = Mock()
             mock_server.start_server = AsyncMock()
             mock_server._registered_tools = {"getcwd": {}, "dumps": {}}

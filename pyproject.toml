@@ -3,12 +3,12 @@ requires = ["hatchling>=1.5"]
 build-backend = "hatchling.build"
 
 [project]
-name = "jupyter_server_mcp"
+name = "jupyter_mcp_executor"
 authors = [{name = "Jupyter Developer", email = "jupyter@example.com"}]
 dynamic = ["version"]
 readme = "README.md"
 requires-python = ">=3.10"
-keywords = ["Jupyter", "Extension", "MCP", "FastMCP"]
+keywords = ["Jupyter", "Execution", "MCP", "FastMCP", "Code Execution", "Kernels"]
 classifiers = [
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python",
@@ -43,10 +43,10 @@ dev = [
 file="LICENSE"
 
 [project.entry-points."jupyter_server.extension_points"]
-jupyter_server_mcp = "jupyter_server_mcp.extension:MCPExtensionApp"
+jupyter_mcp_executor = "jupyter_mcp_executor.extension:MCPExtensionApp"
 
 [tool.hatch.version]
-path = "jupyter_server_mcp/__init__.py"
+path = "jupyter_mcp_executor/__init__.py"
 
 [tool.hatch.build.targets.wheel.shared-data]
 "jupyter-config" = "etc/jupyter"

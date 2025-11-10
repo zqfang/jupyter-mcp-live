@@ -1,9 +1,9 @@
 # test_sessions.py
 import asyncio
 import sys
-sys.path.insert(0, '/Users/fangzq/Github/jupyter-server-mcp')
+sys.path.insert(0, '/Users/fangzq/Github/jupyter-mcp-executor')
 
-from jupyter_server_mcp.notebook_execution_tools import (
+from jupyter_mcp_executor.notebook_execution_tools import (
     list_notebook_sessions,
     set_server_context
 )

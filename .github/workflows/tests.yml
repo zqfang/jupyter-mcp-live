@@ -32,8 +32,8 @@ jobs:
         # Install ruff
         pip install ruff
         # Check linting and formatting
-        ruff check jupyter_server_mcp tests
-        ruff format --check jupyter_server_mcp tests
+        ruff check jupyter_mcp_executor tests
+        ruff format --check jupyter_mcp_executor tests
     
     - name: Run unit tests
       run: |

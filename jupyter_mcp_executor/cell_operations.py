@@ -3,11 +3,11 @@
 import logging
 from typing import Any
 
-from jupyter_server_mcp.execution_engine import ExecutionEngine
-from jupyter_server_mcp.notebook_adapter import get_notebook_adapter
-from jupyter_server_mcp.notebook_config import EXECUTION_CONFIG
-from jupyter_server_mcp.notebook_models import CellContent
-from jupyter_server_mcp.path_utils import normalize_path
+from jupyter_mcp_executor.execution_engine import ExecutionEngine
+from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
+from jupyter_mcp_executor.notebook_models import CellContent
+from jupyter_mcp_executor.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
 

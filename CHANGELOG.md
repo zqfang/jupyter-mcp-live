@@ -7,7 +7,7 @@
 ### Enhancements made
 
 - **Custom Kernel Support** - Added intelligent kernel resolution system for AI agents
-  - **New module:** `jupyter_server_mcp/kernel_utils.py` (230 lines)
+  - **New module:** `jupyter_mcp_executor/kernel_utils.py` (230 lines)
   - **Features:**
     - Smart kernel name resolution with 3-tier strategy (exact match → language match → pattern detection)
     - Runtime kernel spec querying (no hardcoded mappings)
@@ -21,8 +21,8 @@
     - `resolve_kernel_name()` - Smart kernel name resolution
     - `get_kernel_info()` - Get kernel language and display name
   - **Files changed:**
-    - `jupyter_server_mcp/kernel_manager.py` - Integrated smart kernel resolution
-    - `jupyter_server_mcp/notebook_config.py` - Replaced `KERNEL_ALIASES` with `LANGUAGE_PATTERNS`
+    - `jupyter_mcp_executor/kernel_manager.py` - Integrated smart kernel resolution
+    - `jupyter_mcp_executor/notebook_config.py` - Replaced `KERNEL_ALIASES` with `LANGUAGE_PATTERNS`
   - **Tests added:** 29 comprehensive tests in `tests/test_kernel_utils.py`
   - **Impact:** AI agents can now create notebooks with any custom kernel name without hardcoded aliases
   - **Backwards compatible:** All existing kernel names continue to work
@@ -39,12 +39,12 @@
     - Organized imports (auto-fix + manual cleanup)
     - Added `# noqa: PLC0415` comments for intentional local imports (circular dependency avoidance)
   - **Files affected:**
-    - `jupyter_server_mcp/kernel_manager.py` - Pathlib migration
-    - `jupyter_server_mcp/path_utils.py` - Complete pathlib rewrite
-    - `jupyter_server_mcp/output_filter.py` - ClassVar type annotations
-    - `jupyter_server_mcp/notebook_adapter.py` - Documented intentional imports
-    - `jupyter_server_mcp/query_service.py` - Documented intentional imports
-    - `jupyter_server_mcp/ydoc_helpers.py` - Documented intentional imports
+    - `jupyter_mcp_executor/kernel_manager.py` - Pathlib migration
+    - `jupyter_mcp_executor/path_utils.py` - Complete pathlib rewrite
+    - `jupyter_mcp_executor/output_filter.py` - ClassVar type annotations
+    - `jupyter_mcp_executor/notebook_adapter.py` - Documented intentional imports
+    - `jupyter_mcp_executor/query_service.py` - Documented intentional imports
+    - `jupyter_mcp_executor/ydoc_helpers.py` - Documented intentional imports
     - All test files - Import organization and modern patterns
   - **Test status:** All 135 tests passing
 
@@ -54,7 +54,7 @@
   - **Root cause:** Incorrectly using `run_in_executor()` with async `AsyncKernelClient.get_iopub_msg()` method
   - **Solution:** Directly await the async method instead of wrapping it in a thread pool executor
   - **Impact:** Restores all code execution functionality for both Python and R kernels
-  - **Files changed:** `jupyter_server_mcp/notebook_execution_tools.py` (line 309-313)
+  - **Files changed:** `jupyter_mcp_executor/notebook_execution_tools.py` (line 309-313)
   - **Affects:** `execute_cell()`, `modify_notebook_cells()` with `execute=True`, `execute_notebook_code()`
 
 - **[CRITICAL]** Fixed missing `execution_count` in notebook cells after code execution
@@ -62,7 +62,7 @@
   - **Solution:** Read `execution_count` from `execute_reply` message on Shell channel, which is ALWAYS present according to Jupyter messaging protocol
   - **Impact:** Execution counts now properly populate in notebook files for all types of code execution
   - **Files changed:**
-    - `jupyter_server_mcp/notebook_execution_tools.py` (lines 293-325, 368-383)
+    - `jupyter_mcp_executor/notebook_execution_tools.py` (lines 293-325, 368-383)
     - `tests/test_notebook_execution_tools.py` (lines 76, 83-145, 343-397)
   - **Affects:** All code execution functions: `execute_cell()`, `modify_notebook_cells()`, `execute_notebook()`, `execute_notebook_code()`
   - **User benefit:** Cells can now be referenced by execution count `[1]`, `[2]`, etc. in JupyterLab UI
@@ -76,41 +76,41 @@
 
 ## 0.1.2
 
-([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/compare/v0.1.1...754ead215d3a9bb6e46f9e8d874bb9911caec3eb))
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/compare/v0.1.1...754ead215d3a9bb6e46f9e8d874bb9911caec3eb))
 
 ### Enhancements made
 
-- Add automatic tool discovery via Python entrypoints [#10](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/10) ([@Zsailer](https://github.com/Zsailer))
+- Add automatic tool discovery via Python entrypoints [#10](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/10) ([@Zsailer](https://github.com/Zsailer))
 
 ### Documentation improvements
 
-- Add screencast to the README [#9](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/9) ([@jtpio](https://github.com/jtpio))
-- Add Gemini CLI configuration [#6](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/6) ([@jtpio](https://github.com/jtpio))
-- Update README to the new toolkit [#5](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/5) ([@jtpio](https://github.com/jtpio))
+- Add screencast to the README [#9](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/9) ([@jtpio](https://github.com/jtpio))
+- Add Gemini CLI configuration [#6](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/6) ([@jtpio](https://github.com/jtpio))
+- Update README to the new toolkit [#5](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/5) ([@jtpio](https://github.com/jtpio))
 
 ### Contributors to this release
 
-([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/graphs/contributors?from=2025-09-11&to=2025-10-24&type=c))
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/graphs/contributors?from=2025-09-11&to=2025-10-24&type=c))
 
-[@jtpio](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-server-mcp+involves%3Ajtpio+updated%3A2025-09-11..2025-10-24&type=Issues) | [@Zsailer](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-server-mcp+involves%3AZsailer+updated%3A2025-09-11..2025-10-24&type=Issues)
+[@jtpio](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-mcp-executor+involves%3Ajtpio+updated%3A2025-09-11..2025-10-24&type=Issues) | [@Zsailer](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-mcp-executor+involves%3AZsailer+updated%3A2025-09-11..2025-10-24&type=Issues)
 
 
 ## 0.1.1
 
-([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/compare/fb0b9a59e08150ce6c285a9af41dac2342e7d181...6bf57b34817b2b631f91afb8bab6a72d48fa7a5b))
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/compare/fb0b9a59e08150ce6c285a9af41dac2342e7d181...6bf57b34817b2b631f91afb8bab6a72d48fa7a5b))
 
 ### Maintenance and upkeep improvements
 
-- Add releaser workflows [#3](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/3) ([@jtpio](https://github.com/jtpio))
+- Add releaser workflows [#3](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/3) ([@jtpio](https://github.com/jtpio))
 
 ### Other merged PRs
 
-- Add automatic JSON argument conversion for MCP tools [#4](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/4) ([@Zsailer](https://github.com/Zsailer))
-- Rename to jupyter-server-mcp [#2](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/2) ([@Zsailer](https://github.com/Zsailer))
-- Initial implementation of an MCP server as an extension [#1](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/pull/1) ([@Zsailer](https://github.com/Zsailer))
+- Add automatic JSON argument conversion for MCP tools [#4](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/4) ([@Zsailer](https://github.com/Zsailer))
+- Rename to jupyter-mcp-executor [#2](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/2) ([@Zsailer](https://github.com/Zsailer))
+- Initial implementation of an MCP server as an extension [#1](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/pull/1) ([@Zsailer](https://github.com/Zsailer))
 
 ### Contributors to this release
 
-([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-server-mcp/graphs/contributors?from=2025-08-14&to=2025-09-11&type=c))
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-mcp-executor/graphs/contributors?from=2025-08-14&to=2025-09-11&type=c))
 
-[@jtpio](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-server-mcp+involves%3Ajtpio+updated%3A2025-08-14..2025-09-11&type=Issues) | [@Zsailer](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-server-mcp+involves%3AZsailer+updated%3A2025-08-14..2025-09-11&type=Issues)
+[@jtpio](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-mcp-executor+involves%3Ajtpio+updated%3A2025-08-14..2025-09-11&type=Issues) | [@Zsailer](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-mcp-executor+involves%3AZsailer+updated%3A2025-08-14..2025-09-11&type=Issues)

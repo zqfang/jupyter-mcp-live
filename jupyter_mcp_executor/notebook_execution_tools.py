@@ -9,16 +9,16 @@ the MCP-exported function interfaces that are registered as MCP tools.
 
 from typing import Any
 
-from jupyter_server_mcp.cell_operations import CellOperations
-from jupyter_server_mcp.execution_engine import ExecutionEngine
-from jupyter_server_mcp.kernel_manager import KernelManager
-from jupyter_server_mcp.notebook_config import CellOperation, ExecutionType, QueryType
-from jupyter_server_mcp.notebook_models import CellIdentifier
-from jupyter_server_mcp.path_utils import normalize_path
-from jupyter_server_mcp.query_service import QueryService
+from jupyter_mcp_executor.cell_operations import CellOperations
+from jupyter_mcp_executor.execution_engine import ExecutionEngine
+from jupyter_mcp_executor.kernel_manager import KernelManager
+from jupyter_mcp_executor.notebook_config import CellOperation, ExecutionType, QueryType
+from jupyter_mcp_executor.notebook_models import CellIdentifier
+from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.query_service import QueryService
 
 # Import services
-from jupyter_server_mcp.server_context import get_server_context, set_server_context
+from jupyter_mcp_executor.server_context import get_server_context, set_server_context
 
 # Initialize services (singleton pattern)
 _execution_engine = ExecutionEngine()
@@ -31,22 +31,14 @@ _query_service = QueryService()
 # MCP-Exported Functions (Public API)
 # ============================================================================
 
-async def list_running_kernels() -> dict[str, Any]:
-    """List all running Jupyter kernels.
 
-    Returns:
-        Dict with "kernels" key containing list of kernel info dicts
-    """
-    return await _kernel_manager.list_running_kernels()
-
-
-async def list_available_kernels() -> dict[str, Any]:
+async def list_notebook_kernels() -> dict[str, Any]:
     """List all available kernel specifications.
 
     Returns:
         Dict with "kernelspecs" key containing kernel spec dicts
     """
-    return await _kernel_manager.list_available_kernels()
+    return await _kernel_manager.list_notebook_kernels()
 
 
 async def list_notebook_sessions() -> list[dict[str, Any]]:
@@ -112,7 +104,7 @@ async def setup_notebook(
         kernel_name: Name of the kernel to use (default: "python3")
                      - Examples: "python3", "python3.11", "ir" (R), "julia-1.10"
                      - For R kernels, you can use "r", "ir", or "irkernel"
-                     - To discover available kernels, call list_available_kernels() first
+                     - To discover available kernels, call list_notebook_kernels() first
                      - Only used when starting a new kernel (ignored if reusing existing)
         force_new_kernel: If True, always start a new kernel even if one exists (default: False)
                           Use this if you need a fresh kernel state.
@@ -120,9 +112,9 @@ async def setup_notebook(
     Agent guidance:
         - Always honor an explicitly provided `kernel_name` from the user.
         - If the user specifies a language (e.g., R/Julia) rather than a kernel name, map it by first calling
-          `list_available_kernels` and selecting the closest matching kernelspec key.
+          `list_notebook_kernels` and selecting the closest matching kernelspec key.
         - For R kernels, you can use "r", "ir", or "irkernel" - the system will auto-detect the correct available kernel.
-        - If setup fails due to an unknown kernel, surface the list from `list_available_kernels` in the error/help message.
+        - If setup fails due to an unknown kernel, surface the list from `list_notebook_kernels` in the error/help message.
         - If the notebook is already open in JupyterLab, this will reuse its kernel unless force_new_kernel=True.
 
     Returns:
@@ -448,7 +440,8 @@ async def read_cell(
 __all__ = [
     "execute_notebook_code",
     "get_server_context",
-    "list_available_kernels",
+    "list_notebook_kernels",
+    "list_notebook_sessions",
     "list_running_kernels",
     "modify_notebook_cells",
     "query_notebook",

@@ -5,11 +5,11 @@ from typing import Any
 
 from nbformat.v4 import new_code_cell, new_markdown_cell
 
-from jupyter_server_mcp.notebook_adapter import NotebookAdapter
-from jupyter_server_mcp.notebook_io import NotebookContext
-from jupyter_server_mcp.notebook_models import CellContent
-from jupyter_server_mcp.output_converter import convert_outputs_to_notebook_nodes
-from jupyter_server_mcp.ydoc_helpers import get_cell_index_by_id_nbformat
+from jupyter_mcp_executor.notebook_adapter import NotebookAdapter
+from jupyter_mcp_executor.notebook_io import NotebookContext
+from jupyter_mcp_executor.notebook_models import CellContent
+from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
+from jupyter_mcp_executor.ydoc_helpers import get_cell_index_by_id_nbformat
 
 logger = logging.getLogger(__name__)
 

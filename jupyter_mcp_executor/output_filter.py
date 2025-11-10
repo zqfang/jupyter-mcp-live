@@ -3,7 +3,7 @@
 import logging
 from typing import Any, ClassVar
 
-from jupyter_server_mcp.notebook_config import OUTPUT_FILTER_CONFIG
+from jupyter_mcp_executor.notebook_config import OUTPUT_FILTER_CONFIG
 
 logger = logging.getLogger(__name__)
 

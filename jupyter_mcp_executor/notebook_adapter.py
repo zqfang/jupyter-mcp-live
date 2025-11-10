@@ -7,9 +7,9 @@ between YDoc (collaborative) and nbformat (file-based) implementations.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from jupyter_server_mcp.notebook_models import CellContent
-from jupyter_server_mcp.path_utils import normalize_path
-from jupyter_server_mcp.ydoc_helpers import get_ynotebook
+from jupyter_mcp_executor.notebook_models import CellContent
+from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.ydoc_helpers import get_ynotebook
 
 
 class NotebookAdapter(ABC):
@@ -163,8 +163,8 @@ async def get_notebook_adapter(notebook_path: str) -> NotebookAdapter:
     Returns:
         Appropriate adapter instance
     """
-    from jupyter_server_mcp.nbformat_adapter import NbformatAdapter  # noqa: PLC0415
-    from jupyter_server_mcp.ydoc_adapter import YDocAdapter  # noqa: PLC0415
+    from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter  # noqa: PLC0415
+    from jupyter_mcp_executor.ydoc_adapter import YDocAdapter  # noqa: PLC0415
 
     notebook_path = normalize_path(notebook_path)
 

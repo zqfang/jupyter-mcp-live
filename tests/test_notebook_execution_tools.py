@@ -9,12 +9,11 @@ import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 # Import from new modular structure
-from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
-from jupyter_server_mcp.notebook_execution_tools import (
+from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_executor.notebook_execution_tools import (
     execute_notebook_code,
     get_server_context,
-    list_available_kernels,
-    list_running_kernels,
+    list_notebook_kernels,
     modify_notebook_cells,
     query_notebook,
     read_cell,
@@ -23,12 +22,12 @@ from jupyter_server_mcp.notebook_execution_tools import (
     shutdown_notebook,
     switch_notebook_kernel,
 )
-from jupyter_server_mcp.notebook_io import read_notebook, write_notebook
-from jupyter_server_mcp.output_converter import convert_outputs_to_notebook_nodes
-from jupyter_server_mcp.output_filter import OutputFilter
-from jupyter_server_mcp.path_utils import normalize_path
-from jupyter_server_mcp.server_context import _server_context
-from jupyter_server_mcp.validation import validate_cell_index, validate_code_cell
+from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
+from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
+from jupyter_mcp_executor.output_filter import OutputFilter
+from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.server_context import _server_context
+from jupyter_mcp_executor.validation import validate_cell_index, validate_code_cell
 
 
 class MockKernelManager:
@@ -352,28 +351,12 @@ class TestServerContext:
 class TestListFunctions:
     """Test list functions."""
 
-    @pytest.mark.asyncio
-    async def test_list_running_kernels_no_context(self):
-        """Test listing kernels without server context."""
-        with pytest.raises(RuntimeError, match="server context not available"):
-            await list_running_kernels()
 
     @pytest.mark.asyncio
-    async def test_list_running_kernels(self, mock_serverapp):
-        """Test listing running kernels."""
-        set_server_context(mock_serverapp)
-        kernel_id = await mock_serverapp.kernel_manager.start_kernel()
-
-        result = await list_running_kernels()
-        assert "kernels" in result
-        assert len(result["kernels"]) == 1
-        assert result["kernels"][0]["id"] == kernel_id
-
-    @pytest.mark.asyncio
-    async def test_list_available_kernels(self, mock_serverapp):
+    async def test_list_notebook_kernels(self, mock_serverapp):
         """Test listing available kernel specs."""
         set_server_context(mock_serverapp)
-        result = await list_available_kernels()
+        result = await list_notebook_kernels()
         assert "kernelspecs" in result
         assert "python3" in result["kernelspecs"]
         assert "ir" in result["kernelspecs"]

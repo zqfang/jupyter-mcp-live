@@ -4,14 +4,14 @@ from typing import Any
 
 from .extension import MCPExtensionApp
 
-__version__ = "0.1.2"
+__version__ = "0.1.0"
 
 
 def _jupyter_server_extension_points() -> list[dict[str, Any]]:
     # pragma: no cover
     return [
         {
-            "module": "jupyter_server_mcp.extension",
+            "module": "jupyter_mcp_executor.extension",
             "app": MCPExtensionApp,
         },
     ]

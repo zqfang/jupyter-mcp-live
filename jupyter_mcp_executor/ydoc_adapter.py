@@ -3,9 +3,9 @@
 import logging
 from typing import Any
 
-from jupyter_server_mcp.notebook_adapter import NotebookAdapter
-from jupyter_server_mcp.notebook_models import CellContent
-from jupyter_server_mcp.ydoc_helpers import (
+from jupyter_mcp_executor.notebook_adapter import NotebookAdapter
+from jupyter_mcp_executor.notebook_models import CellContent
+from jupyter_mcp_executor.ydoc_helpers import (
     YDOC_AVAILABLE,
     YText,
     get_cell_index_by_id_ydoc,

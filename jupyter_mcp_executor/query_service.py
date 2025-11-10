@@ -3,12 +3,12 @@
 import logging
 from typing import Any
 
-from jupyter_server_mcp.notebook_adapter import get_notebook_adapter
-from jupyter_server_mcp.notebook_config import QueryType
-from jupyter_server_mcp.notebook_models import CellIdentifier
-from jupyter_server_mcp.output_filter import OutputFilter
-from jupyter_server_mcp.path_utils import normalize_path
-from jupyter_server_mcp.server_context import get_server_context
+from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_executor.notebook_config import QueryType
+from jupyter_mcp_executor.notebook_models import CellIdentifier
+from jupyter_mcp_executor.output_filter import OutputFilter
+from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,9 @@ class QueryService:
             return await self.list_sessions()
         if query_type == "list_kernels":
             # Delegate to kernel manager
-            from jupyter_server_mcp.kernel_manager import KernelManager  # noqa: PLC0415
+            from jupyter_mcp_executor.kernel_manager import KernelManager  # noqa: PLC0415
             km = KernelManager()
-            return await km.list_available_kernels()
+            return await km.list_notebook_kernels()
         if query_type == "get_position_index":
             return await self.get_position_index(notebook_path, execution_count, cell_id)
         msg = (
@@ -147,7 +147,7 @@ class QueryService:
         Returns:
             List of session dicts
         """
-        from jupyter_server_mcp.server_context import (  # noqa: PLC0415
+        from jupyter_mcp_executor.server_context import (  # noqa: PLC0415
             require_server_context,
         )
 

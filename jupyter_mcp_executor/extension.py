@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class MCPExtensionApp(ExtensionApp):
     """The Jupyter Server MCP extension app."""
 
-    name = "jupyter_server_mcp"
+    name = "jupyter_mcp_executor"
     description = "Jupyter Server extension providing MCP server for tool registration"
 
     # Configurable traits
@@ -51,7 +51,7 @@ class MCPExtensionApp(ExtensionApp):
         default_value=True,
         help=(
             "Whether to automatically discover and register tools from "
-            "Python entrypoints in the 'jupyter_server_mcp.tools' group"
+            "Python entrypoints in the 'jupyter_mcp_executor.tools' group"
         ),
     ).tag(config=True)
 
@@ -116,7 +116,7 @@ class MCPExtensionApp(ExtensionApp):
                 continue
 
     def _discover_entrypoint_tools(self) -> list[str]:
-        """Discover tools from Python entrypoints in the 'jupyter_server_mcp.tools' group.
+        """Discover tools from Python entrypoints in the 'jupyter_mcp_executor.tools' group.
 
         Returns:
             List of tool specifications in 'module:function' format
@@ -132,9 +132,9 @@ class MCPExtensionApp(ExtensionApp):
 
             # Handle both Python 3.10+ and 3.9 style entrypoint APIs
             if hasattr(entrypoints, "select"):
-                tools_group = entrypoints.select(group="jupyter_server_mcp.tools")
+                tools_group = entrypoints.select(group="jupyter_mcp_executor.tools")
             else:
-                tools_group = entrypoints.get("jupyter_server_mcp.tools", [])
+                tools_group = entrypoints.get("jupyter_mcp_executor.tools", [])
 
             for entry_point in tools_group:
                 try:

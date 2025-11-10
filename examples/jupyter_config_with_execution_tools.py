@@ -27,14 +27,14 @@ c.MCPExtensionApp.mcp_port = 8080
 
 c.MCPExtensionApp.mcp_tools = [
     # Notebook execution and kernel management tools
-    "jupyter_server_mcp.notebook_execution_tools:list_notebook_sessions",
-    "jupyter_server_mcp.notebook_execution_tools:list_available_kernels",
-    "jupyter_server_mcp.notebook_execution_tools:execute_notebook_code",
-    "jupyter_server_mcp.notebook_execution_tools:setup_notebook",
-    "jupyter_server_mcp.notebook_execution_tools:switch_notebook_kernel",
-    "jupyter_server_mcp.notebook_execution_tools:shutdown_notebook",
-    "jupyter_server_mcp.notebook_execution_tools:modify_notebook_cells",
-    "jupyter_server_mcp.notebook_execution_tools:query_notebook",
+    # "jupyter_mcp_executor.notebook_execution_tools:list_notebook_sessions",
+    "jupyter_mcp_executor.notebook_execution_tools:list_notebook_kernels",
+    "jupyter_mcp_executor.notebook_execution_tools:execute_notebook_code",
+    "jupyter_mcp_executor.notebook_execution_tools:setup_notebook",
+    "jupyter_mcp_executor.notebook_execution_tools:switch_notebook_kernel",
+    "jupyter_mcp_executor.notebook_execution_tools:shutdown_notebook",
+    "jupyter_mcp_executor.notebook_execution_tools:modify_notebook_cells",
+    "jupyter_mcp_executor.notebook_execution_tools:query_notebook",
 
     # Optional: Add file system tools from jupyter-ai-tools (if installed)
     # "jupyter_ai_tools.toolkits.file_system:read",

@@ -8,11 +8,11 @@ from typing import Any
 import nbformat
 from nbformat.v4 import new_notebook
 
-from jupyter_server_mcp.kernel_tracker import get_kernel_tracker
-from jupyter_server_mcp.kernel_utils import get_kernel_info, resolve_kernel_name
-from jupyter_server_mcp.notebook_io import write_notebook
-from jupyter_server_mcp.path_utils import normalize_path
-from jupyter_server_mcp.server_context import get_server_context, require_server_context
+from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_executor.kernel_utils import get_kernel_info, resolve_kernel_name
+from jupyter_mcp_executor.notebook_io import write_notebook
+from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.server_context import get_server_context, require_server_context
 
 logger = logging.getLogger(__name__)
 
@@ -32,54 +32,7 @@ class KernelManager:
         """Initialize kernel manager."""
         self.kernel_tracker = get_kernel_tracker()
 
-    async def list_running_kernels(self) -> dict[str, Any]:
-        """List all running Jupyter kernels.
-
-        Returns:
-            Dict with "kernels" key containing list of kernel info dicts
-        """
-        serverapp = require_server_context()
-        kernel_manager = serverapp.kernel_manager
-
-        # Get all kernel IDs
-        kernel_ids = list(kernel_manager.list_kernel_ids())
-
-        kernels = []
-        for kernel_id in kernel_ids:
-            try:
-                kernel = kernel_manager.get_kernel(kernel_id)
-
-                kernel_info = {
-                    "id": kernel_id,
-                    "name": kernel.kernel_name if hasattr(kernel, "kernel_name") else "unknown",
-                    "last_activity": (
-                        kernel.last_activity.isoformat()
-                        if hasattr(kernel, "last_activity") and kernel.last_activity
-                        else None
-                    ),
-                    "execution_state": (
-                        kernel.execution_state
-                        if hasattr(kernel, "execution_state")
-                        else "unknown"
-                    ),
-                    "connections": (
-                        kernel.connections if hasattr(kernel, "connections") else 0
-                    ),
-                }
-
-                kernels.append(kernel_info)
-
-            except Exception as e:
-                logger.warning(f"Could not get info for kernel {kernel_id}: {e}")
-                kernels.append({
-                    "id": kernel_id,
-                    "name": "unknown",
-                    "error": str(e)
-                })
-
-        return {"kernels": kernels}
-
-    async def list_available_kernels(self) -> dict[str, Any]:
+    async def list_notebook_kernels(self) -> dict[str, Any]:
         """List all available kernel specifications.
 
         Returns:
@@ -129,7 +82,7 @@ class KernelManager:
         logger.info(f"Notebook exists: {notebook_exists} - {notebook_path}")
 
         # Get available kernels and resolve kernel name
-        available_kernels = await self.list_available_kernels()
+        available_kernels = await self.list_notebook_kernels()
         kernelspecs = available_kernels.get("kernelspecs", {})
         kernel_name = resolve_kernel_name(kernel_name, kernelspecs, fallback="python3")
 
@@ -320,7 +273,7 @@ class KernelManager:
 
         try:
             # Use QueryService to list all active sessions
-            from jupyter_server_mcp.query_service import QueryService  # noqa: PLC0415
+            from jupyter_mcp_executor.query_service import QueryService  # noqa: PLC0415
             query_service = QueryService()
 
             sessions = await query_service.list_sessions()
@@ -480,7 +433,7 @@ class KernelManager:
             try:
                 loop = asyncio.get_event_loop()
                 available_kernels_result = loop.run_until_complete(
-                    self.list_available_kernels()
+                    self.list_notebook_kernels()
                 )
             except Exception:
                 pass

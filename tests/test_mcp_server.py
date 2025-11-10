@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from jupyter_server_mcp.mcp_server import MCPServer, _wrap_with_json_conversion
+from jupyter_mcp_executor.mcp_server import MCPServer, _wrap_with_json_conversion
 
 
 def simple_function(x: int, y: int) -> int:
