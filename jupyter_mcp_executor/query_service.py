@@ -51,7 +51,9 @@ class QueryService:
             return await self.list_sessions()
         if query_type == "list_kernels":
             # Delegate to kernel manager
-            from jupyter_mcp_executor.kernel_manager import KernelManager  # noqa: PLC0415
+            from jupyter_mcp_executor.kernel_manager import (
+                KernelManager,
+            )
             km = KernelManager()
             return await km.list_notebook_kernels()
         if query_type == "get_position_index":

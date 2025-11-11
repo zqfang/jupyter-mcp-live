@@ -183,8 +183,45 @@ class MockSessionManager:
         """Mock list sessions - returns list like real Jupyter Server."""
         return list(self.sessions)
 
+    async def create_session(self, path, name, type, kernel_id=None, kernel_name=None):
+        """Mock create session - mimics real Jupyter Server API.
+
+        Args:
+            path: Notebook path
+            name: Notebook name
+            type: Session type (usually "notebook")
+            kernel_id: Existing kernel ID (if provided)
+            kernel_name: Kernel name (if starting new kernel)
+
+        Returns:
+            Session dict
+        """
+        session = {
+            "id": f"session-{len(self.sessions)}",
+            "path": path,
+            "name": name,
+            "type": type,
+            "kernel": {
+                "id": kernel_id or f"kernel-{len(self.sessions)}",
+                "name": kernel_name or "python3",
+                "last_activity": datetime.now().isoformat(),
+                "execution_state": "idle",
+                "connections": 1
+            }
+        }
+        self.sessions.append(session)
+        return session
+
+    async def delete_session(self, session_id):
+        """Mock delete session - mimics real Jupyter Server API.
+
+        Args:
+            session_id: ID of session to delete
+        """
+        self.sessions = [s for s in self.sessions if s["id"] != session_id]
+
     def add_session(self, notebook_path, kernel_id, kernel_name="python3"):
-        """Add a mock session for testing."""
+        """Add a mock session for testing (legacy helper method)."""
         session = {
             "id": f"session-{len(self.sessions)}",
             "path": notebook_path,

@@ -12,7 +12,10 @@ from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import get_kernel_info, resolve_kernel_name
 from jupyter_mcp_executor.notebook_io import write_notebook
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.server_context import get_server_context, require_server_context
+from jupyter_mcp_executor.server_context import (
+    get_server_context,
+    require_server_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +189,9 @@ class KernelManager:
     ) -> dict[str, Any]:
         """Switch notebook to use a different kernel.
 
+        Deletes the old session, shuts down the old kernel, and creates
+        a new kernel with a new session.
+
         Args:
             notebook_path: Path to notebook
             kernel_name: New kernel name
@@ -195,13 +201,16 @@ class KernelManager:
         """
         notebook_path = normalize_path(notebook_path)
 
+        # Delete the old session first
+        await self._delete_session_for_notebook(notebook_path)
+
         # Shutdown old kernel if tracked
         old_kernel_id = self.kernel_tracker.get(notebook_path)
         if old_kernel_id:
             await self._shutdown_kernel(old_kernel_id)
             self.kernel_tracker.untrack(notebook_path)
 
-        # Start new kernel
+        # Start new kernel (this will also create a new session)
         new_kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
 
         # Update notebook metadata
@@ -221,6 +230,9 @@ class KernelManager:
     ) -> dict[str, Any]:
         """Shutdown notebook session and optionally its kernel.
 
+        Deletes the Jupyter session and optionally shuts down the kernel.
+        This ensures proper cleanup and prevents orphaned sessions.
+
         Args:
             notebook_path: Path to notebook
             shutdown_kernel: Whether to shutdown the kernel
@@ -231,6 +243,9 @@ class KernelManager:
         notebook_path = normalize_path(notebook_path)
 
         kernel_id = self.kernel_tracker.get(notebook_path)
+
+        # Delete the Jupyter session for this notebook
+        await self._delete_session_for_notebook(notebook_path)
 
         if kernel_id and shutdown_kernel:
             await self._shutdown_kernel(kernel_id)
@@ -249,6 +264,37 @@ class KernelManager:
             "message": "Notebook session closed (no kernel was tracked)",
             "kernel_id": None
         }
+
+    async def _delete_session_for_notebook(self, notebook_path: str) -> None:
+        """Delete the Jupyter session for a notebook.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+        """
+        serverapp = get_server_context()
+        if not serverapp:
+            logger.debug("No server context available for deleting session")
+            return
+
+        try:
+            # Find the session for this notebook
+            session = await self._find_session_for_notebook(notebook_path)
+
+            if session:
+                session_id = session.get("id")
+                session_manager = serverapp.session_manager
+
+                # Delete the session
+                await session_manager.delete_session(session_id)
+
+                logger.info(
+                    f"Deleted session {session_id} for notebook {notebook_path}"
+                )
+            else:
+                logger.debug(f"No session found to delete for {notebook_path}")
+
+        except Exception as e:
+            logger.warning(f"Error deleting session for {notebook_path}: {e}", exc_info=True)
 
     async def _find_session_for_notebook(
         self, notebook_path: str
@@ -355,6 +401,9 @@ class KernelManager:
     ) -> str | None:
         """Start a kernel and track it for a notebook.
 
+        Creates both a kernel and a Jupyter session linking the notebook path
+        to the kernel. This ensures JupyterLab can discover and reuse the kernel.
+
         Args:
             notebook_path: Path to notebook
             kernel_name: Kernel name
@@ -368,12 +417,40 @@ class KernelManager:
             return None
 
         try:
+            # Start the kernel
             kernel_manager = serverapp.kernel_manager
             kernel_id = await kernel_manager.start_kernel(kernel_name=kernel_name)
+
+            # Track kernel locally
             self.kernel_tracker.track(notebook_path, kernel_id)
+
             logger.info(
                 f"Started kernel {kernel_name} (ID: {kernel_id}) for notebook {notebook_path}"
             )
+
+            # Create a Jupyter session to link notebook path to kernel
+            # This is CRITICAL for JupyterLab to discover the kernel
+            try:
+                session_manager = serverapp.session_manager
+                notebook_name = Path(notebook_path).name
+
+                # Create session with the kernel
+                session = await session_manager.create_session(
+                    path=notebook_path,
+                    name=notebook_name,
+                    type="notebook",
+                    kernel_id=kernel_id
+                )
+
+                logger.info(
+                    f"Created session {session['id']} linking {notebook_path} to kernel {kernel_id}"
+                )
+            except Exception as session_error:
+                logger.warning(
+                    f"Kernel {kernel_id} started but session creation failed: {session_error}. "
+                    f"JupyterLab may not be able to discover this kernel."
+                )
+
             return kernel_id
         except Exception as e:
             logger.warning(f"Could not start kernel: {e}")

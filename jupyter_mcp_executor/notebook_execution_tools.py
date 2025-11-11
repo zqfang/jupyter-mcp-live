@@ -442,7 +442,6 @@ __all__ = [
     "get_server_context",
     "list_notebook_kernels",
     "list_notebook_sessions",
-    "list_running_kernels",
     "modify_notebook_cells",
     "query_notebook",
     "read_cell",
