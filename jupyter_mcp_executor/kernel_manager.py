@@ -441,23 +441,32 @@ class KernelManager:
                 api_path = to_api_path(notebook_path)
 
                 # Verify kernel exists before creating session
-                if kernel_id not in kernel_manager.list_kernel_ids():
-                    logger.error(
-                        f"Kernel {kernel_id} not found in kernel_manager before session creation! "
-                        f"Available kernels: {kernel_manager.list_kernel_ids()}"
+                available_kernels = kernel_manager.list_kernel_ids()
+                kernel_exists = kernel_id in available_kernels
+
+                logger.debug(f"Kernel verification: kernel_id={kernel_id}, exists={kernel_exists}")
+                logger.debug(f"Available kernels: {available_kernels}")
+
+                if not kernel_exists:
+                    logger.warning(
+                        f"⚠️  Kernel {kernel_id} not found in kernel_manager.list_kernel_ids()! "
+                        f"Available kernels: {available_kernels}. "
+                        f"SessionManager will start a new kernel using kernel_name={kernel_name}"
                     )
 
                 logger.debug(
                     f"Creating session: path='{api_path}', name='{notebook_name}', "
-                    f"kernel_id='{kernel_id}', type='notebook'"
+                    f"kernel_id='{kernel_id}', kernel_name='{kernel_name}', type='notebook'"
                 )
 
                 # Create session with the kernel using API path
+                # Pass both kernel_id (to link existing kernel) and kernel_name (as fallback)
                 session = await session_manager.create_session(
                     path=api_path,
                     name=notebook_name,
                     type="notebook",
-                    kernel_id=kernel_id
+                    kernel_id=kernel_id,
+                    kernel_name=kernel_name  # Fallback if kernel_id lookup fails
                 )
 
                 logger.info(
