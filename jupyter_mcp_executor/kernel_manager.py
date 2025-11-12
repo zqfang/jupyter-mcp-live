@@ -401,8 +401,11 @@ class KernelManager:
     ) -> str | None:
         """Start a kernel and track it for a notebook.
 
-        Creates both a kernel and a Jupyter session linking the notebook path
-        to the kernel. This ensures JupyterLab can discover and reuse the kernel.
+        Creates a Jupyter session which automatically creates and links a kernel
+        to the notebook path. This ensures JupyterLab can discover and reuse the kernel.
+
+        This approach avoids race conditions by letting SessionManager handle kernel
+        creation atomically.
 
         Args:
             notebook_path: Path to notebook
@@ -417,84 +420,58 @@ class KernelManager:
             return None
 
         try:
-            # Start the kernel
-            kernel_manager = serverapp.kernel_manager
-            kernel_id = await kernel_manager.start_kernel(kernel_name=kernel_name)
+            from jupyter_mcp_executor.path_utils import to_api_path
+
+            session_manager = serverapp.session_manager
+            notebook_name = Path(notebook_path).name
+
+            # Convert absolute path to API path (relative to root_dir)
+            # JupyterLab expects relative paths like "notebook.ipynb" or "subdir/notebook.ipynb"
+            api_path = to_api_path(notebook_path)
+
+            logger.debug(
+                f"Creating session with new kernel: path='{api_path}', "
+                f"name='{notebook_name}', kernel_name='{kernel_name}', type='notebook'"
+            )
+
+            # Create session WITHOUT kernel_id - this lets SessionManager create the kernel
+            # This avoids race conditions where we create a kernel but session manager
+            # doesn't see it yet and creates another one
+            session = await session_manager.create_session(
+                path=api_path,
+                name=notebook_name,
+                type="notebook",
+                kernel_name=kernel_name  # SessionManager will create kernel with this name
+            )
+
+            kernel_id = session["kernel"]["id"]
 
             # Track kernel locally
             self.kernel_tracker.track(notebook_path, kernel_id)
 
             logger.info(
-                f"Started kernel {kernel_name} (ID: {kernel_id}) for notebook {notebook_path}"
+                f"✅ Session and kernel created successfully! "
+                f"Session ID: {session['id']}, Path: {api_path}, "
+                f"Kernel: {kernel_id} ({kernel_name})"
             )
 
-            # Create a Jupyter session to link notebook path to kernel
-            # This is CRITICAL for JupyterLab to discover the kernel
-            try:
-                from jupyter_mcp_executor.path_utils import to_api_path
-
-                session_manager = serverapp.session_manager
-                notebook_name = Path(notebook_path).name
-
-                # Convert absolute path to API path (relative to root_dir)
-                # JupyterLab expects relative paths like "notebook.ipynb" or "subdir/notebook.ipynb"
-                api_path = to_api_path(notebook_path)
-
-                # Verify kernel exists before creating session
-                available_kernels = kernel_manager.list_kernel_ids()
-                kernel_exists = kernel_id in available_kernels
-
-                logger.debug(f"Kernel verification: kernel_id={kernel_id}, exists={kernel_exists}")
-                logger.debug(f"Available kernels: {available_kernels}")
-
-                if not kernel_exists:
-                    logger.warning(
-                        f"⚠️  Kernel {kernel_id} not found in kernel_manager.list_kernel_ids()! "
-                        f"Available kernels: {available_kernels}. "
-                        f"SessionManager will start a new kernel using kernel_name={kernel_name}"
-                    )
-
-                logger.debug(
-                    f"Creating session: path='{api_path}', name='{notebook_name}', "
-                    f"kernel_id='{kernel_id}', kernel_name='{kernel_name}', type='notebook'"
-                )
-
-                # Create session with the kernel using API path
-                # Pass both kernel_id (to link existing kernel) and kernel_name (as fallback)
-                session = await session_manager.create_session(
-                    path=api_path,
-                    name=notebook_name,
-                    type="notebook",
-                    kernel_id=kernel_id,
-                    kernel_name=kernel_name  # Fallback if kernel_id lookup fails
-                )
-
-                logger.info(
-                    f"✅ Session created successfully! "
-                    f"Session ID: {session['id']}, Path: {api_path}, Kernel: {kernel_id}"
-                )
-
-                # Verify session was actually created
-                sessions = await session_manager.list_sessions()
-                session_exists = any(s['id'] == session['id'] for s in sessions)
-                if not session_exists:
-                    logger.error(
-                        f"Session {session['id']} not found in session list after creation!"
-                    )
-                else:
-                    logger.debug(f"Session {session['id']} verified in session list")
-
-            except Exception as session_error:
+            # Verify session was actually created
+            sessions = await session_manager.list_sessions()
+            session_exists = any(s['id'] == session['id'] for s in sessions)
+            if not session_exists:
                 logger.error(
-                    f"❌ Session creation FAILED for {api_path}! "
-                    f"Error: {session_error}. "
-                    f"Kernel {kernel_id} is running but JupyterLab won't be able to discover it.",
-                    exc_info=True
+                    f"Session {session['id']} not found in session list after creation!"
                 )
+            else:
+                logger.debug(f"Session {session['id']} verified in session list")
 
             return kernel_id
+
         except Exception as e:
-            logger.warning(f"Could not start kernel: {e}")
+            logger.error(
+                f"❌ Session/kernel creation FAILED for {notebook_path}! Error: {e}",
+                exc_info=True
+            )
             return None
 
     async def _shutdown_kernel(self, kernel_id: str) -> None:
