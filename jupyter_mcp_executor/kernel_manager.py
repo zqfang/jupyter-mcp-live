@@ -440,6 +440,18 @@ class KernelManager:
                 # JupyterLab expects relative paths like "notebook.ipynb" or "subdir/notebook.ipynb"
                 api_path = to_api_path(notebook_path)
 
+                # Verify kernel exists before creating session
+                if kernel_id not in kernel_manager.list_kernel_ids():
+                    logger.error(
+                        f"Kernel {kernel_id} not found in kernel_manager before session creation! "
+                        f"Available kernels: {kernel_manager.list_kernel_ids()}"
+                    )
+
+                logger.debug(
+                    f"Creating session: path='{api_path}', name='{notebook_name}', "
+                    f"kernel_id='{kernel_id}', type='notebook'"
+                )
+
                 # Create session with the kernel using API path
                 session = await session_manager.create_session(
                     path=api_path,
@@ -449,12 +461,26 @@ class KernelManager:
                 )
 
                 logger.info(
-                    f"Created session {session['id']} linking {api_path} to kernel {kernel_id}"
+                    f"✅ Session created successfully! "
+                    f"Session ID: {session['id']}, Path: {api_path}, Kernel: {kernel_id}"
                 )
+
+                # Verify session was actually created
+                sessions = await session_manager.list_sessions()
+                session_exists = any(s['id'] == session['id'] for s in sessions)
+                if not session_exists:
+                    logger.error(
+                        f"Session {session['id']} not found in session list after creation!"
+                    )
+                else:
+                    logger.debug(f"Session {session['id']} verified in session list")
+
             except Exception as session_error:
-                logger.warning(
-                    f"Kernel {kernel_id} started but session creation failed: {session_error}. "
-                    f"JupyterLab may not be able to discover this kernel."
+                logger.error(
+                    f"❌ Session creation FAILED for {api_path}! "
+                    f"Error: {session_error}. "
+                    f"Kernel {kernel_id} is running but JupyterLab won't be able to discover it.",
+                    exc_info=True
                 )
 
             return kernel_id
