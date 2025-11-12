@@ -431,19 +431,25 @@ class KernelManager:
             # Create a Jupyter session to link notebook path to kernel
             # This is CRITICAL for JupyterLab to discover the kernel
             try:
+                from jupyter_mcp_executor.path_utils import to_api_path
+
                 session_manager = serverapp.session_manager
                 notebook_name = Path(notebook_path).name
 
-                # Create session with the kernel
+                # Convert absolute path to API path (relative to root_dir)
+                # JupyterLab expects relative paths like "notebook.ipynb" or "subdir/notebook.ipynb"
+                api_path = to_api_path(notebook_path)
+
+                # Create session with the kernel using API path
                 session = await session_manager.create_session(
-                    path=notebook_path,
+                    path=api_path,
                     name=notebook_name,
                     type="notebook",
                     kernel_id=kernel_id
                 )
 
                 logger.info(
-                    f"Created session {session['id']} linking {notebook_path} to kernel {kernel_id}"
+                    f"Created session {session['id']} linking {api_path} to kernel {kernel_id}"
                 )
             except Exception as session_error:
                 logger.warning(

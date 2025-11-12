@@ -25,7 +25,7 @@ from jupyter_mcp_executor.notebook_execution_tools import (
 from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.output_filter import OutputFilter
-from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
 from jupyter_mcp_executor.server_context import _server_context
 from jupyter_mcp_executor.validation import validate_cell_index, validate_code_cell
 
@@ -286,6 +286,26 @@ class TestHelperFunctions:
         """Test that empty path raises ValueError."""
         with pytest.raises(ValueError, match="path cannot be empty"):
             normalize_path("")
+
+    def test_to_api_path(self, mock_serverapp):
+        """Test converting absolute paths to API paths."""
+        set_server_context(mock_serverapp)
+
+        # Test path under root_dir
+        root_dir = mock_serverapp.root_dir
+        absolute_path = str(Path(root_dir) / "notebook.ipynb")
+        api_path = to_api_path(absolute_path)
+        assert api_path == "notebook.ipynb"
+
+        # Test path in subdirectory
+        absolute_path = str(Path(root_dir) / "data" / "analysis.ipynb")
+        api_path = to_api_path(absolute_path)
+        assert api_path == "data/analysis.ipynb"
+
+        # Test path outside root_dir (should return filename only)
+        outside_path = "/tmp/external.ipynb"
+        api_path = to_api_path(outside_path)
+        assert api_path == "external.ipynb"
 
     def test_read_write_notebook(self, temp_notebook):
         """Test reading and writing notebooks."""
