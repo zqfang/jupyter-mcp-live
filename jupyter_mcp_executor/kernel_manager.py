@@ -1,6 +1,5 @@
 """Kernel management service for Jupyter notebooks."""
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -535,20 +534,11 @@ class KernelManager:
             nb = nbformat.read(notebook_path, as_version=4)
 
             # Get kernel info
-            available_kernels_result = None
-            try:
-                loop = asyncio.get_event_loop()
-                available_kernels_result = loop.run_until_complete(
-                    self.list_notebook_kernels()
-                )
-            except Exception:
-                pass
-
-            kernelspecs = (
-                available_kernels_result.get("kernelspecs", {})
-                if available_kernels_result
-                else {}
-            )
+            # Prefer synchronous retrieval to avoid awaiting in a sync method
+            serverapp = require_server_context()
+            kernel_spec_manager = serverapp.kernel_spec_manager
+            # Get all kernel specs
+            kernelspecs = kernel_spec_manager.get_all_specs()
 
             language_name, display_name = self._get_kernel_display_info(
                 kernel_name, kernelspecs
