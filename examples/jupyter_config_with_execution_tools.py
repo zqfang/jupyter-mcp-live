@@ -150,3 +150,5 @@ c.ServerApp.root_dir = "."
 
 # Enable autoreload for development
 c.ServerApp.autoreload = True  
+# Set Jupyter log level to DEBUG
+c.ServerApp.log_level = 'DEBUG'
