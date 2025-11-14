@@ -138,7 +138,7 @@ class KernelManager:
                 kernel_name, kernelspecs
             )
 
-            # Create empty notebook
+            # Create empty notebook in memory
             nb = new_notebook(
                 cells=[],
                 metadata={
@@ -423,6 +423,7 @@ class KernelManager:
             from jupyter_mcp_executor.path_utils import to_api_path
 
             session_manager = serverapp.session_manager
+            contents_manager = serverapp.contents_manager
             notebook_name = Path(notebook_path).name
 
             # Convert absolute path to API path (relative to root_dir)
@@ -434,7 +435,18 @@ class KernelManager:
                 f"name='{notebook_name}', kernel_name='{kernel_name}', type='notebook'"
             )
 
-            # Create session WITHOUT kernel_id - this lets SessionManager create the kernel
+            # Preflight: ensure contents manager can see the file as a notebook
+            root_dir = Path(serverapp.root_dir).resolve()
+            try:
+                contents_manager.get(api_path, type="notebook")
+            except Exception as e:
+                logger.error(
+                    f"Contents manager cannot resolve path '{api_path}' "
+                    f"(root_dir='{root_dir}'). Error: {e}"
+                )
+                return None
+
+            # Create session this lets SessionManager create the kernel
             # This avoids race conditions where we create a kernel but session manager
             # doesn't see it yet and creates another one
             session = await session_manager.create_session(
@@ -454,7 +466,7 @@ class KernelManager:
                 f"Session ID: {session['id']}, Path: {api_path}, "
                 f"Kernel: {kernel_id} ({kernel_name})"
             )
-
+           
             # Verify session was actually created
             sessions = await session_manager.list_sessions()
             session_exists = any(s['id'] == session['id'] for s in sessions)
