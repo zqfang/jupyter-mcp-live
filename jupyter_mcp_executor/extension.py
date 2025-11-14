@@ -197,12 +197,27 @@ class MCPExtensionApp(ExtensionApp):
         """Initialize settings for the extension."""
         # Configuration is handled by traitlets
 
+    def _bridge_package_logging(self) -> None:
+        """Make package loggers use Jupyter Server's logging handlers/level."""
+        # Parent logger for the whole package
+        pkg_logger = logging.getLogger("jupyter_mcp_executor")
+        # Mirror server logger handlers and level
+        pkg_logger.handlers.clear()
+        for h in self.serverapp.log.handlers:
+            pkg_logger.addHandler(h)
+        pkg_logger.setLevel(self.serverapp.log.getEffectiveLevel())
+        # Prevent double logging via root
+        pkg_logger.propagate = False
+
     async def start_extension(self):
         """Start the extension - called after Jupyter Server starts."""
         try:
             self.log.info(
                 f"Starting MCP server '{self.mcp_name}' on port {self.mcp_port}"
             )
+
+            # Bridge package logging early so module-level loggers emit
+            self._bridge_package_logging()
 
             # Set server context for notebook execution tools
             if NOTEBOOK_TOOLS_AVAILABLE:
