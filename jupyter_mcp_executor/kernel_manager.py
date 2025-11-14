@@ -11,7 +11,6 @@ from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import get_kernel_info, resolve_kernel_name
 from jupyter_mcp_executor.notebook_io import write_notebook
 from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
-from jupyter_mcp_executor.query_service import QueryService
 from jupyter_mcp_executor.server_context import (
     get_server_context,
     require_server_context,
@@ -321,9 +320,9 @@ class KernelManager:
 
         try:
             # Use QueryService to list all active sessions
-            query_service = QueryService()
-
-            sessions = await query_service.list_sessions()
+            # from jupyter_mcp_executor.query_service import QueryService  # noqa: PLC0415
+            from jupyter_mcp_executor.notebook_execution_tools import _query_service  # noqa: PLC0415
+            sessions = await _query_service.list_sessions()
 
             # Get the notebook filename for comparison
             notebook_name = Path(notebook_path).name
