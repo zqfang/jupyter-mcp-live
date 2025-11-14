@@ -11,7 +11,8 @@ from nbformat.v4 import new_notebook
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import get_kernel_info, resolve_kernel_name
 from jupyter_mcp_executor.notebook_io import write_notebook
-from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
+from jupyter_mcp_executor.query_service import QueryService
 from jupyter_mcp_executor.server_context import (
     get_server_context,
     require_server_context,
@@ -319,7 +320,6 @@ class KernelManager:
 
         try:
             # Use QueryService to list all active sessions
-            from jupyter_mcp_executor.query_service import QueryService  # noqa: PLC0415
             query_service = QueryService()
 
             sessions = await query_service.list_sessions()
@@ -420,8 +420,6 @@ class KernelManager:
             return None
 
         try:
-            from jupyter_mcp_executor.path_utils import to_api_path
-
             session_manager = serverapp.session_manager
             contents_manager = serverapp.contents_manager
             notebook_name = Path(notebook_path).name

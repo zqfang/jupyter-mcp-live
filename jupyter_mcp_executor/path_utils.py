@@ -3,6 +3,7 @@
 from pathlib import Path
 from urllib.parse import unquote
 
+from jupyter_mcp_executor.server_context import get_server_context
 
 def normalize_path(path: str) -> str:
     """Normalize a file path to an absolute path.
@@ -50,13 +51,15 @@ def to_api_path(absolute_path: str) -> str:
     rather than absolute filesystem paths. This function converts absolute
     paths to the relative API format expected by JupyterLab.
 
+    For paths outside root_dir, returns the absolute path to ensure correct
+    session matching when notebooks are opened from anywhere on the filesystem.
+
     Args:
         absolute_path: Absolute filesystem path
 
     Returns:
-        Path relative to server root_dir, using forward slashes.
-        If the path is outside root_dir or no server context is available,
-        returns just the filename.
+        Path relative to server root_dir (if inside root_dir), using forward slashes.
+        Absolute path (if outside root_dir) for correct session matching.
 
     Examples:
         # If root_dir = "/Users/fangzq/Github/jupyter-server-mcp"
@@ -65,8 +68,10 @@ def to_api_path(absolute_path: str) -> str:
 
         >>> to_api_path("/Users/fangzq/Github/jupyter-server-mcp/data/analysis.ipynb")
         "data/analysis.ipynb"
+
+        >>> to_api_path("/Users/fangzq/workspace/external.ipynb")
+        "/Users/fangzq/workspace/external.ipynb"  # Outside root_dir, use absolute
     """
-    from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
 
     abs_path = Path(absolute_path)
 
@@ -84,6 +89,7 @@ def to_api_path(absolute_path: str) -> str:
             # is_relative_to not available in Python 3.8, or path not relative
             pass
 
-    # Fallback: if path is outside root_dir or no server context,
-    # return just the filename (safest option)
-    return abs_path.name
+    # For paths outside root_dir: use absolute path
+    # This ensures session matching works correctly when notebooks are
+    # outside the Jupyter server's root directory
+    return str(abs_path)
