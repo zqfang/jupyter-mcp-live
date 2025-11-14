@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 try:
     from jupyter_ydoc import YNotebook
     from pycrdt import Text as YText
+
     YDOC_AVAILABLE = True
 except ImportError:
     YDOC_AVAILABLE = False

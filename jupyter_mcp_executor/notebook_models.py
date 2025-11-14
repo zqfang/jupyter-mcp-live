@@ -10,6 +10,7 @@ class CellIdentifier:
 
     Exactly one of the three identifiers must be provided.
     """
+
     execution_count: int | None = None
     position_index: int | None = None
     cell_id: str | None = None
@@ -19,13 +20,11 @@ class CellIdentifier:
         identifiers = [
             self.execution_count is not None,
             self.position_index is not None,
-            self.cell_id is not None
+            self.cell_id is not None,
         ]
         if sum(identifiers) != 1:
             msg = "Provide exactly ONE of: execution_count, position_index, or cell_id"
-            raise ValueError(
-                msg
-            )
+            raise ValueError(msg)
 
     @property
     def identifier_type(self) -> str:
@@ -40,6 +39,7 @@ class CellIdentifier:
 @dataclass
 class KernelInfo:
     """Information about a running kernel."""
+
     id: str
     name: str
     last_activity: str | None
@@ -50,6 +50,7 @@ class KernelInfo:
 @dataclass
 class ExecutionResult:
     """Result of code execution."""
+
     execution_count: int | None
     outputs: list[dict[str, Any]]
     status: str
@@ -74,6 +75,7 @@ class ExecutionResult:
     def to_filtered_dict(self) -> dict[str, Any]:
         """Convert to dict with filtered outputs for MCP response."""
         from jupyter_mcp_executor.output_filter import OutputFilter  # noqa: PLC0415
+
         result = self.to_dict()
         result["outputs"] = OutputFilter.filter_outputs(self.outputs)
         return result
@@ -82,6 +84,7 @@ class ExecutionResult:
 @dataclass
 class CellContent:
     """Content and metadata for a notebook cell."""
+
     source: str | list[str]
     cell_type: str  # "code" or "markdown"
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -99,6 +102,7 @@ class CellContent:
 @dataclass
 class NotebookInfo:
     """Information about a notebook."""
+
     path: str
     kernel_name: str
     kernel_id: str | None

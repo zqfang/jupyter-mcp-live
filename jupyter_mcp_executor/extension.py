@@ -14,6 +14,7 @@ from .mcp_server import MCPServer
 # Import notebook execution tools for context setup
 try:
     from . import notebook_execution_tools
+
     NOTEBOOK_TOOLS_AVAILABLE = True
 except ImportError:
     NOTEBOOK_TOOLS_AVAILABLE = False

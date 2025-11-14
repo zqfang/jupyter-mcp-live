@@ -56,7 +56,7 @@ class OutputFilter:
                 "text/plain": f"[Filtered {', '.join(mime_types)} - available in notebook]"
             },
             "metadata": {},
-            "execution_count": None
+            "execution_count": None,
         }
 
     @staticmethod

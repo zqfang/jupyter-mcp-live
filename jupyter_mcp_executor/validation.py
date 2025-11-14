@@ -20,9 +20,7 @@ def validate_cell_index(nb: Any, index: int, operation: str = "access") -> None:
             f"Cannot {operation} cell at index {index}. "
             f"Notebook has {cell_count} cells (valid indices: 0-{cell_count - 1})"
         )
-        raise IndexError(
-            msg
-        )
+        raise IndexError(msg)
 
 
 def validate_code_cell(cell: Any, index: int) -> None:
@@ -40,9 +38,7 @@ def validate_code_cell(cell: Any, index: int) -> None:
             f"Cell at index {index} is a {cell.cell_type} cell, not a code cell. "
             f"This operation requires a code cell."
         )
-        raise ValueError(
-            msg
-        )
+        raise ValueError(msg)
 
 
 def validate_markdown_cell(cell: Any, index: int) -> None:
@@ -60,6 +56,4 @@ def validate_markdown_cell(cell: Any, index: int) -> None:
             f"Cell at index {index} is a {cell.cell_type} cell, not a markdown cell. "
             f"This operation requires a markdown cell."
         )
-        raise ValueError(
-            msg
-        )
+        raise ValueError(msg)

@@ -36,9 +36,7 @@ class NotebookAdapter(ABC):
 
     @abstractmethod
     async def add_cell(
-        self,
-        cell_content: CellContent,
-        position: int | None = None
+        self, cell_content: CellContent, position: int | None = None
     ) -> int:
         """Add a cell.
 
@@ -75,10 +73,7 @@ class NotebookAdapter(ABC):
 
     @abstractmethod
     async def update_cell_outputs(
-        self,
-        position: int,
-        execution_count: int | None,
-        outputs: list[dict[str, Any]]
+        self, position: int, execution_count: int | None, outputs: list[dict[str, Any]]
     ) -> None:
         """Update cell execution results.
 
@@ -120,8 +115,7 @@ class NotebookAdapter(ABC):
 
     @abstractmethod
     async def find_cell_by_execution_count(
-        self,
-        execution_count: int
+        self, execution_count: int
     ) -> tuple[CellContent, int] | None:
         """Find code cell by execution count.
 

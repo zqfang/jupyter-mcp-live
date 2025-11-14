@@ -9,10 +9,7 @@ from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 logger = logging.getLogger(__name__)
 
 
-async def validate_execution_reply(
-    shell_reply: dict,
-    msg_id: str
-) -> int | None:
+async def validate_execution_reply(shell_reply: dict, msg_id: str) -> int | None:
     """Validate and extract execution_count from shell channel execute_reply.
 
     The execute_reply message ALWAYS contains execution_count, whereas
@@ -26,8 +23,10 @@ async def validate_execution_reply(
         execution_count if valid, None otherwise
     """
     # Validate this is the reply to our execution request
-    if (shell_reply.get("parent_header", {}).get("msg_id") == msg_id and
-        shell_reply.get("header", {}).get("msg_type") == "execute_reply"):
+    if (
+        shell_reply.get("parent_header", {}).get("msg_id") == msg_id
+        and shell_reply.get("header", {}).get("msg_type") == "execute_reply"
+    ):
         reply_content = shell_reply.get("content", {})
         execution_count = reply_content.get("execution_count")
         logger.debug(f"Captured execution_count from shell reply: {execution_count}")
@@ -47,10 +46,7 @@ async def validate_execution_reply(
 
 
 async def collect_outputs(
-    client: Any,
-    msg_id: str,
-    execution_count: int | None,
-    timeout: int
+    client: Any, msg_id: str, execution_count: int | None, timeout: int
 ) -> tuple[list[dict], str, str | None]:
     """Collect outputs from iopub channel.
 
@@ -77,10 +73,7 @@ async def collect_outputs(
 
         try:
             # Directly await the async method
-            msg = await asyncio.wait_for(
-                client.get_iopub_msg(timeout=0.5),
-                timeout=1
-            )
+            msg = await asyncio.wait_for(client.get_iopub_msg(timeout=0.5), timeout=1)
 
             # Validate message structure
             if not isinstance(msg, dict):
@@ -112,36 +105,44 @@ async def collect_outputs(
                         f"execute_result={result_exec_count}"
                     )
 
-                outputs.append({
-                    "output_type": "execute_result",
-                    "data": content.get("data", {}),
-                    "metadata": content.get("metadata", {}),
-                    "execution_count": execution_count  # Use from shell reply
-                })
+                outputs.append(
+                    {
+                        "output_type": "execute_result",
+                        "data": content.get("data", {}),
+                        "metadata": content.get("metadata", {}),
+                        "execution_count": execution_count,  # Use from shell reply
+                    }
+                )
 
             elif msg_type == "stream":
-                outputs.append({
-                    "output_type": "stream",
-                    "name": content.get("name", "stdout"),
-                    "text": content.get("text", "")
-                })
+                outputs.append(
+                    {
+                        "output_type": "stream",
+                        "name": content.get("name", "stdout"),
+                        "text": content.get("text", ""),
+                    }
+                )
 
             elif msg_type == "display_data":
-                outputs.append({
-                    "output_type": "display_data",
-                    "data": content.get("data", {}),
-                    "metadata": content.get("metadata", {})
-                })
+                outputs.append(
+                    {
+                        "output_type": "display_data",
+                        "data": content.get("data", {}),
+                        "metadata": content.get("metadata", {}),
+                    }
+                )
 
             elif msg_type == "error":
                 status = "error"
                 error_msg = "\n".join(content.get("traceback", []))
-                outputs.append({
-                    "output_type": "error",
-                    "ename": content.get("ename", ""),
-                    "evalue": content.get("evalue", ""),
-                    "traceback": content.get("traceback", [])
-                })
+                outputs.append(
+                    {
+                        "output_type": "error",
+                        "ename": content.get("ename", ""),
+                        "evalue": content.get("evalue", ""),
+                        "traceback": content.get("traceback", []),
+                    }
+                )
 
             elif msg_type == "status":
                 if content.get("execution_state") == "idle":
@@ -157,10 +158,7 @@ async def collect_outputs(
 
 
 async def execute_code_on_kernel(
-    client: Any,
-    code: str,
-    kernel_id: str,
-    timeout: int
+    client: Any, code: str, kernel_id: str, timeout: int
 ) -> dict[str, Any]:
     """Execute code on kernel and collect results.
 
@@ -181,25 +179,24 @@ async def execute_code_on_kernel(
     execution_count = None
     try:
         shell_reply = await asyncio.wait_for(
-            client.get_shell_msg(timeout=timeout),
-            timeout=timeout + 1
+            client.get_shell_msg(timeout=timeout), timeout=timeout + 1
         )
         execution_count = await validate_execution_reply(shell_reply, msg_id)
     except asyncio.TimeoutError:
-        logger.error(f"Timeout waiting for execute_reply on shell channel after {timeout}s")
+        logger.error(
+            f"Timeout waiting for execute_reply on shell channel after {timeout}s"
+        )
     except Exception as e:
         logger.error(f"Error reading execute_reply from shell channel: {e}")
 
     # Collect outputs from iopub channel
-    outputs, status, error_msg = await collect_outputs(client, msg_id, execution_count, timeout)
+    outputs, status, error_msg = await collect_outputs(
+        client, msg_id, execution_count, timeout
+    )
 
     logger.info(f"Execution complete: status={status}, outputs={len(outputs)}")
 
-    result = {
-        "execution_count": execution_count,
-        "outputs": outputs,
-        "status": status
-    }
+    result = {"execution_count": execution_count, "outputs": outputs, "status": status}
 
     if error_msg:
         result["error"] = error_msg

@@ -36,7 +36,7 @@ class ExecutionEngine:
         code: str,
         kernel_id: str | None = None,
         timeout: int | None = None,
-        kernel_name: str = "python3"
+        kernel_name: str = "python3",
     ) -> ExecutionResult:
         """Execute code in a Jupyter kernel.
 
@@ -59,7 +59,7 @@ class ExecutionEngine:
                 outputs=[],
                 status="error",
                 kernel_id="",
-                error="Server context not available"
+                error="Server context not available",
             )
 
         kernel_manager = serverapp.kernel_manager
@@ -84,7 +84,7 @@ class ExecutionEngine:
                 outputs=[],
                 status="error",
                 kernel_id=kernel_id,
-                error=f"Kernel {kernel_id} not found"
+                error=f"Kernel {kernel_id} not found",
             )
 
         client = kernel.client()
@@ -104,7 +104,7 @@ class ExecutionEngine:
                 status=result_dict.get("status", "ok"),
                 kernel_id=kernel_id,
                 started_new_kernel=started_new_kernel,
-                error=result_dict.get("error")
+                error=result_dict.get("error"),
             )
 
         finally:
@@ -116,7 +116,7 @@ class ExecutionEngine:
         cell_position: int,
         code: str,
         kernel_id: str | None = None,
-        timeout: int | None = None
+        timeout: int | None = None,
     ) -> dict[str, Any]:
         """Execute code and update cell with results in one atomic operation.
 
@@ -138,9 +138,7 @@ class ExecutionEngine:
 
         # Execute code
         exec_result = await self.execute_cell_code(
-            code,
-            kernel_id=kernel_id,
-            timeout=timeout
+            code, kernel_id=kernel_id, timeout=timeout
         )
 
         # Track kernel if new
@@ -149,9 +147,7 @@ class ExecutionEngine:
 
         # Update cell outputs via adapter
         await adapter.update_cell_outputs(
-            cell_position,
-            exec_result.execution_count,
-            exec_result.outputs
+            cell_position, exec_result.execution_count, exec_result.outputs
         )
 
         # If collaborative mode, also persist to disk
@@ -161,17 +157,14 @@ class ExecutionEngine:
                 adapter.notebook_path,
                 cell_position,
                 exec_result.execution_count,
-                exec_result.outputs
+                exec_result.outputs,
             )
 
         # Return filtered result for MCP
         return exec_result.to_filtered_dict()
 
     async def execute_cell_by_position(
-        self,
-        notebook_path: str,
-        position: int,
-        timeout: int | None = None
+        self, notebook_path: str, position: int, timeout: int | None = None
     ) -> dict[str, Any]:
         """Execute an existing cell by position.
 
@@ -191,7 +184,7 @@ class ExecutionEngine:
         if cell.cell_type != "code":
             return {
                 "error": f"Cell at position {position} is not a code cell",
-                "status": "error"
+                "status": "error",
             }
 
         code = cell.get_source_as_string()
@@ -201,18 +194,10 @@ class ExecutionEngine:
 
         # Execute and update
         return await self.execute_and_update_cell(
-            adapter,
-            position,
-            code,
-            kernel_id=kernel_id,
-            timeout=timeout
+            adapter, position, code, kernel_id=kernel_id, timeout=timeout
         )
 
-    async def install_packages(
-        self,
-        notebook_path: str,
-        package_names: str
-    ) -> str:
+    async def install_packages(self, notebook_path: str, package_names: str) -> str:
         """Install Python packages in the notebook's kernel environment.
 
         Args:
@@ -231,7 +216,7 @@ class ExecutionEngine:
             result = await self.execute_cell_code(
                 code="",  # Empty code to just start kernel
                 kernel_id=None,
-                timeout=10
+                timeout=10,
             )
             kernel_id = result.kernel_id
             self.kernel_tracker.track(notebook_path, kernel_id)
@@ -257,7 +242,7 @@ else:
         result = await self.execute_cell_code(
             code=install_code,
             kernel_id=kernel_id,
-            timeout=300  # 5 minutes for package installation
+            timeout=300,  # 5 minutes for package installation
         )
 
         if result.status == "error":
@@ -276,7 +261,7 @@ else:
         notebook_path: str,
         position: int,
         execution_count: int | None,
-        outputs: list[dict[str, Any]]
+        outputs: list[dict[str, Any]],
     ) -> None:
         """Persist cell outputs to disk (for collaborative mode).
 
@@ -297,6 +282,8 @@ else:
                     if outputs:
                         cell.outputs = convert_outputs_to_notebook_nodes(outputs)
                 else:
-                    logger.warning(f"Cell index {position} out of range in disk notebook")
+                    logger.warning(
+                        f"Cell index {position} out of range in disk notebook"
+                    )
         except Exception as e:
             logger.warning(f"Failed to persist outputs to disk: {e}")

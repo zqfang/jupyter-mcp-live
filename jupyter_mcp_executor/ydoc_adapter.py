@@ -49,9 +49,7 @@ class YDocAdapter(NotebookAdapter):
         """Read cell from YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
-            raise IndexError(
-                msg
-            )
+            raise IndexError(msg)
 
         ycell = self.ydoc.ycells[position]
 
@@ -61,13 +59,11 @@ class YDocAdapter(NotebookAdapter):
             metadata=dict(ycell.get("metadata", {})),
             execution_count=ycell.get("execution_count"),
             outputs=list(ycell.get("outputs", [])),
-            cell_id=str(ycell.get("id", ""))
+            cell_id=str(ycell.get("id", "")),
         )
 
     async def add_cell(
-        self,
-        cell_content: CellContent,
-        position: int | None = None
+        self, cell_content: CellContent, position: int | None = None
     ) -> int:
         """Add cell to YDoc."""
         # Convert source to string
@@ -94,7 +90,9 @@ class YDocAdapter(NotebookAdapter):
 
         # Add cell
         self.ydoc.ycells.insert(position, cell_dict)
-        logger.info(f"Added {cell_content.cell_type} cell via YDoc at position {position}")
+        logger.info(
+            f"Added {cell_content.cell_type} cell via YDoc at position {position}"
+        )
 
         return position
 
@@ -102,9 +100,7 @@ class YDocAdapter(NotebookAdapter):
         """Edit cell in YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
-            raise IndexError(
-                msg
-            )
+            raise IndexError(msg)
 
         ycell = self.ydoc.ycells[position]
 
@@ -130,25 +126,18 @@ class YDocAdapter(NotebookAdapter):
         """Delete cell from YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
-            raise IndexError(
-                msg
-            )
+            raise IndexError(msg)
 
         self.ydoc.ycells.pop(position)
         logger.info(f"Deleted cell via YDoc at position {position}")
 
     async def update_cell_outputs(
-        self,
-        position: int,
-        execution_count: int | None,
-        outputs: list[dict[str, Any]]
+        self, position: int, execution_count: int | None, outputs: list[dict[str, Any]]
     ) -> None:
         """Update cell outputs in YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
-            raise IndexError(
-                msg
-            )
+            raise IndexError(msg)
 
         ycell = self.ydoc.ycells[position]
 
@@ -158,7 +147,9 @@ class YDocAdapter(NotebookAdapter):
         if outputs is not None:
             ycell["outputs"] = outputs
 
-        logger.debug(f"Updated cell {position} outputs in YDoc (execution_count={execution_count})")
+        logger.debug(
+            f"Updated cell {position} outputs in YDoc (execution_count={execution_count})"
+        )
 
     async def get_all_cells(self) -> list[CellContent]:
         """Get all cells from YDoc."""
@@ -181,14 +172,15 @@ class YDocAdapter(NotebookAdapter):
         return (cell, position)
 
     async def find_cell_by_execution_count(
-        self,
-        execution_count: int
+        self, execution_count: int
     ) -> tuple[CellContent, int] | None:
         """Find code cell by execution count in YDoc."""
         for i in range(self.ydoc.cell_number):
             ycell = self.ydoc.ycells[i]
-            if (ycell.get("cell_type") == "code" and
-                ycell.get("execution_count") == execution_count):
+            if (
+                ycell.get("cell_type") == "code"
+                and ycell.get("execution_count") == execution_count
+            ):
                 cell = await self.read_cell(i)
                 return (cell, i)
 

@@ -54,7 +54,7 @@ class KernelManager:
         self,
         notebook_path: str,
         kernel_name: str = "python3",
-        force_new_kernel: bool = False
+        force_new_kernel: bool = False,
     ) -> dict[str, Any]:
         """Setup a notebook (create if needed) and start or reuse kernel.
 
@@ -146,19 +146,19 @@ class KernelManager:
                     "kernelspec": {
                         "name": kernel_name,
                         "display_name": display_name,
-                        "language": language_name
+                        "language": language_name,
                     },
-                    "language_info": {
-                        "name": language_name
-                    }
-                }
+                    "language_info": {"name": language_name},
+                },
             )
 
             write_notebook(notebook_path, nb)
 
             # Start new kernel for the new notebook
             if kernel_id is None:
-                kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+                kernel_id = await self._start_kernel_for_notebook(
+                    notebook_path, kernel_name
+                )
 
             message = f"Notebook {notebook_path} created with kernel {kernel_name}"
         else:
@@ -169,7 +169,9 @@ class KernelManager:
             else:
                 # Step 3c: Start new kernel for existing notebook
                 if kernel_id is None:
-                    kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+                    kernel_id = await self._start_kernel_for_notebook(
+                        notebook_path, kernel_name
+                    )
                 message = f"Notebook {notebook_path} exists (started new kernel {kernel_name})"
 
         # Return notebook info
@@ -184,9 +186,7 @@ class KernelManager:
         }
 
     async def switch_kernel(
-        self,
-        notebook_path: str,
-        kernel_name: str
+        self, notebook_path: str, kernel_name: str
     ) -> dict[str, Any]:
         """Switch notebook to use a different kernel.
 
@@ -212,7 +212,9 @@ class KernelManager:
             self.kernel_tracker.untrack(notebook_path)
 
         # Start new kernel (this will also create a new session)
-        new_kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+        new_kernel_id = await self._start_kernel_for_notebook(
+            notebook_path, kernel_name
+        )
 
         # Update notebook metadata
         self._update_notebook_kernel_metadata(notebook_path, kernel_name)
@@ -221,13 +223,11 @@ class KernelManager:
             "message": f"Kernel switched to {kernel_name}",
             "kernel_name": kernel_name,
             "kernel_id": new_kernel_id,
-            "previous_kernel_id": old_kernel_id
+            "previous_kernel_id": old_kernel_id,
         }
 
     async def shutdown_notebook(
-        self,
-        notebook_path: str,
-        shutdown_kernel: bool = True
+        self, notebook_path: str, shutdown_kernel: bool = True
     ) -> dict[str, Any]:
         """Shutdown notebook session and optionally its kernel.
 
@@ -253,17 +253,17 @@ class KernelManager:
             self.kernel_tracker.untrack(notebook_path)
             return {
                 "message": "Notebook session closed and kernel shut down",
-                "kernel_id": kernel_id
+                "kernel_id": kernel_id,
             }
         if kernel_id:
             self.kernel_tracker.untrack(notebook_path)
             return {
                 "message": "Notebook session closed (kernel still running)",
-                "kernel_id": kernel_id
+                "kernel_id": kernel_id,
             }
         return {
             "message": "Notebook session closed (no kernel was tracked)",
-            "kernel_id": None
+            "kernel_id": None,
         }
 
     async def _delete_session_for_notebook(self, notebook_path: str) -> None:
@@ -295,7 +295,9 @@ class KernelManager:
                 logger.debug(f"No session found to delete for {notebook_path}")
 
         except Exception as e:
-            logger.warning(f"Error deleting session for {notebook_path}: {e}", exc_info=True)
+            logger.warning(
+                f"Error deleting session for {notebook_path}: {e}", exc_info=True
+            )
 
     async def _find_session_for_notebook(
         self, notebook_path: str
@@ -361,16 +363,21 @@ class KernelManager:
                     logger.debug("  -> Matched via normalized path comparison")
 
                 # Strategy 3: Filename match (when paths are relative/different)
-                elif session_name == notebook_name or Path(session_path).name == notebook_name:
+                elif (
+                    session_name == notebook_name
+                    or Path(session_path).name == notebook_name
+                ):
                     path_match = True
                     logger.debug("  -> Matched via filename comparison")
 
                 # Strategy 4: samefile (handles symlinks, relative paths)
                 else:
                     try:
-                        if (Path(session_path).exists()
+                        if (
+                            Path(session_path).exists()
                             and Path(notebook_path).exists()
-                            and Path(session_path).samefile(Path(notebook_path))):
+                            and Path(session_path).samefile(Path(notebook_path))
+                        ):
                             path_match = True
                             logger.debug("  -> Matched via samefile comparison")
                     except (OSError, ValueError):
@@ -395,9 +402,7 @@ class KernelManager:
         return None
 
     async def _start_kernel_for_notebook(
-        self,
-        notebook_path: str,
-        kernel_name: str
+        self, notebook_path: str, kernel_name: str
     ) -> str | None:
         """Start a kernel and track it for a notebook.
 
@@ -451,7 +456,7 @@ class KernelManager:
                 path=api_path,
                 name=notebook_name,
                 type="notebook",
-                kernel_name=kernel_name  # SessionManager will create kernel with this name
+                kernel_name=kernel_name,  # SessionManager will create kernel with this name
             )
 
             kernel_id = session["kernel"]["id"]
@@ -464,10 +469,10 @@ class KernelManager:
                 f"Session ID: {session['id']}, Path: {api_path}, "
                 f"Kernel: {kernel_id} ({kernel_name})"
             )
-           
+
             # Verify session was actually created
             sessions = await session_manager.list_sessions()
-            session_exists = any(s['id'] == session['id'] for s in sessions)
+            session_exists = any(s["id"] == session["id"] for s in sessions)
             if not session_exists:
                 logger.error(
                     f"Session {session['id']} not found in session list after creation!"
@@ -480,7 +485,7 @@ class KernelManager:
         except Exception as e:
             logger.error(
                 f"❌ Session/kernel creation FAILED for {notebook_path}! Error: {e}",
-                exc_info=True
+                exc_info=True,
             )
             return None
 
@@ -502,9 +507,7 @@ class KernelManager:
             logger.warning(f"Error shutting down kernel {kernel_id}: {e}")
 
     def _get_kernel_display_info(
-        self,
-        kernel_name: str,
-        kernelspecs: dict[str, Any]
+        self, kernel_name: str, kernelspecs: dict[str, Any]
     ) -> tuple[str, str]:
         """Get language name and display name for a kernel.
 
@@ -520,9 +523,7 @@ class KernelManager:
         return (info["language"], info["display_name"])
 
     def _update_notebook_kernel_metadata(
-        self,
-        notebook_path: str,
-        kernel_name: str
+        self, notebook_path: str, kernel_name: str
     ) -> None:
         """Update notebook's kernel metadata.
 
@@ -557,7 +558,7 @@ class KernelManager:
             nb.metadata["kernelspec"] = {
                 "name": kernel_name,
                 "display_name": display_name,
-                "language": language_name
+                "language": language_name,
             }
 
             write_notebook(notebook_path, nb)

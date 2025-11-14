@@ -37,7 +37,7 @@ class CellOperations:
         code: str,
         position: int | None = None,
         execute: bool = True,
-        timeout: int | None = None
+        timeout: int | None = None,
     ) -> dict[str, Any]:
         """Add and optionally execute a code cell.
 
@@ -56,10 +56,7 @@ class CellOperations:
 
         # Create cell content
         cell_content = CellContent(
-            source=code,
-            cell_type="code",
-            execution_count=None,
-            outputs=[]
+            source=code, cell_type="code", execution_count=None, outputs=[]
         )
 
         # Add cell
@@ -74,16 +71,12 @@ class CellOperations:
             kernel_id = self.execution_engine.kernel_tracker.get(notebook_path)
 
             return await self.execution_engine.execute_and_update_cell(
-                adapter,
-                actual_position,
-                code,
-                kernel_id=kernel_id,
-                timeout=timeout
+                adapter, actual_position, code, kernel_id=kernel_id, timeout=timeout
             )
 
         return {
             "message": f"Added code cell at position {actual_position}",
-            "position": actual_position
+            "position": actual_position,
         }
 
     async def edit_code_cell(
@@ -92,7 +85,7 @@ class CellOperations:
         position: int,
         code: str,
         execute: bool = True,
-        timeout: int | None = None
+        timeout: int | None = None,
     ) -> dict[str, Any]:
         """Edit and optionally execute a code cell.
 
@@ -121,7 +114,7 @@ class CellOperations:
             cell_type="code",
             metadata=existing_cell.metadata,
             execution_count=None,
-            outputs=[]
+            outputs=[],
         )
 
         # Edit cell
@@ -136,23 +129,16 @@ class CellOperations:
             kernel_id = self.execution_engine.kernel_tracker.get(notebook_path)
 
             return await self.execution_engine.execute_and_update_cell(
-                adapter,
-                position,
-                code,
-                kernel_id=kernel_id,
-                timeout=timeout
+                adapter, position, code, kernel_id=kernel_id, timeout=timeout
             )
 
         return {
             "message": f"Edited code cell at position {position}",
-            "position": position
+            "position": position,
         }
 
     async def add_markdown_cell(
-        self,
-        notebook_path: str,
-        markdown: str,
-        position: int | None = None
+        self, notebook_path: str, markdown: str, position: int | None = None
     ) -> dict[str, Any]:
         """Add a markdown cell.
 
@@ -168,24 +154,18 @@ class CellOperations:
         adapter = await get_notebook_adapter(notebook_path)
 
         # Create cell content
-        cell_content = CellContent(
-            source=markdown,
-            cell_type="markdown"
-        )
+        cell_content = CellContent(source=markdown, cell_type="markdown")
 
         # Add cell
         actual_position = await adapter.add_cell(cell_content, position)
 
         return {
             "message": f"Added markdown cell at position {actual_position}",
-            "position": actual_position
+            "position": actual_position,
         }
 
     async def edit_markdown_cell(
-        self,
-        notebook_path: str,
-        position: int,
-        markdown: str
+        self, notebook_path: str, position: int, markdown: str
     ) -> dict[str, Any]:
         """Edit a markdown cell.
 
@@ -208,9 +188,7 @@ class CellOperations:
 
         # Update content
         cell_content = CellContent(
-            source=markdown,
-            cell_type="markdown",
-            metadata=existing_cell.metadata
+            source=markdown, cell_type="markdown", metadata=existing_cell.metadata
         )
 
         # Edit cell
@@ -218,14 +196,10 @@ class CellOperations:
 
         return {
             "message": f"Edited markdown cell at position {position}",
-            "position": position
+            "position": position,
         }
 
-    async def delete_cell(
-        self,
-        notebook_path: str,
-        position: int
-    ) -> dict[str, Any]:
+    async def delete_cell(self, notebook_path: str, position: int) -> dict[str, Any]:
         """Delete a cell.
 
         Args:
@@ -241,7 +215,4 @@ class CellOperations:
         # Delete cell
         await adapter.delete_cell(position)
 
-        return {
-            "message": f"Deleted cell at position {position}",
-            "position": position
-        }
+        return {"message": f"Deleted cell at position {position}", "position": position}

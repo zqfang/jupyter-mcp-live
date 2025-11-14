@@ -44,9 +44,7 @@ class NbformatAdapter(NotebookAdapter):
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
                 msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
-                raise IndexError(
-                    msg
-                )
+                raise IndexError(msg)
 
             cell = nb.cells[position]
 
@@ -56,13 +54,11 @@ class NbformatAdapter(NotebookAdapter):
                 metadata=dict(cell.metadata),
                 execution_count=getattr(cell, "execution_count", None),
                 outputs=list(getattr(cell, "outputs", [])),
-                cell_id=cell.get("id")
+                cell_id=cell.get("id"),
             )
 
     async def add_cell(
-        self,
-        cell_content: CellContent,
-        position: int | None = None
+        self, cell_content: CellContent, position: int | None = None
     ) -> int:
         """Add cell to notebook file."""
         with NotebookContext(self._notebook_path) as nb:
@@ -78,23 +74,23 @@ class NbformatAdapter(NotebookAdapter):
             source_str = cell_content.get_source_as_string()
 
             if cell_content.cell_type == "code":
-                cell = new_code_cell(
-                    source=source_str,
-                    metadata=cell_content.metadata
-                )
+                cell = new_code_cell(source=source_str, metadata=cell_content.metadata)
                 if cell_content.execution_count is not None:
                     cell.execution_count = cell_content.execution_count
                 if cell_content.outputs:
-                    cell.outputs = convert_outputs_to_notebook_nodes(cell_content.outputs)
+                    cell.outputs = convert_outputs_to_notebook_nodes(
+                        cell_content.outputs
+                    )
             else:
                 cell = new_markdown_cell(
-                    source=source_str,
-                    metadata=cell_content.metadata
+                    source=source_str, metadata=cell_content.metadata
                 )
 
             # Insert cell
             nb.cells.insert(position, cell)
-            logger.info(f"Added {cell_content.cell_type} cell via nbformat at position {position}")
+            logger.info(
+                f"Added {cell_content.cell_type} cell via nbformat at position {position}"
+            )
 
         return position
 
@@ -103,9 +99,7 @@ class NbformatAdapter(NotebookAdapter):
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
                 msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
-                raise IndexError(
-                    msg
-                )
+                raise IndexError(msg)
 
             cell = nb.cells[position]
             cell.source = content.get_source_as_string()
@@ -113,33 +107,28 @@ class NbformatAdapter(NotebookAdapter):
             if content.metadata:
                 cell.metadata = content.metadata
 
-            logger.info(f"Edited {content.cell_type} cell via nbformat at position {position}")
+            logger.info(
+                f"Edited {content.cell_type} cell via nbformat at position {position}"
+            )
 
     async def delete_cell(self, position: int) -> None:
         """Delete cell from notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
                 msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
-                raise IndexError(
-                    msg
-                )
+                raise IndexError(msg)
 
             nb.cells.pop(position)
             logger.info(f"Deleted cell via nbformat at position {position}")
 
     async def update_cell_outputs(
-        self,
-        position: int,
-        execution_count: int | None,
-        outputs: list[dict[str, Any]]
+        self, position: int, execution_count: int | None, outputs: list[dict[str, Any]]
     ) -> None:
         """Update cell outputs in notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
                 msg = f"Cell index {position} out of range (notebook has {len(nb.cells)} cells)"
-                raise IndexError(
-                    msg
-                )
+                raise IndexError(msg)
 
             cell = nb.cells[position]
 
@@ -156,14 +145,16 @@ class NbformatAdapter(NotebookAdapter):
         with NotebookContext(self._notebook_path) as nb:
             cells = []
             for cell in nb.cells:
-                cells.append(CellContent(
-                    source=cell.source,
-                    cell_type=cell.cell_type,
-                    metadata=dict(cell.metadata),
-                    execution_count=getattr(cell, "execution_count", None),
-                    outputs=list(getattr(cell, "outputs", [])),
-                    cell_id=cell.get("id")
-                ))
+                cells.append(
+                    CellContent(
+                        source=cell.source,
+                        cell_type=cell.cell_type,
+                        metadata=dict(cell.metadata),
+                        execution_count=getattr(cell, "execution_count", None),
+                        outputs=list(getattr(cell, "outputs", [])),
+                        cell_id=cell.get("id"),
+                    )
+                )
             return cells
 
     async def get_cell_count(self) -> int:
@@ -183,14 +174,15 @@ class NbformatAdapter(NotebookAdapter):
         return (cell, position)
 
     async def find_cell_by_execution_count(
-        self,
-        execution_count: int
+        self, execution_count: int
     ) -> tuple[CellContent, int] | None:
         """Find code cell by execution count in notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             for i, cell in enumerate(nb.cells):
-                if (cell.cell_type == "code" and
-                    getattr(cell, "execution_count", None) == execution_count):
+                if (
+                    cell.cell_type == "code"
+                    and getattr(cell, "execution_count", None) == execution_count
+                ):
                     # Found it - record position
                     position = i
                     break

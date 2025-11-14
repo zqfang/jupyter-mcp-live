@@ -65,9 +65,7 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
 
 
 async def setup_notebook(
-    notebook_path: str,
-    kernel_name: str = "python3",
-    force_new_kernel: bool = False
+    notebook_path: str, kernel_name: str = "python3", force_new_kernel: bool = False
 ) -> dict[str, Any]:
     """Setup a notebook (create if needed) and start or reuse kernel.
 
@@ -127,12 +125,13 @@ async def setup_notebook(
             - kernel_id: ID of the kernel
             - reused_kernel: bool indicating if an existing kernel was reused
     """
-    return await _kernel_manager.setup_notebook(notebook_path, kernel_name, force_new_kernel)
+    return await _kernel_manager.setup_notebook(
+        notebook_path, kernel_name, force_new_kernel
+    )
 
 
 async def switch_notebook_kernel(
-    notebook_path: str,
-    kernel_name: str
+    notebook_path: str, kernel_name: str
 ) -> dict[str, Any]:
     """Switch notebook to use a different kernel.
 
@@ -163,8 +162,7 @@ async def switch_notebook_kernel(
 
 
 async def shutdown_notebook(
-    notebook_path: str,
-    shutdown_kernel: bool = True
+    notebook_path: str, shutdown_kernel: bool = True
 ) -> dict[str, Any]:
     """Close a notebook session and clean local kernel state.
 
@@ -195,7 +193,7 @@ async def execute_notebook_code(
     notebook_path: str,
     execution_type: ExecutionType,
     position_index: int | None = None,
-    package_names: str | None = None
+    package_names: str | None = None,
 ) -> dict[str, Any] | str:
     """Execute code in a notebook (execute cell or install packages).
 
@@ -232,9 +230,7 @@ async def execute_notebook_code(
         if not package_names:
             msg = "package_names required for install_packages"
             raise ValueError(msg)
-        return await _execution_engine.install_packages(
-            notebook_path, package_names
-        )
+        return await _execution_engine.install_packages(notebook_path, package_names)
     msg = f"Invalid execution_type: {execution_type}"
     raise ValueError(msg)
 
@@ -244,7 +240,7 @@ async def modify_notebook_cells(
     operation: CellOperation,
     cell_content: str | None = None,
     position_index: int | None = None,
-    execute: bool = True
+    execute: bool = True,
 ) -> dict[str, Any]:
     """Modify notebook cells (add, edit, delete).
 
@@ -327,7 +323,7 @@ async def query_notebook(
     query_type: QueryType,
     execution_count: int | None = None,
     position_index: int | None = None,
-    cell_id: str | None = None
+    cell_id: str | None = None,
 ) -> dict[str, Any] | list | str | int:
     """Query notebook information and metadata.
 
@@ -389,7 +385,7 @@ async def query_notebook(
         query_type,
         execution_count=execution_count,
         position_index=position_index,
-        cell_id=cell_id
+        cell_id=cell_id,
     )
 
 
@@ -397,7 +393,7 @@ async def read_cell(
     notebook_path: str,
     position_index: int | None = None,
     cell_id: str | None = None,
-    execution_count: int | None = None
+    execution_count: int | None = None,
 ) -> dict[str, Any]:
     """Read a single notebook cell - convenience function.
 
@@ -428,9 +424,7 @@ async def read_cell(
         "print('Hello World')"
     """
     identifier = CellIdentifier(
-        execution_count=execution_count,
-        position_index=position_index,
-        cell_id=cell_id
+        execution_count=execution_count, position_index=position_index, cell_id=cell_id
     )
 
     return await _query_service.read_cell(notebook_path, identifier)

@@ -7,6 +7,7 @@ from typing import Literal
 
 class KernelLanguage(Enum):
     """Supported kernel languages."""
+
     PYTHON = "python"
     R = "R"
     JULIA = "julia"
@@ -26,6 +27,7 @@ LANGUAGE_PATTERNS = {
 @dataclass(frozen=True)
 class ExecutionConfig:
     """Configuration for code execution."""
+
     default_timeout: int = 30
     kernel_ready_timeout: int = 10
     kernel_startup_delay: float = 1.0
@@ -36,34 +38,27 @@ class ExecutionConfig:
 @dataclass(frozen=True)
 class OutputFilterConfig:
     """Configuration for output filtering."""
+
     max_image_size: int = 100_000  # bytes
     max_html_size: int = 50_000
     filter_mime_types: tuple[str, ...] = (
         "image/png",
         "image/jpeg",
         "image/svg+xml",
-        "text/html"
+        "text/html",
     )
     filter_threshold: int = 1000  # minimum size to consider filtering
 
 
 # Type aliases for operation types
 QueryType = Literal[
-    "view_source",
-    "check_server",
-    "list_sessions",
-    "list_kernels",
-    "get_position_index"
+    "view_source", "check_server", "list_sessions", "list_kernels", "get_position_index"
 ]
 
 ExecutionType = Literal["execute_cell", "install_packages"]
 
 CellOperation = Literal[
-    "add_code",
-    "edit_code",
-    "add_markdown",
-    "edit_markdown",
-    "delete"
+    "add_code", "edit_code", "add_markdown", "edit_markdown", "delete"
 ]
 
 

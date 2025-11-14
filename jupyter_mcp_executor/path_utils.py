@@ -5,6 +5,7 @@ from urllib.parse import unquote
 
 from jupyter_mcp_executor.server_context import get_server_context
 
+
 def normalize_path(path: str) -> str:
     """Normalize a file path to an absolute path.
 
@@ -35,7 +36,7 @@ def normalize_path(path: str) -> str:
     from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
-    if serverapp and hasattr(serverapp, 'root_dir'):
+    if serverapp and hasattr(serverapp, "root_dir"):
         root_dir = serverapp.root_dir
         return str((Path(root_dir) / decoded_path).resolve())
 
@@ -76,7 +77,7 @@ def to_api_path(absolute_path: str) -> str:
     abs_path = Path(absolute_path)
 
     serverapp = get_server_context()
-    if serverapp and hasattr(serverapp, 'root_dir'):
+    if serverapp and hasattr(serverapp, "root_dir"):
         root_dir = Path(serverapp.root_dir)
 
         try:
@@ -84,7 +85,7 @@ def to_api_path(absolute_path: str) -> str:
             if abs_path.is_relative_to(root_dir):
                 relative = abs_path.relative_to(root_dir)
                 # Use forward slashes for API paths (Jupyter convention)
-                return str(relative).replace('\\', '/')
+                return str(relative).replace("\\", "/")
         except (ValueError, AttributeError):
             # is_relative_to not available in Python 3.8, or path not relative
             pass

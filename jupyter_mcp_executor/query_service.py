@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 from jupyter_mcp_executor.notebook_config import QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
@@ -29,7 +30,7 @@ class QueryService:
         query_type: QueryType,
         execution_count: int | None = None,
         position_index: int | None = None,
-        cell_id: str | None = None
+        cell_id: str | None = None,
     ) -> dict[str, Any] | list | str | int:
         """Execute a query operation.
 
@@ -44,34 +45,32 @@ class QueryService:
             Query results (type depends on query_type)
         """
         if query_type == "view_source":
-            return await self.view_source(notebook_path, execution_count, position_index)
+            return await self.view_source(
+                notebook_path, execution_count, position_index
+            )
         if query_type == "check_server":
             return self.check_server()
         if query_type == "list_sessions":
             return await self.list_sessions()
         if query_type == "list_kernels":
-            # Delegate to kernel manager
-            from jupyter_mcp_executor.kernel_manager import (
-                KernelManager,
-            )
             km = KernelManager()
             return await km.list_notebook_kernels()
         if query_type == "get_position_index":
-            return await self.get_position_index(notebook_path, execution_count, cell_id)
+            return await self.get_position_index(
+                notebook_path, execution_count, cell_id
+            )
         msg = (
             f"Invalid query_type: {query_type}. "
             f"Must be one of: view_source, check_server, list_sessions, "
             f"list_kernels, get_position_index"
         )
-        raise ValueError(
-            msg
-        )
+        raise ValueError(msg)
 
     async def view_source(
         self,
         notebook_path: str,
         execution_count: int | None = None,
-        position_index: int | None = None
+        position_index: int | None = None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
         """View source code of notebook cells.
 
@@ -89,26 +88,26 @@ class QueryService:
         # If no identifiers, return all cells
         if execution_count is None and position_index is None:
             cells = await adapter.get_all_cells()
-            return OutputFilter.filter_cells([
-                {
-                    "cell_type": cell.cell_type,
-                    "source": cell.source,
-                    "metadata": cell.metadata,
-                    "execution_count": cell.execution_count,
-                    "outputs": cell.outputs,
-                    "id": cell.cell_id
-                }
-                for cell in cells
-            ])
+            return OutputFilter.filter_cells(
+                [
+                    {
+                        "cell_type": cell.cell_type,
+                        "source": cell.source,
+                        "metadata": cell.metadata,
+                        "execution_count": cell.execution_count,
+                        "outputs": cell.outputs,
+                        "id": cell.cell_id,
+                    }
+                    for cell in cells
+                ]
+            )
 
         # Find specific cell
         if execution_count is not None:
             result = await adapter.find_cell_by_execution_count(execution_count)
             if result is None:
                 msg = f"No code cell with execution_count={execution_count} found"
-                raise ValueError(
-                    msg
-                )
+                raise ValueError(msg)
             cell, position = result
         else:
             # position_index must be set
@@ -123,7 +122,7 @@ class QueryService:
             "execution_count": cell.execution_count,
             "outputs": cell.outputs,
             "id": cell.cell_id,
-            "position": position
+            "position": position,
         }
 
         # Filter outputs if it's a code cell
@@ -166,7 +165,7 @@ class QueryService:
         self,
         notebook_path: str,
         execution_count: int | None = None,
-        cell_id: str | None = None
+        cell_id: str | None = None,
     ) -> int:
         """Get the position index of a cell.
 
@@ -196,9 +195,7 @@ class QueryService:
             result = await adapter.find_cell_by_execution_count(execution_count)
             if result is None:
                 msg = f"No code cell with execution_count={execution_count} found"
-                raise ValueError(
-                    msg
-                )
+                raise ValueError(msg)
             _, position = result
             return position
 
@@ -211,9 +208,7 @@ class QueryService:
         return position
 
     async def read_cell(
-        self,
-        notebook_path: str,
-        identifier: CellIdentifier
+        self, notebook_path: str, identifier: CellIdentifier
     ) -> dict[str, Any]:
         """Read a single cell (convenience function).
 
@@ -237,12 +232,14 @@ class QueryService:
                 raise ValueError(msg)
             _, position = result
         else:  # execution_count
-            result = await adapter.find_cell_by_execution_count(identifier.execution_count)
+            result = await adapter.find_cell_by_execution_count(
+                identifier.execution_count
+            )
             if result is None:
-                msg = f"Cell with execution_count={identifier.execution_count} not found"
-                raise ValueError(
-                    msg
+                msg = (
+                    f"Cell with execution_count={identifier.execution_count} not found"
                 )
+                raise ValueError(msg)
             _, position = result
 
         # Read cell
@@ -256,7 +253,7 @@ class QueryService:
             "execution_count": cell.execution_count,
             "outputs": cell.outputs,
             "id": cell.cell_id,
-            "position": position
+            "position": position,
         }
 
         # Filter outputs if it's a code cell

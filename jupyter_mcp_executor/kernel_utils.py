@@ -69,7 +69,11 @@ def detect_kernel_language_from_name(kernel_name: str) -> str | None:
 
     # R patterns - be more specific to avoid false matches
     # Match if starts with 'r' followed by digit, or exact matches
-    if (kernel_lower.startswith("r") and len(kernel_lower) > 1 and kernel_lower[1].isdigit()):
+    if (
+        kernel_lower.startswith("r")
+        and len(kernel_lower) > 1
+        and kernel_lower[1].isdigit()
+    ):
         return "R"
     if kernel_lower in ["r", "ir", "irkernel"]:
         return "R"
@@ -90,9 +94,7 @@ def detect_kernel_language_from_name(kernel_name: str) -> str | None:
 
 
 def find_kernel_by_language(
-    kernelspecs: dict[str, Any],
-    language: str,
-    prefer_name: str | None = None
+    kernelspecs: dict[str, Any], language: str, prefer_name: str | None = None
 ) -> str | None:
     """Find a kernel name that supports the specified language.
 
@@ -140,9 +142,7 @@ def find_kernel_by_language(
 
 
 def resolve_kernel_name(
-    requested_name: str,
-    kernelspecs: dict[str, Any],
-    fallback: str = "python3"
+    requested_name: str, kernelspecs: dict[str, Any], fallback: str = "python3"
 ) -> str:
     """Resolve a kernel name to an available kernel.
 
@@ -189,7 +189,9 @@ def resolve_kernel_name(
     # First check if requested_name IS a language
     language_match = find_kernel_by_language(kernelspecs, requested_name)
     if language_match:
-        logger.info(f"Resolved language '{requested_name}' to kernel '{language_match}'")
+        logger.info(
+            f"Resolved language '{requested_name}' to kernel '{language_match}'"
+        )
         return language_match
 
     # 3. Try to detect language from requested name pattern
@@ -212,10 +214,7 @@ def resolve_kernel_name(
     return fallback
 
 
-def get_kernel_info(
-    kernel_name: str,
-    kernelspecs: dict[str, Any]
-) -> dict[str, str]:
+def get_kernel_info(kernel_name: str, kernelspecs: dict[str, Any]) -> dict[str, str]:
     """Get kernel information including language and display name.
 
     Args:
@@ -228,10 +227,7 @@ def get_kernel_info(
     Example:
         >>> specs = {
         ...     "rapids": {
-        ...         "spec": {
-        ...             "language": "python",
-        ...             "display_name": "RAPIDS (Python)"
-        ...         }
+        ...         "spec": {"language": "python", "display_name": "RAPIDS (Python)"}
         ...     }
         ... }
         >>> get_kernel_info("rapids", specs)
@@ -241,12 +237,9 @@ def get_kernel_info(
         spec = kernelspecs[kernel_name].get("spec", {})
         return {
             "language": spec.get("language", kernel_name),
-            "display_name": spec.get("display_name", kernel_name)
+            "display_name": spec.get("display_name", kernel_name),
         }
 
     # Fallback: try to detect language from name
     detected_language = detect_kernel_language_from_name(kernel_name)
-    return {
-        "language": detected_language or kernel_name,
-        "display_name": kernel_name
-    }
+    return {"language": detected_language or kernel_name, "display_name": kernel_name}
