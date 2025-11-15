@@ -3,7 +3,6 @@
 import logging
 from typing import Any
 
-from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 from jupyter_mcp_executor.notebook_config import QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
@@ -53,7 +52,8 @@ class QueryService:
         if query_type == "list_sessions":
             return await self.list_sessions()
         if query_type == "list_kernels":
-            return await KernelManager().list_notebook_kernels()
+            # Delegate to kernel manager
+            return await self.list_kernels()
         if query_type == "get_position_index":
             return await self.get_position_index(
                 notebook_path, execution_count, cell_id
@@ -140,6 +140,19 @@ class QueryService:
         if serverapp:
             return "Jupyter server is running and accessible"
         return "Jupyter server context not available"
+
+    async def list_kernels(self) -> list[dict[str, Any]]:
+        """List all notebook kernels on the server.
+
+        Returns:
+            List of kernel dicts
+        """
+        from jupyter_mcp_executor.kernel_manager import (  # noqa: PLC0415
+            KernelManager,
+        )
+
+        km = KernelManager()
+        return await km.list_notebook_kernels()
 
     async def list_sessions(self) -> list[dict[str, Any]]:
         """List all notebook sessions on the server.

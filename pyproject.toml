@@ -92,4 +92,3 @@ docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
-"jupyter_mcp_executor/kernel_manager.py" = ["PLC0415", "I001"]
