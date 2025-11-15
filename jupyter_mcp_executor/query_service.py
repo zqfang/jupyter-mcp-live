@@ -53,8 +53,7 @@ class QueryService:
         if query_type == "list_sessions":
             return await self.list_sessions()
         if query_type == "list_kernels":
-            km = KernelManager()
-            return await km.list_notebook_kernels()
+            return await KernelManager().list_notebook_kernels()
         if query_type == "get_position_index":
             return await self.get_position_index(
                 notebook_path, execution_count, cell_id

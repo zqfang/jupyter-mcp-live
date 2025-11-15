@@ -320,8 +320,8 @@ class KernelManager:
 
         try:
             # Use QueryService to list all active sessions
-            # from jupyter_mcp_executor.query_service import QueryService  # noqa: PLC0415
-            from jupyter_mcp_executor.notebook_execution_tools import _query_service  # noqa: PLC0415
+            from jupyter_mcp_executor.notebook_execution_tools import _query_service
+
             sessions = await _query_service.list_sessions()
 
             # Get the notebook filename for comparison
