@@ -117,7 +117,7 @@ class ExecutionEngine:
         code: str,
         kernel_id: str | None = None,
         timeout: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> ExecutionResult:
         """Execute code and update cell with results in one atomic operation.
 
         This method is YDoc-aware: it updates outputs in YDoc for open notebooks,
@@ -131,7 +131,7 @@ class ExecutionEngine:
             timeout: Execution timeout
 
         Returns:
-            Filtered execution result dict for MCP response
+            ExecutionResult Pydantic model with execution details
         """
         if timeout is None:
             timeout = EXECUTION_CONFIG.default_timeout
@@ -160,12 +160,12 @@ class ExecutionEngine:
                 exec_result.outputs,
             )
 
-        # Return filtered result for MCP
-        return exec_result.to_filtered_dict()
+        # Return ExecutionResult (caller can convert to dict if needed)
+        return exec_result
 
     async def execute_cell_by_position(
         self, notebook_path: str, position: int, timeout: int | None = None
-    ) -> dict[str, Any]:
+    ) -> ExecutionResult:
         """Execute an existing cell by position.
 
         Args:
@@ -174,7 +174,7 @@ class ExecutionEngine:
             timeout: Execution timeout
 
         Returns:
-            Filtered execution result dict
+            ExecutionResult Pydantic model with execution details
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -182,10 +182,13 @@ class ExecutionEngine:
         # Read cell code
         cell = await adapter.read_cell(position)
         if cell.cell_type != "code":
-            return {
-                "error": f"Cell at position {position} is not a code cell",
-                "status": "error",
-            }
+            return ExecutionResult(
+                execution_count=None,
+                outputs=[],
+                status="error",
+                kernel_id="",
+                error=f"Cell at position {position} is not a code cell",
+            )
 
         code = cell.get_source_as_string()
 
@@ -196,65 +199,6 @@ class ExecutionEngine:
         return await self.execute_and_update_cell(
             adapter, position, code, kernel_id=kernel_id, timeout=timeout
         )
-
-    async def install_packages(self, notebook_path: str, package_names: str) -> str:
-        """Install Python packages in the notebook's kernel environment.
-
-        Args:
-            notebook_path: Path to notebook
-            package_names: Space-separated package names
-
-        Returns:
-            Installation result message
-        """
-        notebook_path = normalize_path(notebook_path)
-
-        # Get or start kernel
-        kernel_id = self.kernel_tracker.get(notebook_path)
-        if not kernel_id:
-            logger.info("No kernel found, starting new kernel for package installation")
-            result = await self.execute_cell_code(
-                code="",  # Empty code to just start kernel
-                kernel_id=None,
-                timeout=10,
-            )
-            kernel_id = result.kernel_id
-            self.kernel_tracker.track(notebook_path, kernel_id)
-
-        # Execute pip install command
-        install_code = f"""
-import sys
-import subprocess
-
-packages = "{package_names}"
-result = subprocess.run(
-    [sys.executable, "-m", "pip", "install"] + packages.split(),
-    capture_output=True,
-    text=True
-)
-
-if result.returncode == 0:
-    print(f"Successfully installed: {{packages}}")
-else:
-    print(f"Installation failed:\\n{{result.stderr}}")
-"""
-
-        result = await self.execute_cell_code(
-            code=install_code,
-            kernel_id=kernel_id,
-            timeout=300,  # 5 minutes for package installation
-        )
-
-        if result.status == "error":
-            return f"Package installation failed: {result.error}"
-
-        # Extract output text
-        output_text = ""
-        for output in result.outputs:
-            if output.get("output_type") == "stream":
-                output_text += output.get("text", "")
-
-        return output_text or f"Package installation completed for: {package_names}"
 
     async def _persist_outputs_to_disk(
         self,

@@ -5,7 +5,7 @@ from typing import Any
 
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 from jupyter_mcp_executor.notebook_config import QueryType
-from jupyter_mcp_executor.notebook_models import CellIdentifier
+from jupyter_mcp_executor.notebook_models import CellIdentifier, CellInfo
 from jupyter_mcp_executor.output_filter import OutputFilter
 from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.server_context import (
@@ -204,7 +204,7 @@ class QueryService:
 
     async def read_cell(
         self, notebook_path: str, identifier: CellIdentifier
-    ) -> dict[str, Any]:
+    ) -> CellInfo:
         """Read a single cell (convenience function).
 
         Args:
@@ -212,7 +212,7 @@ class QueryService:
             identifier: Cell identifier
 
         Returns:
-            Cell content dict
+            CellInfo Pydantic model with cell content
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -240,19 +240,25 @@ class QueryService:
         # Read cell
         cell = await adapter.read_cell(position)
 
-        # Build result dict
-        cell_dict = {
-            "cell_type": cell.cell_type,
-            "source": cell.source,
-            "metadata": cell.metadata,
-            "execution_count": cell.execution_count,
-            "outputs": cell.outputs,
-            "id": cell.cell_id,
-            "position": position,
-        }
+        # Get source as string
+        source = (
+            cell.get_source_as_string()
+            if hasattr(cell, "get_source_as_string")
+            else (cell.source if isinstance(cell.source, str) else "".join(cell.source))
+        )
 
         # Filter outputs if it's a code cell
-        if cell.cell_type == "code":
-            cell_dict["outputs"] = OutputFilter.filter_outputs(cell.outputs)
+        filtered_outputs = (
+            OutputFilter.filter_outputs(cell.outputs)
+            if cell.cell_type == "code"
+            else []
+        )
 
-        return cell_dict
+        return CellInfo(
+            cell_type=cell.cell_type,
+            source=source,
+            position=position,
+            execution_count=cell.execution_count,
+            outputs=filtered_outputs,
+            id=cell.cell_id or "",
+        )

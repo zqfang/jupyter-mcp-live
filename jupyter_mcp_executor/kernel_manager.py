@@ -10,6 +10,11 @@ from nbformat.v4 import new_notebook
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import get_kernel_info, resolve_kernel_name
 from jupyter_mcp_executor.notebook_io import write_notebook
+from jupyter_mcp_executor.notebook_models import (
+    KernelSwitchResult,
+    NotebookSetupResult,
+    ShutdownResult,
+)
 from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
 from jupyter_mcp_executor.server_context import (
     get_server_context,
@@ -53,7 +58,7 @@ class KernelManager:
         notebook_path: str,
         kernel_name: str = "python3",
         force_new_kernel: bool = False,
-    ) -> dict[str, Any]:
+    ) -> NotebookSetupResult:
         """Setup a notebook (create if needed) and start or reuse kernel.
 
         This function supports collaborative usage by checking for existing kernel
@@ -74,8 +79,7 @@ class KernelManager:
             force_new_kernel: If True, always start a new kernel even if one exists
 
         Returns:
-            Dict with notebook info and kernel details, including:
-            - reused_kernel: bool indicating if an existing kernel was reused
+            NotebookSetupResult with notebook info and kernel details
         """
         notebook_path = normalize_path(notebook_path)
 
@@ -158,34 +162,35 @@ class KernelManager:
                     notebook_path, kernel_name
                 )
 
-            message = f"Notebook {notebook_path} created with kernel {kernel_name}"
+            logger.info(f"Notebook {notebook_path} created with kernel {kernel_name}")
         else:
             # Step 3b/3c: Notebook exists
             if reused_kernel:
                 # Step 3b: Reusing existing kernel
-                message = f"Notebook {notebook_path} exists (reused existing kernel {kernel_name})"
+                logger.info(
+                    f"Notebook {notebook_path} exists (reused existing kernel {kernel_name})"
+                )
             else:
                 # Step 3c: Start new kernel for existing notebook
                 if kernel_id is None:
                     kernel_id = await self._start_kernel_for_notebook(
                         notebook_path, kernel_name
                     )
-                message = f"Notebook {notebook_path} exists (started new kernel {kernel_name})"
+                logger.info(
+                    f"Notebook {notebook_path} exists (started new kernel {kernel_name})"
+                )
 
         # Return notebook info
-        return {
-            "path": notebook_path,
-            "name": Path(notebook_path).name,
-            "message": message,
-            "exists": notebook_exists,
-            "kernel_name": kernel_name,
-            "kernel_id": kernel_id,
-            "reused_kernel": reused_kernel,
-        }
+        return NotebookSetupResult(
+            path=notebook_path,
+            exists=notebook_exists,
+            kernel_name=kernel_name,
+            kernel_id=kernel_id,
+        )
 
     async def switch_kernel(
         self, notebook_path: str, kernel_name: str
-    ) -> dict[str, Any]:
+    ) -> KernelSwitchResult:
         """Switch notebook to use a different kernel.
 
         Deletes the old session, shuts down the old kernel, and creates
@@ -196,7 +201,7 @@ class KernelManager:
             kernel_name: New kernel name
 
         Returns:
-            Dict with status and new kernel info
+            KernelSwitchResult with status and new kernel info
         """
         notebook_path = normalize_path(notebook_path)
 
@@ -217,16 +222,15 @@ class KernelManager:
         # Update notebook metadata
         self._update_notebook_kernel_metadata(notebook_path, kernel_name)
 
-        return {
-            "message": f"Kernel switched to {kernel_name}",
-            "kernel_name": kernel_name,
-            "kernel_id": new_kernel_id,
-            "previous_kernel_id": old_kernel_id,
-        }
+        return KernelSwitchResult(
+            kernel_name=kernel_name,
+            kernel_id=new_kernel_id,
+            previous_kernel_id=old_kernel_id,
+        )
 
     async def shutdown_notebook(
         self, notebook_path: str, shutdown_kernel: bool = True
-    ) -> dict[str, Any]:
+    ) -> ShutdownResult:
         """Shutdown notebook session and optionally its kernel.
 
         Deletes the Jupyter session and optionally shuts down the kernel.
@@ -237,7 +241,7 @@ class KernelManager:
             shutdown_kernel: Whether to shutdown the kernel
 
         Returns:
-            Dict with status message
+            ShutdownResult with status message
         """
         notebook_path = normalize_path(notebook_path)
 
@@ -249,20 +253,20 @@ class KernelManager:
         if kernel_id and shutdown_kernel:
             await self._shutdown_kernel(kernel_id)
             self.kernel_tracker.untrack(notebook_path)
-            return {
-                "message": "Notebook session closed and kernel shut down",
-                "kernel_id": kernel_id,
-            }
+            return ShutdownResult(
+                message="Notebook session closed and kernel shut down",
+                kernel_id=kernel_id,
+            )
         if kernel_id:
             self.kernel_tracker.untrack(notebook_path)
-            return {
-                "message": "Notebook session closed (kernel still running)",
-                "kernel_id": kernel_id,
-            }
-        return {
-            "message": "Notebook session closed (no kernel was tracked)",
-            "kernel_id": None,
-        }
+            return ShutdownResult(
+                message="Notebook session closed (kernel still running)",
+                kernel_id=kernel_id,
+            )
+        return ShutdownResult(
+            message="Notebook session closed (no kernel was tracked)",
+            kernel_id=None,
+        )
 
     async def _delete_session_for_notebook(self, notebook_path: str) -> None:
         """Delete the Jupyter session for a notebook.

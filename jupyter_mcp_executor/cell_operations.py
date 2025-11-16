@@ -1,12 +1,15 @@
 """High-level cell operations service."""
 
 import logging
-from typing import Any
 
 from jupyter_mcp_executor.execution_engine import ExecutionEngine
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
-from jupyter_mcp_executor.notebook_models import CellContent
+from jupyter_mcp_executor.notebook_models import (
+    CellContent,
+    CellOperationResult,
+    ExecutionResult,
+)
 from jupyter_mcp_executor.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
@@ -38,7 +41,7 @@ class CellOperations:
         position: int | None = None,
         execute: bool = True,
         timeout: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> ExecutionResult | CellOperationResult:
         """Add and optionally execute a code cell.
 
         Args:
@@ -49,7 +52,7 @@ class CellOperations:
             timeout: Execution timeout in seconds
 
         Returns:
-            Execution result dict if execute=True, else status dict
+            ExecutionResult if execute=True, else CellOperationResult (both Pydantic models)
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -74,10 +77,11 @@ class CellOperations:
                 adapter, actual_position, code, kernel_id=kernel_id, timeout=timeout
             )
 
-        return {
-            "message": f"Added code cell at position {actual_position}",
-            "position": actual_position,
-        }
+        return CellOperationResult(
+            message=f"Added code cell at position {actual_position}",
+            position=actual_position,
+            cell_type="code",
+        )
 
     async def edit_code_cell(
         self,
@@ -86,7 +90,7 @@ class CellOperations:
         code: str,
         execute: bool = True,
         timeout: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> ExecutionResult | CellOperationResult:
         """Edit and optionally execute a code cell.
 
         Args:
@@ -97,7 +101,7 @@ class CellOperations:
             timeout: Execution timeout in seconds
 
         Returns:
-            Execution result dict if execute=True, else status dict
+            ExecutionResult if execute=True, else CellOperationResult (both Pydantic models)
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -132,14 +136,15 @@ class CellOperations:
                 adapter, position, code, kernel_id=kernel_id, timeout=timeout
             )
 
-        return {
-            "message": f"Edited code cell at position {position}",
-            "position": position,
-        }
+        return CellOperationResult(
+            message=f"Edited code cell at position {position}",
+            position=position,
+            cell_type="code",
+        )
 
     async def add_markdown_cell(
         self, notebook_path: str, markdown: str, position: int | None = None
-    ) -> dict[str, Any]:
+    ) -> CellOperationResult:
         """Add a markdown cell.
 
         Args:
@@ -148,7 +153,7 @@ class CellOperations:
             position: Position to insert (None = end)
 
         Returns:
-            Status dict with position
+            CellOperationResult with position and message
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -159,14 +164,15 @@ class CellOperations:
         # Add cell
         actual_position = await adapter.add_cell(cell_content, position)
 
-        return {
-            "message": f"Added markdown cell at position {actual_position}",
-            "position": actual_position,
-        }
+        return CellOperationResult(
+            message=f"Added markdown cell at position {actual_position}",
+            position=actual_position,
+            cell_type="markdown",
+        )
 
     async def edit_markdown_cell(
         self, notebook_path: str, position: int, markdown: str
-    ) -> dict[str, Any]:
+    ) -> CellOperationResult:
         """Edit a markdown cell.
 
         Args:
@@ -175,7 +181,7 @@ class CellOperations:
             markdown: New markdown content
 
         Returns:
-            Status dict
+            CellOperationResult with position and message
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -194,12 +200,15 @@ class CellOperations:
         # Edit cell
         await adapter.edit_cell(position, cell_content)
 
-        return {
-            "message": f"Edited markdown cell at position {position}",
-            "position": position,
-        }
+        return CellOperationResult(
+            message=f"Edited markdown cell at position {position}",
+            position=position,
+            cell_type="markdown",
+        )
 
-    async def delete_cell(self, notebook_path: str, position: int) -> dict[str, Any]:
+    async def delete_cell(
+        self, notebook_path: str, position: int
+    ) -> CellOperationResult:
         """Delete a cell.
 
         Args:
@@ -207,7 +216,7 @@ class CellOperations:
             position: Cell position to delete
 
         Returns:
-            Status dict
+            CellOperationResult with position and message
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
@@ -215,4 +224,6 @@ class CellOperations:
         # Delete cell
         await adapter.delete_cell(position)
 
-        return {"message": f"Deleted cell at position {position}", "position": position}
+        return CellOperationResult(
+            message=f"Deleted cell at position {position}", position=position
+        )

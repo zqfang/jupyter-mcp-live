@@ -55,8 +55,6 @@ QueryType = Literal[
     "view_source", "check_server", "list_sessions", "list_kernels", "get_position_index"
 ]
 
-ExecutionType = Literal["execute_cell", "install_packages"]
-
 CellOperation = Literal[
     "add_code", "edit_code", "add_markdown", "edit_markdown", "delete"
 ]

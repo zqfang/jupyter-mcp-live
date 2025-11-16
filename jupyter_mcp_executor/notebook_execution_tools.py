@@ -9,7 +9,7 @@ the MCP-exported function interfaces that are registered as MCP tools.
 
 from typing import Any
 
-from jupyter_mcp_executor.notebook_config import CellOperation, ExecutionType, QueryType
+from jupyter_mcp_executor.notebook_config import CellOperation, QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
 from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.server_context import get_server_context, set_server_context
@@ -106,16 +106,14 @@ async def setup_notebook(
     Returns:
         dict: Information about the notebook and status message, including:
             - path: Normalized notebook path
-            - name: Notebook filename
-            - message: Status message
             - exists: Whether notebook existed before this call
             - kernel_name: Name of the kernel being used
             - kernel_id: ID of the kernel
-            - reused_kernel: bool indicating if an existing kernel was reused
     """
-    return await container.kernel_manager.setup_notebook(
+    result = await container.kernel_manager.setup_notebook(
         notebook_path, kernel_name, force_new_kernel
     )
+    return result.model_dump(exclude_none=True)
 
 
 async def switch_notebook_kernel(
@@ -132,21 +130,22 @@ async def switch_notebook_kernel(
 
     Returns:
         dict: Status information containing:
-            - message: Status message
             - kernel_name: Name of the new kernel
             - kernel_id: ID of the new kernel
+            - previous_kernel_id: ID of the previous kernel that was shut down
 
     Example:
         >>> # Switch from Python to R
         >>> result = await switch_notebook_kernel("analysis.ipynb", "ir")
         >>> print(result)
         {
-            "message": "Kernel switched to ir",
             "kernel_name": "ir",
-            "kernel_id": "xyz789"
+            "kernel_id": "xyz789",
+            "previous_kernel_id": "abc123"
         }
     """
-    return await container.kernel_manager.switch_kernel(notebook_path, kernel_name)
+    result = await container.kernel_manager.switch_kernel(notebook_path, kernel_name)
+    return result.model_dump(exclude_none=True)
 
 
 async def shutdown_notebook(
@@ -174,57 +173,46 @@ async def shutdown_notebook(
             "kernel_id": "abc123"
         }
     """
-    return await container.kernel_manager.shutdown_notebook(
+    result = await container.kernel_manager.shutdown_notebook(
         notebook_path, shutdown_kernel
     )
+    return result.model_dump(exclude_none=True)
 
 
 async def execute_notebook_code(
     notebook_path: str,
-    execution_type: ExecutionType,
-    position_index: int | None = None,
-    package_names: str | None = None,
-) -> dict[str, Any] | str:
-    """Execute code in a notebook (execute cell or install packages).
-
-    This consolidates all code execution operations into a single tool following MCP best practices.
+    position_index: int,
+) -> dict[str, Any]:
+    """Execute an existing code cell in a notebook.
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
-        execution_type: Type of execution operation. Options:
-            - 'execute_cell': Execute an existing code cell
-            - 'install_packages': Install packages using pip in the notebook environment
-        position_index: (For execute_cell) Positional index of cell to execute
-        package_names: (For install_packages) Space-separated list of package names to install
+        position_index: Positional index of cell to execute (0-based)
 
     Returns:
-        Union[dict, str]:
-            - execute_cell: dict with execution_count, outputs, status
-            - install_packages: str with installation result message
+        dict with execution_count, outputs, status, kernel_id, and started_new_kernel flag
 
     Raises:
-        ValueError: If invalid execution_type or missing required parameters
+        ValueError: If cell at position_index is not a code cell
         IndexError: If position_index is out of range
         RuntimeError: If kernel execution fails
+
+    Example:
+        result = await execute_notebook_code("notebook.ipynb", position_index=0)
+        # Returns: {
+        #     "execution_count": 1,
+        #     "outputs": [...],
+        #     "status": "ok",
+        #     "kernel_id": "abc-123",
+        #     "started_new_kernel": False
+        # }
     """
     notebook_path = normalize_path(notebook_path)
-
-    if execution_type == "execute_cell":
-        if position_index is None:
-            msg = "position_index required for execute_cell"
-            raise ValueError(msg)
-        return await container.execution_engine.execute_cell_by_position(
-            notebook_path, position_index
-        )
-    if execution_type == "install_packages":
-        if not package_names:
-            msg = "package_names required for install_packages"
-            raise ValueError(msg)
-        return await container.execution_engine.install_packages(
-            notebook_path, package_names
-        )
-    msg = f"Invalid execution_type: {execution_type}"
-    raise ValueError(msg)
+    result = await container.execution_engine.execute_cell_by_position(
+        notebook_path, position_index
+    )
+    # Convert ExecutionResult to filtered dict for MCP response
+    return result.to_filtered_dict()
 
 
 async def modify_notebook_cells(
@@ -272,41 +260,54 @@ async def modify_notebook_cells(
         if cell_content is None:
             msg = "cell_content required for add_code"
             raise ValueError(msg)
-        return await container.cell_operations.add_code_cell(
+        result = await container.cell_operations.add_code_cell(
             notebook_path, cell_content, position_index, execute
         )
+        # Convert Pydantic model to dict
+        # ExecutionResult uses to_filtered_dict() for token efficiency
+        if hasattr(result, "to_filtered_dict"):
+            return result.to_filtered_dict()
+        return result.model_dump(exclude_none=True)
 
     if operation == "edit_code":
         if cell_content is None or position_index is None:
             msg = "cell_content and position_index required for edit_code"
             raise ValueError(msg)
-        return await container.cell_operations.edit_code_cell(
+        result = await container.cell_operations.edit_code_cell(
             notebook_path, position_index, cell_content, execute
         )
+        # Convert Pydantic model to dict
+        # ExecutionResult uses to_filtered_dict() for token efficiency
+        if hasattr(result, "to_filtered_dict"):
+            return result.to_filtered_dict()
+        return result.model_dump(exclude_none=True)
 
     if operation == "add_markdown":
         if cell_content is None:
             msg = "cell_content required for add_markdown"
             raise ValueError(msg)
-        return await container.cell_operations.add_markdown_cell(
+        result = await container.cell_operations.add_markdown_cell(
             notebook_path, cell_content, position_index
         )
+        return result.model_dump(exclude_none=True)
 
     if operation == "edit_markdown":
         if cell_content is None or position_index is None:
             msg = "cell_content and position_index required for edit_markdown"
             raise ValueError(msg)
-        return await container.cell_operations.edit_markdown_cell(
+        result = await container.cell_operations.edit_markdown_cell(
             notebook_path, position_index, cell_content
         )
+        return result.model_dump(exclude_none=True)
 
     if operation == "delete":
         if position_index is None:
             msg = "position_index required for delete"
             raise ValueError(msg)
-        return await container.cell_operations.delete_cell(
+        result = await container.cell_operations.delete_cell(
             notebook_path, position_index
         )
+        return result.model_dump(exclude_none=True)
 
     msg = f"Invalid operation: {operation}"
     raise ValueError(msg)
@@ -409,7 +410,6 @@ async def read_cell(
         dict: Cell information containing:
             - cell_type: "code" or "markdown"
             - source: Cell source code or markdown
-            - metadata: Cell metadata
             - execution_count: Execution count (code cells only)
             - outputs: Cell outputs (code cells only, filtered for token efficiency)
             - id: Cell UUID
@@ -426,7 +426,8 @@ async def read_cell(
         execution_count=execution_count, position_index=position_index, cell_id=cell_id
     )
 
-    return await container.query_service.read_cell(notebook_path, identifier)
+    result = await container.query_service.read_cell(notebook_path, identifier)
+    return result.model_dump(exclude_none=True)
 
 
 # Export context management functions (used by extension.py)

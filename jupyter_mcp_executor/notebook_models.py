@@ -1,7 +1,9 @@
 """Data models for notebook operations."""
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 @dataclass
@@ -36,47 +38,73 @@ class CellIdentifier:
         return "cell_id"
 
 
-@dataclass
-class KernelInfo:
-    """Information about a running kernel."""
+class KernelInfo(BaseModel):
+    """Information about a running Jupyter kernel."""
 
-    id: str
-    name: str
-    last_activity: str | None
-    execution_state: str
-    connections: int
-
-
-@dataclass
-class ExecutionResult:
-    """Result of code execution."""
-
-    execution_count: int | None
-    outputs: list[dict[str, Any]]
-    status: str
-    kernel_id: str
-    started_new_kernel: bool = False
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for MCP response."""
-        result = {
-            "execution_count": self.execution_count,
-            "outputs": self.outputs,
-            "status": self.status,
-            "kernel_id": self.kernel_id,
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": "abc-123-def",
+                    "name": "python3",
+                    "last_activity": "2025-01-16T10:30:00Z",
+                    "execution_state": "idle",
+                    "connections": 1,
+                }
+            ]
         }
-        if self.started_new_kernel:
-            result["started_new_kernel"] = True
-        if self.error:
-            result["error"] = self.error
-        return result
+    )
+
+    id: str = Field(description="Unique identifier for the kernel")
+    name: str = Field(description="Name of the kernel spec (e.g., 'python3', 'ir')")
+    last_activity: str | None = Field(
+        None, description="ISO timestamp of last activity"
+    )
+    execution_state: str = Field(
+        description="Current execution state: 'idle', 'busy', or 'starting'"
+    )
+    connections: int = Field(ge=0, description="Number of active connections")
+
+
+class ExecutionResult(BaseModel):
+    """Result of code execution in a Jupyter kernel."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "execution_count": 1,
+                    "outputs": [
+                        {"output_type": "stream", "name": "stdout", "text": "Hello\n"}
+                    ],
+                    "status": "ok",
+                    "kernel_id": "abc-123-def",
+                    "started_new_kernel": False,
+                }
+            ]
+        }
+    )
+
+    execution_count: int | None = Field(
+        None, description="Execution count assigned by the kernel"
+    )
+    outputs: list[dict[str, Any]] = Field(
+        default_factory=list, description="List of outputs from code execution"
+    )
+    status: Literal["ok", "error"] = Field(
+        description="Execution status: 'ok' for success, 'error' for failure"
+    )
+    kernel_id: str = Field(description="ID of the kernel that executed the code")
+    started_new_kernel: bool = Field(
+        False, description="Whether a new kernel was started for this execution"
+    )
+    error: str | None = Field(None, description="Error message if status is 'error'")
 
     def to_filtered_dict(self) -> dict[str, Any]:
         """Convert to dict with filtered outputs for MCP response."""
         from jupyter_mcp_executor.output_filter import OutputFilter  # noqa: PLC0415
 
-        result = self.to_dict()
+        result = self.model_dump(exclude_none=True)
         result["outputs"] = OutputFilter.filter_outputs(self.outputs)
         return result
 
@@ -99,12 +127,161 @@ class CellContent:
         return "".join(self.source)
 
 
-@dataclass
-class NotebookInfo:
-    """Information about a notebook."""
+class CellOperationResult(BaseModel):
+    """Result of a cell operation (add, edit, delete).
 
-    path: str
-    kernel_name: str
-    kernel_id: str | None
-    cell_count: int
-    is_open: bool  # Whether notebook is open in JupyterLab (YDoc available)
+    This is a lightweight result for non-execution operations.
+    For code execution results, use ExecutionResult instead.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "message": "Added markdown cell at position 0",
+                    "position": 0,
+                    "cell_type": "markdown",
+                }
+            ]
+        }
+    )
+
+    message: str = Field(
+        description="Human-readable description of the operation performed"
+    )
+    position: int = Field(
+        ge=0, description="Zero-indexed position of the cell in the notebook"
+    )
+    cell_type: Literal["code", "markdown"] | None = Field(
+        None,
+        description="Type of cell: 'code' for executable code, 'markdown' for text",
+    )
+
+
+class NotebookInfo(BaseModel):
+    """Information about a Jupyter notebook."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "path": "/path/to/notebook.ipynb",
+                    "kernel_name": "python3",
+                    "kernel_id": "abc-123-def",
+                    "cell_count": 5,
+                    "is_open": True,
+                }
+            ]
+        }
+    )
+
+    path: str = Field(description="Path to the notebook file")
+    kernel_name: str = Field(
+        description="Name of the kernel spec associated with this notebook"
+    )
+    kernel_id: str | None = Field(None, description="ID of the running kernel if any")
+    cell_count: int = Field(ge=0, description="Number of cells in the notebook")
+    is_open: bool = Field(
+        description="Whether notebook is open in JupyterLab (YDoc collaborative mode available)"
+    )
+
+
+class NotebookSetupResult(BaseModel):
+    """Result of setting up a notebook."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "path": "/path/to/notebook.ipynb",
+                    "exists": True,
+                    "kernel_name": "python3",
+                    "kernel_id": "abc-123-def",
+                }
+            ]
+        }
+    )
+
+    path: str = Field(description="Path to the notebook file")
+    exists: bool = Field(
+        description="Whether the notebook already existed before setup"
+    )
+    kernel_name: str = Field(description="Name of the kernel spec that was started")
+    kernel_id: str = Field(description="ID of the running kernel")
+
+
+class KernelSwitchResult(BaseModel):
+    """Result of switching a notebook's kernel."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "kernel_name": "python3",
+                    "kernel_id": "new-kernel-123",
+                    "previous_kernel_id": "old-kernel-456",
+                }
+            ]
+        }
+    )
+
+    kernel_name: str = Field(description="Name of the new kernel spec that was started")
+    kernel_id: str = Field(description="ID of the new running kernel")
+    previous_kernel_id: str | None = Field(
+        None, description="ID of the previous kernel that was shut down"
+    )
+
+
+class ShutdownResult(BaseModel):
+    """Result of shutting down a notebook's kernel."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"message": "Kernel shut down successfully", "kernel_id": "abc-123-def"}
+            ]
+        }
+    )
+
+    message: str = Field(
+        description="Human-readable description of the shutdown result"
+    )
+    kernel_id: str | None = Field(
+        None, description="ID of the kernel that was shut down"
+    )
+
+
+class CellInfo(BaseModel):
+    """Information about a notebook cell."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "cell_type": "code",
+                    "source": "print('hello')",
+                    "position": 0,
+                    "execution_count": 1,
+                    "outputs": [
+                        {"output_type": "stream", "name": "stdout", "text": "hello\n"}
+                    ],
+                    "id": "abc-123-def",
+                }
+            ]
+        }
+    )
+
+    cell_type: Literal["code", "markdown"] = Field(
+        description="Type of cell: 'code' for executable code, 'markdown' for text"
+    )
+    source: str = Field(description="Source code or markdown content of the cell")
+    position: int = Field(
+        ge=0, description="Zero-indexed position of the cell in the notebook"
+    )
+    execution_count: int | None = Field(
+        None, description="Execution count for code cells (None for markdown)"
+    )
+    outputs: list[dict[str, Any]] = Field(
+        default_factory=list, description="List of outputs (for code cells only)"
+    )
+    id: str = Field(description="Unique identifier for the cell")

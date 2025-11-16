@@ -453,7 +453,6 @@ class TestExecuteNotebookCode:
         # ExecutionEngine checks server context and returns error dict
         result = await execute_notebook_code(
             temp_notebook,
-            "execute_cell",
             position_index=0
         )
         assert result["status"] == "error"
@@ -471,34 +470,11 @@ class TestExecuteNotebookCode:
 
         result = await execute_notebook_code(
             temp_notebook,
-            "execute_cell",
             position_index=0
         )
 
         assert result["status"] == "ok"
         assert "execution_count" in result
-
-    @pytest.mark.asyncio
-    async def test_install_packages(self, temp_notebook, mock_serverapp):
-        """Test installing packages."""
-        set_server_context(mock_serverapp)
-
-        result = await execute_notebook_code(
-            temp_notebook,
-            "install_packages",
-            package_names="numpy pandas"
-        )
-
-        assert isinstance(result, str)
-
-    @pytest.mark.asyncio
-    async def test_invalid_execution_type(self, temp_notebook):
-        """Test invalid execution type."""
-        with pytest.raises(ValueError, match="Invalid execution_type"):
-            await execute_notebook_code(
-                temp_notebook,
-                "invalid_type"
-            )
 
 
 class TestSetupNotebook:
@@ -553,8 +529,8 @@ class TestSetupNotebook:
 
         # Verify the existing kernel was reused
         assert result["kernel_id"] == existing_kernel_id
-        assert result["reused_kernel"] is True
-        assert "reused existing kernel" in result["message"]
+        assert result["exists"] is True
+        assert result["kernel_name"] == "python3"
 
         # Verify no new kernel was started (should still have only 1 kernel)
         assert len(mock_serverapp.kernel_manager.kernels) == 1
@@ -569,8 +545,8 @@ class TestSetupNotebook:
 
         # Verify a new kernel was started
         assert result["kernel_id"] is not None
-        assert result["reused_kernel"] is False
-        assert "reused" not in result["message"]
+        assert result["exists"] is True  # Notebook file exists
+        assert result["kernel_name"] == "python3"
 
         # Verify a kernel was created
         assert len(mock_serverapp.kernel_manager.kernels) == 1
@@ -592,7 +568,8 @@ class TestSetupNotebook:
 
         # Verify a NEW kernel was started (not the existing one)
         assert result["kernel_id"] != existing_kernel_id
-        assert result["reused_kernel"] is False
+        assert result["exists"] is True
+        assert result["kernel_name"] == "python3"
 
         # Verify a new kernel was created (should now have 2 kernels)
         assert len(mock_serverapp.kernel_manager.kernels) == 2
@@ -615,7 +592,8 @@ class TestSetupNotebook:
         # Verify a new kernel was started (not the dead one)
         assert result["kernel_id"] != dead_kernel_id
         assert result["kernel_id"] is not None
-        assert result["reused_kernel"] is False
+        assert result["exists"] is True
+        assert result["kernel_name"] == "python3"
 
         # Verify a new kernel was created
         assert len(mock_serverapp.kernel_manager.kernels) == 1
@@ -650,7 +628,8 @@ class TestShutdownNotebook:
         """Test shutdown notebook with no tracked kernel."""
         result = await shutdown_notebook(temp_notebook)
         assert "message" in result
-        assert result["kernel_id"] is None
+        # kernel_id is excluded when None due to exclude_none=True
+        assert result.get("kernel_id") is None
 
     @pytest.mark.asyncio
     async def test_shutdown_notebook_with_kernel(self, temp_notebook, mock_serverapp):

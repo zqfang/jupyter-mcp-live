@@ -203,12 +203,12 @@ def test_execution_result_model():
         started_new_kernel=True
     )
 
-    # Test to_dict
-    result_dict = result.to_dict()
+    # Test model_dump (Pydantic method)
+    result_dict = result.model_dump(exclude_none=True)
     assert result_dict["execution_count"] == 1
     assert result_dict["started_new_kernel"] is True
 
-    # Test to_filtered_dict
+    # Test to_filtered_dict (custom method)
     filtered_dict = result.to_filtered_dict()
     assert "outputs" in filtered_dict
 
