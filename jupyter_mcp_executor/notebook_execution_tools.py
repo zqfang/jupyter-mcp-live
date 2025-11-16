@@ -9,23 +9,11 @@ the MCP-exported function interfaces that are registered as MCP tools.
 
 from typing import Any
 
-from jupyter_mcp_executor.cell_operations import CellOperations
-from jupyter_mcp_executor.execution_engine import ExecutionEngine
-from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.notebook_config import CellOperation, ExecutionType, QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.query_service import QueryService
-
-# Import services
 from jupyter_mcp_executor.server_context import get_server_context, set_server_context
-
-# Initialize services (singleton pattern)
-_execution_engine = ExecutionEngine()
-_cell_operations = CellOperations(_execution_engine)
-_kernel_manager = KernelManager()
-_query_service = QueryService()
-
+from jupyter_mcp_executor.service_container import container
 
 # ============================================================================
 # MCP-Exported Functions (Public API)
@@ -38,7 +26,7 @@ async def list_notebook_kernels() -> dict[str, Any]:
     Returns:
         Dict with "kernelspecs" key containing kernel spec dicts
     """
-    return await _kernel_manager.list_notebook_kernels()
+    return await container.kernel_manager.list_notebook_kernels()
 
 
 async def list_notebook_sessions() -> list[dict[str, Any]]:
@@ -61,7 +49,7 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
             print(f"Notebook: {session['path']}")
             print(f"Kernel: {session['kernel']['id']} ({session['kernel']['name']})")
     """
-    return await _query_service.list_sessions()
+    return await container.query_service.list_sessions()
 
 
 async def setup_notebook(
@@ -125,7 +113,7 @@ async def setup_notebook(
             - kernel_id: ID of the kernel
             - reused_kernel: bool indicating if an existing kernel was reused
     """
-    return await _kernel_manager.setup_notebook(
+    return await container.kernel_manager.setup_notebook(
         notebook_path, kernel_name, force_new_kernel
     )
 
@@ -158,7 +146,7 @@ async def switch_notebook_kernel(
             "kernel_id": "xyz789"
         }
     """
-    return await _kernel_manager.switch_kernel(notebook_path, kernel_name)
+    return await container.kernel_manager.switch_kernel(notebook_path, kernel_name)
 
 
 async def shutdown_notebook(
@@ -186,7 +174,9 @@ async def shutdown_notebook(
             "kernel_id": "abc123"
         }
     """
-    return await _kernel_manager.shutdown_notebook(notebook_path, shutdown_kernel)
+    return await container.kernel_manager.shutdown_notebook(
+        notebook_path, shutdown_kernel
+    )
 
 
 async def execute_notebook_code(
@@ -223,14 +213,16 @@ async def execute_notebook_code(
         if position_index is None:
             msg = "position_index required for execute_cell"
             raise ValueError(msg)
-        return await _execution_engine.execute_cell_by_position(
+        return await container.execution_engine.execute_cell_by_position(
             notebook_path, position_index
         )
     if execution_type == "install_packages":
         if not package_names:
             msg = "package_names required for install_packages"
             raise ValueError(msg)
-        return await _execution_engine.install_packages(notebook_path, package_names)
+        return await container.execution_engine.install_packages(
+            notebook_path, package_names
+        )
     msg = f"Invalid execution_type: {execution_type}"
     raise ValueError(msg)
 
@@ -280,7 +272,7 @@ async def modify_notebook_cells(
         if cell_content is None:
             msg = "cell_content required for add_code"
             raise ValueError(msg)
-        return await _cell_operations.add_code_cell(
+        return await container.cell_operations.add_code_cell(
             notebook_path, cell_content, position_index, execute
         )
 
@@ -288,7 +280,7 @@ async def modify_notebook_cells(
         if cell_content is None or position_index is None:
             msg = "cell_content and position_index required for edit_code"
             raise ValueError(msg)
-        return await _cell_operations.edit_code_cell(
+        return await container.cell_operations.edit_code_cell(
             notebook_path, position_index, cell_content, execute
         )
 
@@ -296,7 +288,7 @@ async def modify_notebook_cells(
         if cell_content is None:
             msg = "cell_content required for add_markdown"
             raise ValueError(msg)
-        return await _cell_operations.add_markdown_cell(
+        return await container.cell_operations.add_markdown_cell(
             notebook_path, cell_content, position_index
         )
 
@@ -304,7 +296,7 @@ async def modify_notebook_cells(
         if cell_content is None or position_index is None:
             msg = "cell_content and position_index required for edit_markdown"
             raise ValueError(msg)
-        return await _cell_operations.edit_markdown_cell(
+        return await container.cell_operations.edit_markdown_cell(
             notebook_path, position_index, cell_content
         )
 
@@ -312,7 +304,9 @@ async def modify_notebook_cells(
         if position_index is None:
             msg = "position_index required for delete"
             raise ValueError(msg)
-        return await _cell_operations.delete_cell(notebook_path, position_index)
+        return await container.cell_operations.delete_cell(
+            notebook_path, position_index
+        )
 
     msg = f"Invalid operation: {operation}"
     raise ValueError(msg)
@@ -380,7 +374,12 @@ async def query_notebook(
     Raises:
         ValueError: If invalid query_type or missing required parameters
     """
-    return await _query_service.query(
+    # Route list_kernels to KernelManager
+    if query_type == "list_kernels":
+        return await container.kernel_manager.list_notebook_kernels()
+
+    # All other queries go to QueryService
+    return await container.query_service.query(
         notebook_path,
         query_type,
         execution_count=execution_count,
@@ -427,7 +426,7 @@ async def read_cell(
         execution_count=execution_count, position_index=position_index, cell_id=cell_id
     )
 
-    return await _query_service.read_cell(notebook_path, identifier)
+    return await container.query_service.read_cell(notebook_path, identifier)
 
 
 # Export context management functions (used by extension.py)

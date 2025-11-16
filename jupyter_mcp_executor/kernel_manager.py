@@ -11,7 +11,6 @@ from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import get_kernel_info, resolve_kernel_name
 from jupyter_mcp_executor.notebook_io import write_notebook
 from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
-from jupyter_mcp_executor.query_service import QueryService
 from jupyter_mcp_executor.server_context import (
     get_server_context,
     require_server_context,
@@ -301,9 +300,9 @@ class KernelManager:
     async def _find_session_for_notebook(
         self, notebook_path: str
     ) -> dict[str, Any] | None:
-        """Find existing session for a notebook using QueryService.
+        """Find existing session for a notebook.
 
-        This checks Jupyter's session manager via QueryService to see if the notebook
+        This checks Jupyter's session manager to see if the notebook
         already has an active session with a running kernel (e.g., from JupyterLab or
         another user). This enables collaborative usage where multiple clients can
         share the same kernel.
@@ -320,10 +319,11 @@ class KernelManager:
             return None
 
         try:
-            # Use QueryService to list all active sessions
-            query_service = QueryService()
-
-            sessions = await query_service.list_sessions()
+            # List all active sessions from session manager
+            session_manager = serverapp.session_manager
+            sessions = []
+            for session in await session_manager.list_sessions():
+                sessions.append(dict(session))
 
             # Get the notebook filename for comparison
             notebook_name = Path(notebook_path).name

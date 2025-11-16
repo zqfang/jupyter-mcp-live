@@ -8,7 +8,10 @@ from jupyter_mcp_executor.notebook_config import QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
 from jupyter_mcp_executor.output_filter import OutputFilter
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.server_context import get_server_context
+from jupyter_mcp_executor.server_context import (
+    get_server_context,
+    require_server_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +54,6 @@ class QueryService:
             return self.check_server()
         if query_type == "list_sessions":
             return await self.list_sessions()
-        if query_type == "list_kernels":
-            # Delegate to kernel manager
-            return await self.list_kernels()
         if query_type == "get_position_index":
             return await self.get_position_index(
                 notebook_path, execution_count, cell_id
@@ -61,7 +61,7 @@ class QueryService:
         msg = (
             f"Invalid query_type: {query_type}. "
             f"Must be one of: view_source, check_server, list_sessions, "
-            f"list_kernels, get_position_index"
+            f"get_position_index"
         )
         raise ValueError(msg)
 
@@ -141,29 +141,12 @@ class QueryService:
             return "Jupyter server is running and accessible"
         return "Jupyter server context not available"
 
-    async def list_kernels(self) -> list[dict[str, Any]]:
-        """List all notebook kernels on the server.
-
-        Returns:
-            List of kernel dicts
-        """
-        from jupyter_mcp_executor.kernel_manager import (  # noqa: PLC0415
-            KernelManager,
-        )
-
-        km = KernelManager()
-        return await km.list_notebook_kernels()
-
     async def list_sessions(self) -> list[dict[str, Any]]:
         """List all notebook sessions on the server.
 
         Returns:
             List of session dicts
         """
-        from jupyter_mcp_executor.server_context import (  # noqa: PLC0415
-            require_server_context,
-        )
-
         serverapp = require_server_context()
         session_manager = serverapp.session_manager
 
