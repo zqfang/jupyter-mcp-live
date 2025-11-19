@@ -28,8 +28,8 @@ LANGUAGE_PATTERNS = {
 class ExecutionConfig:
     """Configuration for code execution."""
 
-    default_timeout: int = 30
-    kernel_ready_timeout: int = 10
+    default_timeout: int = 600
+    kernel_ready_timeout: int = 1200
     kernel_startup_delay: float = 1.0
     max_execution_count: int = 10000
     iopub_msg_rate_limit: float = 0.01  # seconds between message checks
