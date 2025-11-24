@@ -126,8 +126,8 @@ def test_import_config():
     assert LANGUAGE_PATTERNS is not None
 
     # Verify config values
-    assert EXECUTION_CONFIG.default_timeout == 30
-    assert EXECUTION_CONFIG.kernel_ready_timeout == 10
+    assert EXECUTION_CONFIG.default_timeout == 600
+    assert EXECUTION_CONFIG.kernel_ready_timeout == 20
 
     # Verify LANGUAGE_PATTERNS structure
     assert "python" in LANGUAGE_PATTERNS
