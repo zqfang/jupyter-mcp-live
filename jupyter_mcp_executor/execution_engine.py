@@ -2,16 +2,14 @@
 
 import asyncio
 import logging
-from typing import Any
 
 from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.notebook_adapter import NotebookAdapter, get_notebook_adapter
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
-from jupyter_mcp_executor.notebook_io import NotebookContext
 from jupyter_mcp_executor.notebook_models import ExecutionResult
-from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.persistence_utils import persist_cell_outputs_to_disk
 from jupyter_mcp_executor.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
@@ -153,7 +151,7 @@ class ExecutionEngine:
         # If collaborative mode, also persist to disk
         if adapter.is_collaborative:
             logger.debug(f"Persisting cell {cell_position} outputs to disk")
-            await self._persist_outputs_to_disk(
+            await persist_cell_outputs_to_disk(
                 adapter.notebook_path,
                 cell_position,
                 exec_result.execution_count,
@@ -199,35 +197,3 @@ class ExecutionEngine:
         return await self.execute_and_update_cell(
             adapter, position, code, kernel_id=kernel_id, timeout=timeout
         )
-
-    async def _persist_outputs_to_disk(
-        self,
-        notebook_path: str,
-        position: int,
-        execution_count: int | None,
-        outputs: list[dict[str, Any]],
-    ) -> None:
-        """Persist cell outputs to disk (for collaborative mode).
-
-        This ensures YDoc changes are also saved to the .ipynb file.
-
-        Args:
-            notebook_path: Path to notebook
-            position: Cell position
-            execution_count: Execution count
-            outputs: Output list
-        """
-        try:
-            with NotebookContext(notebook_path) as nb:
-                if position < len(nb.cells):
-                    cell = nb.cells[position]
-                    if execution_count is not None:
-                        cell.execution_count = execution_count
-                    if outputs:
-                        cell.outputs = convert_outputs_to_notebook_nodes(outputs)
-                else:
-                    logger.warning(
-                        f"Cell index {position} out of range in disk notebook"
-                    )
-        except Exception as e:
-            logger.warning(f"Failed to persist outputs to disk: {e}")

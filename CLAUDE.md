@@ -108,16 +108,30 @@ Jupyter Server Infrastructure (kernels, YDoc, .ipynb files)
 
 ### Critical Architecture Details
 
-**YDoc Collaborative Editing**:
-When a notebook is open in JupyterLab, operations must update YDoc FIRST, then persist to disk to avoid data loss. The adapter pattern handles this automatically.
+**YDoc Collaborative Editing & Dual Persistence**:
+When a notebook is open in JupyterLab, the system uses a **dual-persistence strategy** to prevent data loss:
+
+1. **YDoc Update** (immediate) - Changes reflected instantly in JupyterLab UI
+2. **Disk Persistence** (immediate) - Changes written to .ipynb file for durability
 
 ```python
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_executor.persistence_utils import persist_cell_addition_to_disk
 
 # Auto-selects YDocAdapter or NbformatAdapter
 adapter = await get_notebook_adapter(notebook_path)
-await adapter.add_cell(cell_content)  # Handles persistence correctly
+await adapter.add_cell(cell_content)  # Updates YDoc
+
+# If collaborative mode, also persist to disk
+if adapter.is_collaborative:
+    await persist_cell_addition_to_disk(notebook_path, position, cell_content)
 ```
+
+**Why Dual Persistence?**
+- YDoc changes are in-memory and lost on server restart
+- Direct disk writes ensure changes survive beyond YDoc lifecycle
+- Pattern applied to all cell structure changes (add/edit/delete) and execution outputs
+- See `persistence_utils.py` for implementation details
 
 **Kernel Resolution**:
 Supports custom kernel names via intelligent resolution:
@@ -170,6 +184,7 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 - `server_context.py` - Server context management
 - `exceptions.py` - Custom exception classes
 - `execution_utils.py` - Low-level kernel execution primitives
+- `persistence_utils.py` - Disk persistence helpers for YDoc collaborative mode
 
 ## MCP Functions (Public API)
 
