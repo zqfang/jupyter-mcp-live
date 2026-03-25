@@ -5,6 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "jupyter_mcp_executor"
 authors = [{name = "Jupyter Developer", email = "jupyter@example.com"}]
+description = "MCP server extension for Jupyter Server to execute code and manage notebooks via AI assistants"
 dynamic = ["version"]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,6 +47,12 @@ dev = [
 
 [project.license]
 file="LICENSE"
+
+[project.urls]
+Homepage = "https://github.com/zqfang/jupyter-mcp-executor"
+Repository = "https://github.com/zqfang/jupyter-mcp-executor"
+"Bug Tracker" = "https://github.com/zqfang/jupyter-mcp-executor/issues"
+Changelog = "https://github.com/zqfang/jupyter-mcp-executor/blob/main/CHANGELOG.md"
 
 [project.entry-points."jupyter_server.extension_points"]
 jupyter_mcp_executor = "jupyter_mcp_executor.extension:MCPExtensionApp"
