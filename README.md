@@ -2,7 +2,6 @@
 
 A powerful MCP (Model Context Protocol) server for executing code in Jupyter notebooks. This extension enables AI assistants and other MCP clients to programmatically create, modify, and execute code across multiple kernel types (Python, R, Julia, and more) through a running Jupyter Server.
 
-https://github.com/user-attachments/assets/aa779b1c-a443-48d7-b3eb-13f27a4333b3
 
 ## Overview
 
