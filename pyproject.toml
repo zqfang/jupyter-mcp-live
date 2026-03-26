@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jupyter_mcp_executor"
-authors = [{name = "Jupyter Developer", email = "jupyter@example.com"}]
+authors = [{name = "Zhuoqing Fang", email = "fzq518@gmail.com"}]
 description = "MCP server extension for Jupyter Server to execute code and manage notebooks via AI assistants"
 dynamic = ["version"]
 readme = "README.md"
