@@ -1,6 +1,7 @@
 """YDoc-based adapter for collaborative notebook editing."""
 
 import logging
+import uuid
 from typing import Any
 
 from jupyter_mcp_executor.notebook_adapter import NotebookAdapter
@@ -64,13 +65,20 @@ class YDocAdapter(NotebookAdapter):
 
     async def add_cell(
         self, cell_content: CellContent, position: int | None = None
-    ) -> int:
+    ) -> tuple[int, str]:
         """Add cell to YDoc."""
         # Convert source to string
         source_str = cell_content.get_source_as_string()
 
+        # Generate a single cell ID used for both YDoc and disk persistence.
+        # This prevents duplication when JupyterLab syncs disk → YDoc on file
+        # change: without a shared ID, YDoc and disk cells get different UUIDs
+        # and the sync treats them as two distinct cells.
+        cell_id = str(uuid.uuid4())
+
         # Convert CellContent to YDoc cell dict format
         cell_dict = {
+            "id": cell_id,
             "cell_type": cell_content.cell_type,
             "source": YText(source_str) if YText else source_str,
             "metadata": cell_content.metadata.copy(),
@@ -94,7 +102,7 @@ class YDocAdapter(NotebookAdapter):
             f"Added {cell_content.cell_type} cell via YDoc at position {position}"
         )
 
-        return position
+        return position, cell_id
 
     async def edit_cell(self, position: int, content: CellContent) -> None:
         """Edit cell in YDoc."""

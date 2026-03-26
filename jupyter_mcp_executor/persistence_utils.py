@@ -20,6 +20,7 @@ async def persist_cell_addition_to_disk(
     notebook_path: str,
     position: int,
     cell_content: CellContent,
+    cell_id: str | None = None,
 ) -> None:
     """Persist newly added cell to disk (for collaborative mode).
 
@@ -29,6 +30,9 @@ async def persist_cell_addition_to_disk(
         notebook_path: Path to notebook
         position: Position where cell was added
         cell_content: Content of the added cell
+        cell_id: Cell UUID to use for the disk cell. Must match the ID
+            assigned by YDoc to prevent duplication when JupyterLab syncs
+            the file change back into YDoc (it matches cells by ID).
     """
     try:
         with NotebookContext(notebook_path) as nb:
@@ -54,6 +58,10 @@ async def persist_cell_addition_to_disk(
                 cell = new_markdown_cell(
                     source=source_str, metadata=cell_content.metadata
                 )
+
+            # Use the same cell ID as YDoc to prevent duplication on sync
+            if cell_id is not None:
+                cell.id = cell_id
 
             # Insert at position
             nb.cells.insert(position, cell)

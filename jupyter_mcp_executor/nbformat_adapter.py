@@ -59,7 +59,7 @@ class NbformatAdapter(NotebookAdapter):
 
     async def add_cell(
         self, cell_content: CellContent, position: int | None = None
-    ) -> int:
+    ) -> tuple[int, str]:
         """Add cell to notebook file."""
         with NotebookContext(self._notebook_path) as nb:
             # Determine position
@@ -92,7 +92,7 @@ class NbformatAdapter(NotebookAdapter):
                 f"Added {cell_content.cell_type} cell via nbformat at position {position}"
             )
 
-        return position
+        return position, cell.id
 
     async def edit_cell(self, position: int, content: CellContent) -> None:
         """Edit cell in notebook file."""

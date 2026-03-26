@@ -37,7 +37,7 @@ class NotebookAdapter(ABC):
     @abstractmethod
     async def add_cell(
         self, cell_content: CellContent, position: int | None = None
-    ) -> int:
+    ) -> tuple[int, str]:
         """Add a cell.
 
         Args:
@@ -45,7 +45,8 @@ class NotebookAdapter(ABC):
             position: Position to insert (None = append at end)
 
         Returns:
-            Position where cell was added
+            (position, cell_id) tuple where position is where cell was added
+            and cell_id is the UUID assigned to the cell
         """
 
     @abstractmethod

@@ -68,7 +68,7 @@ class CellOperations:
         )
 
         # Add cell
-        actual_position = await adapter.add_cell(cell_content, position)
+        actual_position, cell_id = await adapter.add_cell(cell_content, position)
 
         # If collaborative mode, persist structural change to disk
         if adapter.is_collaborative:
@@ -76,7 +76,7 @@ class CellOperations:
                 f"Persisting cell addition at position {actual_position} to disk"
             )
             await persist_cell_addition_to_disk(
-                notebook_path, actual_position, cell_content
+                notebook_path, actual_position, cell_content, cell_id=cell_id
             )
 
         # Execute if requested
@@ -181,7 +181,7 @@ class CellOperations:
         cell_content = CellContent(source=markdown, cell_type="markdown")
 
         # Add cell
-        actual_position = await adapter.add_cell(cell_content, position)
+        actual_position, cell_id = await adapter.add_cell(cell_content, position)
 
         # If collaborative mode, persist structural change to disk
         if adapter.is_collaborative:
@@ -189,7 +189,7 @@ class CellOperations:
                 f"Persisting markdown cell addition at position {actual_position} to disk"
             )
             await persist_cell_addition_to_disk(
-                notebook_path, actual_position, cell_content
+                notebook_path, actual_position, cell_content, cell_id=cell_id
             )
 
         return CellOperationResult(
