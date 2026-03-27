@@ -27,14 +27,6 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 
 ## Installation
 
-### Option 1: Standard Installation
-
-```bash
-pip install jupyter-mcp-executor
-```
-
-### Option 2: Development Setup with uv (Recommended)
-
 For faster dependency installation and development:
 
 See [INSTALL.md](INSTALL.md) for detailed instructions.

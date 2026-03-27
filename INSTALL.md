@@ -29,7 +29,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv pip install jupyter-mcp-executor
 ```
 
-### Option 2: Development Installation (Recommended for Contributors)
+### Option 2: Development Installation
 
 For local development with the latest code:
 
@@ -38,7 +38,7 @@ For local development with the latest code:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone the repository
-git clone https://github.com/yourusername/jupyter-mcp-executor.git
+git clone https://github.com/zqfang/jupyter-mcp-executor.git
 cd jupyter-mcp-executor
 
 # Create a virtual environment with uv
