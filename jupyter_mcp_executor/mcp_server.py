@@ -269,7 +269,8 @@ class MCPServer(LoggingConfigurable):
             **kwargs: Configuration parameters
         """
         super().__init__(**kwargs)
-        ## TODO: when tools become more dynamic or we have a large number of tools, we can consider using a discovery tool like Search or GetTags instead of ListTools to let the LLM find relevant tools without overwhelming it with too many options upfront. For now, with a smaller set of tools, ListTools is simpler and more efficient.
+        ## TODO: when tools become more dynamic or we have a large number of tools, we can consider using a discovery tool like Search or GetTags instead of ListTools
+        ## TODO: sandbox configuration- https://gofastmcp.com/servers/transforms/code-mode#sandbox-configuration
         ## 3 stage
         # code_mode = CodeMode(discovery_tools=[GetTags(), Search(), GetSchemas()])
         # 2 stage, best for smaller catalogs

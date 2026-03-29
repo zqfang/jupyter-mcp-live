@@ -49,7 +49,7 @@ uv venv
 source .venv/bin/activate
 # On Windows:
 # .venv\Scripts\activate
-
+# uv sync 
 # Install the package in editable mode with all dependencies
 uv pip install -e .
 ```
