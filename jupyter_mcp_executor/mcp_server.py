@@ -9,6 +9,7 @@ from inspect import iscoroutinefunction, signature
 from typing import Any, Union, get_args, get_origin
 
 from fastmcp import FastMCP
+from fastmcp.experimental.transforms.code_mode import CodeMode, ListTools, GetSchemas, GetTags, Search
 from traitlets import Int, Unicode
 from traitlets.config.configurable import LoggingConfigurable
 
@@ -264,9 +265,16 @@ class MCPServer(LoggingConfigurable):
             **kwargs: Configuration parameters
         """
         super().__init__(**kwargs)
-
+        ## TODO: when tools become more dynamic or we have a large number of tools, we can consider using a discovery tool like Search or GetTags instead of ListTools to let the LLM find relevant tools without overwhelming it with too many options upfront. For now, with a smaller set of tools, ListTools is simpler and more efficient.
+        ## 3 stage
+        #code_mode = CodeMode(discovery_tools=[GetTags(), Search(), GetSchemas()])
+        # 2 stage, best for smaller catalogs 
+        ## see https://gofastmcp.com/servers/transforms/code-mode
+        ## code_mode = CodeMode(discovery_tools=[Search(default_detail="detailed"), GetSchemas()])
+        # for under 20 tools, ListTools let LLM see everything upfront can be faster than multiple search round-trips
+        code_mode = CodeMode(discovery_tools=[ListTools(), GetSchemas()])
         # Initialize FastMCP and tools registry
-        self.mcp = FastMCP(self.name)
+        self.mcp = FastMCP(self.name, transforms=[code_mode])
         self._registered_tools = {}
         self.log.info(
             f"Initialized MCP server '{self.name}' on {self.host}:{self.port}"
