@@ -2,16 +2,29 @@
 
 When notebooks are open in JupyterLab, changes are made to YDoc (in-memory).
 These utilities ensure structural changes are also persisted to disk.
+
+For open (collaborative) notebooks the preferred path is
+``save_notebook_via_contents_manager`` which routes the save through Jupyter
+Server's ContentsManager API.  That path does NOT trigger JupyterLab's
+file-watcher reload, so the notebook viewport stays in place after an LLM
+inserts or edits a cell.
+
+Direct ``nbformat.write()`` calls (used by the ``persist_*_to_disk`` helpers
+below) are still available for closed notebooks where there is no live YDoc
+session.
 """
 
+import inspect
 import logging
+import os
 from typing import Any
 
 from nbformat.v4 import new_code_cell, new_markdown_cell
 
-from jupyter_mcp_executor.notebook_io import NotebookContext
+from jupyter_mcp_executor.notebook_io import NotebookContext, read_notebook
 from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
+from jupyter_mcp_executor.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
 
@@ -172,3 +185,57 @@ async def persist_cell_outputs_to_disk(
 
     except Exception as e:
         logger.warning(f"Failed to persist outputs to disk: {e}")
+
+
+async def save_via_contents_manager(notebook_path: str, nb: Any) -> None:
+    """Save a notebook object via Jupyter Server's ContentsManager API.
+
+    Routing saves through the ContentsManager avoids triggering JupyterLab's
+    external-file-change detector, which is what causes the scroll-to-top
+    when ``nbformat.write()`` is called directly.
+
+    Args:
+        notebook_path: Absolute path to the notebook file.
+        nb: nbformat notebook object to save.
+    """
+    try:
+        serverapp = get_server_context()
+        if not serverapp:
+            logger.debug("No server context; skipping contents manager save")
+            return
+
+        cm = serverapp.contents_manager
+        root_dir = getattr(serverapp, "root_dir", "")
+        relative_path = os.path.relpath(notebook_path, root_dir) if root_dir else notebook_path
+
+        model = {"type": "notebook", "content": nb, "format": "json"}
+
+        result = cm.save(model, relative_path)
+        if inspect.isawaitable(result):
+            await result
+
+        logger.debug(f"Saved notebook via contents manager: {relative_path}")
+    except Exception as e:
+        logger.warning(f"Failed to save via contents manager: {e}")
+
+
+async def save_notebook_via_contents_manager(notebook_path: str) -> None:
+    """Read the current notebook from disk and re-save via ContentsManager.
+
+    Called after YDoc cell mutations in collaborative mode.  Using the
+    ContentsManager channel instead of a direct ``nbformat.write()`` call
+    prevents JupyterLab from treating the save as an external file change,
+    which is the root cause of the viewport scrolling back to the top.
+
+    The YDoc in-memory state (the source of truth while the notebook is open)
+    is eventually persisted by JupyterLab's own autosave; this call provides
+    an additional safety-net write that does not disturb the UI.
+
+    Args:
+        notebook_path: Absolute path to the notebook file.
+    """
+    try:
+        nb = read_notebook(notebook_path)
+        await save_via_contents_manager(notebook_path, nb)
+    except Exception as e:
+        logger.warning(f"Failed to save notebook via contents manager: {e}")

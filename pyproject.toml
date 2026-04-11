@@ -21,7 +21,7 @@ classifiers = [
 
 dependencies = [
     "jupyter_server>=1.6,<3",
-    "fastmcp[code-mode]>=3.1.1",
+    "fastmcp[code-mode]>=3.2.0",
     "nbformat>=5.0",
     "jupyter-collaboration",
     "jupyter_ydoc>=2.0.0",

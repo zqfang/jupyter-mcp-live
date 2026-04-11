@@ -102,6 +102,9 @@ class YDocAdapter(NotebookAdapter):
             f"Added {cell_content.cell_type} cell via YDoc at position {position}"
         )
 
+        # Signal JupyterLab to scroll the viewport to the newly inserted cell
+        self._set_active_cell_index(position)
+
         return position, cell_id
 
     async def edit_cell(self, position: int, content: CellContent) -> None:
@@ -129,6 +132,21 @@ class YDocAdapter(NotebookAdapter):
             ycell["metadata"] = content.metadata
 
         logger.info(f"Edited {content.cell_type} cell via YDoc at position {position}")
+
+        # Signal JupyterLab to focus the edited cell
+        self._set_active_cell_index(position)
+
+    def _set_active_cell_index(self, position: int) -> None:
+        """Set activeCellIndex in YDoc metadata so JupyterLab scrolls to the cell.
+
+        This is a best-effort hint; older jupyter_ydoc versions may not have ymeta.
+        """
+        try:
+            ymeta = getattr(self.ydoc, "ymeta", None)
+            if ymeta is not None:
+                ymeta["activeCellIndex"] = position
+        except Exception:
+            pass  # Non-critical: scroll hint only
 
     async def delete_cell(self, position: int) -> None:
         """Delete cell from YDoc."""

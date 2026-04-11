@@ -11,11 +11,7 @@ from jupyter_mcp_executor.notebook_models import (
     ExecutionResult,
 )
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.persistence_utils import (
-    persist_cell_addition_to_disk,
-    persist_cell_deletion_to_disk,
-    persist_cell_edit_to_disk,
-)
+from jupyter_mcp_executor.persistence_utils import save_notebook_via_contents_manager
 
 logger = logging.getLogger(__name__)
 
@@ -68,16 +64,14 @@ class CellOperations:
         )
 
         # Add cell
-        actual_position, cell_id = await adapter.add_cell(cell_content, position)
+        actual_position, _cell_id = await adapter.add_cell(cell_content, position)
 
-        # If collaborative mode, persist structural change to disk
+        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
         if adapter.is_collaborative:
             logger.debug(
-                f"Persisting cell addition at position {actual_position} to disk"
+                f"Saving notebook via contents manager after cell addition at position {actual_position}"
             )
-            await persist_cell_addition_to_disk(
-                notebook_path, actual_position, cell_content, cell_id=cell_id
-            )
+            await save_notebook_via_contents_manager(notebook_path)
 
         # Execute if requested
         if execute:
@@ -138,10 +132,10 @@ class CellOperations:
         # Edit cell
         await adapter.edit_cell(position, cell_content)
 
-        # If collaborative mode, persist structural change to disk
+        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
         if adapter.is_collaborative:
-            logger.debug(f"Persisting cell edit at position {position} to disk")
-            await persist_cell_edit_to_disk(notebook_path, position, cell_content)
+            logger.debug(f"Saving notebook via contents manager after cell edit at position {position}")
+            await save_notebook_via_contents_manager(notebook_path)
 
         # Execute if requested
         if execute:
@@ -181,16 +175,14 @@ class CellOperations:
         cell_content = CellContent(source=markdown, cell_type="markdown")
 
         # Add cell
-        actual_position, cell_id = await adapter.add_cell(cell_content, position)
+        actual_position, _cell_id = await adapter.add_cell(cell_content, position)
 
-        # If collaborative mode, persist structural change to disk
+        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
         if adapter.is_collaborative:
             logger.debug(
-                f"Persisting markdown cell addition at position {actual_position} to disk"
+                f"Saving notebook via contents manager after markdown cell addition at position {actual_position}"
             )
-            await persist_cell_addition_to_disk(
-                notebook_path, actual_position, cell_content, cell_id=cell_id
-            )
+            await save_notebook_via_contents_manager(notebook_path)
 
         return CellOperationResult(
             message=f"Added markdown cell at position {actual_position}",
@@ -228,12 +220,12 @@ class CellOperations:
         # Edit cell
         await adapter.edit_cell(position, cell_content)
 
-        # If collaborative mode, persist structural change to disk
+        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
         if adapter.is_collaborative:
             logger.debug(
-                f"Persisting markdown cell edit at position {position} to disk"
+                f"Saving notebook via contents manager after markdown cell edit at position {position}"
             )
-            await persist_cell_edit_to_disk(notebook_path, position, cell_content)
+            await save_notebook_via_contents_manager(notebook_path)
 
         return CellOperationResult(
             message=f"Edited markdown cell at position {position}",
@@ -259,10 +251,10 @@ class CellOperations:
         # Delete cell
         await adapter.delete_cell(position)
 
-        # If collaborative mode, persist structural change to disk
+        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
         if adapter.is_collaborative:
-            logger.debug(f"Persisting cell deletion at position {position} to disk")
-            await persist_cell_deletion_to_disk(notebook_path, position)
+            logger.debug(f"Saving notebook via contents manager after cell deletion at position {position}")
+            await save_notebook_via_contents_manager(notebook_path)
 
         return CellOperationResult(
             message=f"Deleted cell at position {position}", position=position
