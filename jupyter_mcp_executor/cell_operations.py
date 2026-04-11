@@ -11,7 +11,6 @@ from jupyter_mcp_executor.notebook_models import (
     ExecutionResult,
 )
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.persistence_utils import save_notebook_via_contents_manager
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +65,11 @@ class CellOperations:
         # Add cell
         actual_position, _cell_id = await adapter.add_cell(cell_content, position)
 
-        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
-        if adapter.is_collaborative:
-            logger.debug(
-                f"Saving notebook via contents manager after cell addition at position {actual_position}"
-            )
-            await save_notebook_via_contents_manager(notebook_path)
+        # Collaborative mode: YDoc CRDT broadcast already delivered the cell to JupyterLab.
+        # Any backend disk write while the notebook is open (direct or via CM) causes
+        # JupyterLab to reconcile the stale file content against the live YDoc state,
+        # triggering a full reload and scroll-to-top.  JupyterLab autosave handles
+        # persistence; no extra write is needed here.
 
         # Execute if requested
         if execute:
@@ -132,10 +130,7 @@ class CellOperations:
         # Edit cell
         await adapter.edit_cell(position, cell_content)
 
-        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
-        if adapter.is_collaborative:
-            logger.debug(f"Saving notebook via contents manager after cell edit at position {position}")
-            await save_notebook_via_contents_manager(notebook_path)
+        # No additional disk write in collaborative mode — see add_code_cell for rationale.
 
         # Execute if requested
         if execute:
@@ -177,12 +172,7 @@ class CellOperations:
         # Add cell
         actual_position, _cell_id = await adapter.add_cell(cell_content, position)
 
-        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
-        if adapter.is_collaborative:
-            logger.debug(
-                f"Saving notebook via contents manager after markdown cell addition at position {actual_position}"
-            )
-            await save_notebook_via_contents_manager(notebook_path)
+        # No additional disk write in collaborative mode — see add_code_cell for rationale.
 
         return CellOperationResult(
             message=f"Added markdown cell at position {actual_position}",
@@ -220,12 +210,7 @@ class CellOperations:
         # Edit cell
         await adapter.edit_cell(position, cell_content)
 
-        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
-        if adapter.is_collaborative:
-            logger.debug(
-                f"Saving notebook via contents manager after markdown cell edit at position {position}"
-            )
-            await save_notebook_via_contents_manager(notebook_path)
+        # No additional disk write in collaborative mode — see add_code_cell for rationale.
 
         return CellOperationResult(
             message=f"Edited markdown cell at position {position}",
@@ -251,10 +236,7 @@ class CellOperations:
         # Delete cell
         await adapter.delete_cell(position)
 
-        # If collaborative mode, persist via contents manager (avoids file-watcher scroll reset)
-        if adapter.is_collaborative:
-            logger.debug(f"Saving notebook via contents manager after cell deletion at position {position}")
-            await save_notebook_via_contents_manager(notebook_path)
+        # No additional disk write in collaborative mode — see add_code_cell for rationale.
 
         return CellOperationResult(
             message=f"Deleted cell at position {position}", position=position
