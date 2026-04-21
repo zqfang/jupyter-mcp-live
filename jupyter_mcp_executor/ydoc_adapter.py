@@ -6,7 +6,6 @@ from typing import Any
 
 from jupyter_mcp_executor.notebook_adapter import NotebookAdapter
 from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.ui_sync import ui_scroll_to_cell
 from jupyter_mcp_executor.ydoc_helpers import (
     YDOC_AVAILABLE,
     YText,
@@ -111,11 +110,8 @@ class YDocAdapter(NotebookAdapter):
             f"Added {cell_content.cell_type} cell via YDoc at position {position}"
         )
 
-        # Layer 1: set activeCellIndex in YDoc metadata (instant, no browser needed)
+        # Set activeCellIndex in YDoc metadata (instant, no browser needed)
         self._set_active_cell_index(position)
-        # Layer 2: fire notebook:scroll-cell-center via execute_command bridge
-        # (browser-dependent, best-effort, 1.5 s timeout)
-        await ui_scroll_to_cell(position)
 
         return position, cell_id
 
@@ -146,18 +142,13 @@ class YDocAdapter(NotebookAdapter):
 
         logger.info(f"Edited {content.cell_type} cell via YDoc at position {position}")
 
-        # Layer 1: set activeCellIndex in YDoc metadata (instant, no browser needed)
+        # Set activeCellIndex in YDoc metadata (instant, no browser needed)
         self._set_active_cell_index(position)
-        # Layer 2: fire notebook:scroll-cell-center via execute_command bridge
-        # (browser-dependent, best-effort, 1.5 s timeout)
-        await ui_scroll_to_cell(position)
 
     def _set_active_cell_index(self, position: int) -> None:
         """Set activeCellIndex in YDoc metadata so JupyterLab activates the cell.
 
-        Instant, in-memory hint — no browser required.  Used as the primary
-        scroll mechanism when no browser is open, and as step-1 before the
-        ``execute_command`` bridge fires in ``ui_scroll_to_cell``.
+        Instant, in-memory hint — no browser required.
 
         Best-effort; older jupyter_ydoc versions may not expose ``ymeta``.
         """
