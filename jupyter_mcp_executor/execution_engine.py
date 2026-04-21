@@ -9,7 +9,6 @@ from jupyter_mcp_executor.notebook_adapter import NotebookAdapter, get_notebook_
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 from jupyter_mcp_executor.notebook_models import ExecutionResult
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.persistence_utils import persist_cell_outputs_to_disk
 from jupyter_mcp_executor.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
@@ -143,20 +142,15 @@ class ExecutionEngine:
         if exec_result.started_new_kernel:
             self.kernel_tracker.track(adapter.notebook_path, exec_result.kernel_id)
 
-        # Update cell outputs via adapter
+        # Update cell outputs via adapter.
+        # - NbformatAdapter (closed notebook): writes outputs directly to disk.
+        # - YDocAdapter (open notebook): writes outputs to YDoc only; JupyterLab
+        #   autosave handles disk persistence.  A direct nbformat.write() here
+        #   would trigger JupyterLab's external-file-change detector and cause
+        #   the notebook viewport to scroll back to the top on every execution.
         await adapter.update_cell_outputs(
             cell_position, exec_result.execution_count, exec_result.outputs
         )
-
-        # If collaborative mode, also persist to disk
-        if adapter.is_collaborative:
-            logger.debug(f"Persisting cell {cell_position} outputs to disk")
-            await persist_cell_outputs_to_disk(
-                adapter.notebook_path,
-                cell_position,
-                exec_result.execution_count,
-                exec_result.outputs,
-            )
 
         # Return ExecutionResult (caller can convert to dict if needed)
         return exec_result
