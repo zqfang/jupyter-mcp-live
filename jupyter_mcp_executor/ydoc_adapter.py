@@ -138,6 +138,7 @@ class YDocAdapter(NotebookAdapter):
         # Update metadata — must be a pycrdt Map, not a plain dict
         if content.metadata:
             from pycrdt import Map  # noqa: PLC0415
+
             ycell["metadata"] = Map(content.metadata)
 
         logger.info(f"Edited {content.cell_type} cell via YDoc at position {position}")
@@ -185,12 +186,15 @@ class YDocAdapter(NotebookAdapter):
             # outputs must be stored as a pycrdt Array[Map], not a plain list.
             # Assigning a raw list breaks YNotebook.get_cell() → to_py() on save.
             from pycrdt import Array, Map, Text  # noqa: PLC0415
+
             output_maps = []
             for output in outputs:
                 out = dict(output)
                 if out.get("output_type") == "stream":
                     text = out.get("text", "")
-                    out["text"] = Text("".join(text) if isinstance(text, list) else text)
+                    out["text"] = Text(
+                        "".join(text) if isinstance(text, list) else text
+                    )
                 output_maps.append(Map(out))
 
             youtputs = ycell.get("outputs")

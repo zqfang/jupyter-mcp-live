@@ -67,7 +67,9 @@ async def get_ynotebook(file_path: str) -> Any | None:
             return ydoc
 
         if ydoc is not None:
-            logger.debug(f"get_document returned unexpected type {type(ydoc)} for {file_path}")
+            logger.debug(
+                f"get_document returned unexpected type {type(ydoc)} for {file_path}"
+            )
 
     except Exception as e:
         logger.debug(f"Failed to get YNotebook via YDocExtension.get_document: {e}")

@@ -206,7 +206,9 @@ async def save_via_contents_manager(notebook_path: str, nb: Any) -> None:
 
         cm = serverapp.contents_manager
         root_dir = getattr(serverapp, "root_dir", "")
-        relative_path = os.path.relpath(notebook_path, root_dir) if root_dir else notebook_path
+        relative_path = (
+            os.path.relpath(notebook_path, root_dir) if root_dir else notebook_path
+        )
 
         model = {"type": "notebook", "content": nb, "format": "json"}
 
