@@ -54,13 +54,17 @@ class YDocAdapter(NotebookAdapter):
 
         ycell = self.ydoc.ycells[position]
 
+        # Use to_py() to recursively convert all pycrdt types (YText→str,
+        # Map→dict, Array→list) into plain Python objects.
+        ycell_py = ycell.to_py()
+
         return CellContent(
-            source=str(ycell.get("source", "")),
-            cell_type=str(ycell.get("cell_type", "code")),
-            metadata=dict(ycell.get("metadata", {})),
-            execution_count=ycell.get("execution_count"),
-            outputs=list(ycell.get("outputs", [])),
-            cell_id=str(ycell.get("id", "")),
+            source=str(ycell_py.get("source", "")),
+            cell_type=str(ycell_py.get("cell_type", "code")),
+            metadata=dict(ycell_py.get("metadata", {})),
+            execution_count=ycell_py.get("execution_count"),
+            outputs=list(ycell_py.get("outputs", [])),
+            cell_id=str(ycell_py.get("id", "")),
         )
 
     async def add_cell(
@@ -76,16 +80,19 @@ class YDocAdapter(NotebookAdapter):
         # and the sync treats them as two distinct cells.
         cell_id = str(uuid.uuid4())
 
-        # Convert CellContent to YDoc cell dict format
+        # Build a plain-dict representation; create_ycell will wrap
+        # source in YText, metadata in Map, and outputs in Array[Map] —
+        # inserting a raw dict would cause AttributeError('dict has no .to_py')
+        # when JupyterLab tries to save or read back the cell.
         cell_dict = {
             "id": cell_id,
             "cell_type": cell_content.cell_type,
-            "source": YText(source_str) if YText else source_str,
-            "metadata": cell_content.metadata.copy(),
+            "source": source_str,
+            "metadata": dict(cell_content.metadata),
         }
 
         if cell_content.cell_type == "code":
-            cell_dict["outputs"] = cell_content.outputs.copy()
+            cell_dict["outputs"] = list(cell_content.outputs)
             cell_dict["execution_count"] = cell_content.execution_count
 
         # Determine position
@@ -96,13 +103,14 @@ class YDocAdapter(NotebookAdapter):
         if position < 0 or position > self.ydoc.cell_number:
             position = self.ydoc.cell_number
 
-        # Add cell
-        self.ydoc.ycells.insert(position, cell_dict)
+        # Convert to proper pycrdt Map before inserting into the YDoc Array
+        ycell = self.ydoc.create_ycell(cell_dict)
+        self.ydoc.ycells.insert(position, ycell)
         logger.info(
             f"Added {cell_content.cell_type} cell via YDoc at position {position}"
         )
 
-        # Signal JupyterLab to scroll the viewport to the newly inserted cell
+        # Set activeCellIndex in YDoc metadata (instant, no browser needed)
         self._set_active_cell_index(position)
 
         return position, cell_id
@@ -127,19 +135,22 @@ class YDocAdapter(NotebookAdapter):
             # Fall back to direct assignment
             ycell["source"] = YText(source_str) if YText else source_str
 
-        # Update metadata
+        # Update metadata — must be a pycrdt Map, not a plain dict
         if content.metadata:
-            ycell["metadata"] = content.metadata
+            from pycrdt import Map  # noqa: PLC0415
+            ycell["metadata"] = Map(content.metadata)
 
         logger.info(f"Edited {content.cell_type} cell via YDoc at position {position}")
 
-        # Signal JupyterLab to focus the edited cell
+        # Set activeCellIndex in YDoc metadata (instant, no browser needed)
         self._set_active_cell_index(position)
 
     def _set_active_cell_index(self, position: int) -> None:
-        """Set activeCellIndex in YDoc metadata so JupyterLab scrolls to the cell.
+        """Set activeCellIndex in YDoc metadata so JupyterLab activates the cell.
 
-        This is a best-effort hint; older jupyter_ydoc versions may not have ymeta.
+        Instant, in-memory hint — no browser required.
+
+        Best-effort; older jupyter_ydoc versions may not expose ``ymeta``.
         """
         try:
             ymeta = getattr(self.ydoc, "ymeta", None)
@@ -171,7 +182,24 @@ class YDocAdapter(NotebookAdapter):
             ycell["execution_count"] = execution_count
 
         if outputs is not None:
-            ycell["outputs"] = outputs
+            # outputs must be stored as a pycrdt Array[Map], not a plain list.
+            # Assigning a raw list breaks YNotebook.get_cell() → to_py() on save.
+            from pycrdt import Array, Map, Text  # noqa: PLC0415
+            output_maps = []
+            for output in outputs:
+                out = dict(output)
+                if out.get("output_type") == "stream":
+                    text = out.get("text", "")
+                    out["text"] = Text("".join(text) if isinstance(text, list) else text)
+                output_maps.append(Map(out))
+
+            youtputs = ycell.get("outputs")
+            if isinstance(youtputs, Array):
+                youtputs.clear()
+                if output_maps:
+                    youtputs.extend(output_maps)
+            else:
+                ycell["outputs"] = Array(output_maps)
 
         logger.debug(
             f"Updated cell {position} outputs in YDoc (execution_count={execution_count})"
