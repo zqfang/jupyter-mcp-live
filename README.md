@@ -25,15 +25,22 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 - **MCP Protocol**: Standard MCP interface for AI assistant integration
 - **Production Ready**: Comprehensive test suite, modular architecture, and detailed documentation
 
-## Installation
 
-For faster dependency installation and development:
-
-See [INSTALL.md](INSTALL.md) for detailed instructions.
 
 ## Quick Start
 
-### 1. Basic Configuration
+
+### 1. Intallation
+
+```bash
+git clone https://github.com/zqfang/jupyter-mcp-executor
+cd jupyter-mcp-executor
+uv sync 
+```
+
+See [INSTALL.md](INSTALL.md) for detailed instructions.
+
+### 2. Basic Configuration
 
 Create a `jupyter_config.py` file:
 
@@ -42,15 +49,12 @@ c = get_config()
 
 # Basic MCP server settings
 c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
+
+# set mcp port here
 c.MCPExtensionApp.mcp_port = 8080
 
 # Register tools from existing packages
 c.MCPExtensionApp.mcp_tools = [
-    # Standard library tools
-    "os:getcwd",
-    "json:dumps",
-    "time:time",
-
     # Notebook execution and kernel management tools
     "jupyter_mcp_executor.notebook_execution_tools:list_running_kernels",
     "jupyter_mcp_executor.notebook_execution_tools:list_notebook_kernels",
@@ -63,15 +67,17 @@ c.MCPExtensionApp.mcp_tools = [
 ]
 ```
 
-### 2. Start Jupyter Server
+### 3. Start Jupyter Server
 
 ```bash
-jupyter lab --config examples/jupyter_config_with_excution_tools.py
+jupyter lab --config jupyter_config.py
+## or use example config here
+# jupyter lab --config examples/jupyter_config_with_excution_tools.py
 ```
 
 The MCP server will start automatically on `http://localhost:8080/mcp`.
 
-### 3. Connect MCP Clients
+### 4. Connect MCP Clients
 
 **Claude Code Configuration:**
 
