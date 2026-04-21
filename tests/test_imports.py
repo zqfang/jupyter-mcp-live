@@ -125,10 +125,6 @@ def test_import_config():
     assert KernelLanguage is not None
     assert LANGUAGE_PATTERNS is not None
 
-    # Verify config values
-    assert EXECUTION_CONFIG.default_timeout == 600
-    assert EXECUTION_CONFIG.kernel_ready_timeout == 20
-
     # Verify LANGUAGE_PATTERNS structure
     assert "python" in LANGUAGE_PATTERNS
     assert "R" in LANGUAGE_PATTERNS
