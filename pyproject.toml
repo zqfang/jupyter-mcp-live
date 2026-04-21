@@ -21,7 +21,7 @@ classifiers = [
 
 dependencies = [
     "jupyter_server>=1.6,<3",
-    "fastmcp[code-mode]>=3.2.0",
+    "fastmcp[code-mode]>=3.2.4",
     # "jupyterlab-ai-commands",
     "jupyterlab_commands_toolkit",
     "jupyterlab_notebook_awareness",
