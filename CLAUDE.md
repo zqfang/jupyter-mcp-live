@@ -108,30 +108,19 @@ Jupyter Server Infrastructure (kernels, YDoc, .ipynb files)
 
 ### Critical Architecture Details
 
-**YDoc Collaborative Editing & Dual Persistence**:
-When a notebook is open in JupyterLab, the system uses a **dual-persistence strategy** to prevent data loss:
-
-1. **YDoc Update** (immediate) - Changes reflected instantly in JupyterLab UI
-2. **Disk Persistence** (immediate) - Changes written to .ipynb file for durability
+**YDoc Collaborative Editing**:
+When a notebook is open in JupyterLab, all changes go through YDoc only:
 
 ```python
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
-from jupyter_mcp_executor.persistence_utils import persist_cell_addition_to_disk
 
 # Auto-selects YDocAdapter or NbformatAdapter
 adapter = await get_notebook_adapter(notebook_path)
-await adapter.add_cell(cell_content)  # Updates YDoc
-
-# If collaborative mode, also persist to disk
-if adapter.is_collaborative:
-    await persist_cell_addition_to_disk(notebook_path, position, cell_content)
+await adapter.add_cell(cell_content)  # Updates YDoc; JupyterLab autosave handles disk
 ```
 
-**Why Dual Persistence?**
-- YDoc changes are in-memory and lost on server restart
-- Direct disk writes ensure changes survive beyond YDoc lifecycle
-- Pattern applied to all cell structure changes (add/edit/delete) and execution outputs
-- See `persistence_utils.py` for implementation details
+**Why no manual disk writes in collaborative mode?**
+Writing directly to the .ipynb file while a notebook is open causes JupyterLab to reconcile the stale file content against the live YDoc state, triggering a full reload and scroll-to-top. JupyterLab autosave handles disk persistence automatically.
 
 **Kernel Resolution**:
 Supports custom kernel names via intelligent resolution:
@@ -184,7 +173,7 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 - `server_context.py` - Server context management
 - `exceptions.py` - Custom exception classes
 - `execution_utils.py` - Low-level kernel execution primitives
-- `persistence_utils.py` - Disk persistence helpers for YDoc collaborative mode
+- `persistence_utils.py` - Disk persistence helpers (used for nbformat adapter and execution output writes)
 
 ## MCP Functions (Public API)
 
@@ -233,7 +222,7 @@ Never read/write notebooks directly. Use the adapter factory:
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 
 adapter = await get_notebook_adapter(notebook_path)
-# Automatically handles YDoc vs nbformat, persistence, etc.
+# Automatically selects YDocAdapter (open notebooks) or NbformatAdapter (closed notebooks)
 ```
 
 ### Adding New MCP Tools
@@ -311,14 +300,14 @@ The adapter is selected automatically in `get_notebook_adapter()`:
 - If notebook is open in JupyterLab → `YDocAdapter`
 - Otherwise → `NbformatAdapter`
 
-### Output Persistence Strategy
+### Persistence Strategy
 
 When using `YDocAdapter` (notebook is open):
+- Changes are written to YDoc only; JupyterLab autosave handles disk persistence
+- Direct backend disk writes while the notebook is open cause JupyterLab to reload from the stale file, so they are intentionally avoided
 
-1. Update YDoc first (immediate UI feedback)
-2. Then persist to disk (permanent storage)
-
-This prevents the cell deletion bug that occurred when disk writes overwrote YDoc changes.
+When using `NbformatAdapter` (notebook is closed):
+- Changes are written directly to the .ipynb file on disk
 
 ### Kernel Tracking
 

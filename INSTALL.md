@@ -51,7 +51,7 @@ source .venv/bin/activate
 # .venv\Scripts\activate
 # uv sync 
 # Install the package in editable mode with all dependencies
-uv pip install -e .
+uv sync
 ```
 
 ### Option 3: Development Installation with Test Dependencies
