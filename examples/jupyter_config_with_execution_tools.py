@@ -35,7 +35,6 @@ c.MCPExtensionApp.mcp_tools = [
     "jupyter_mcp_executor.notebook_execution_tools:shutdown_notebook",
     "jupyter_mcp_executor.notebook_execution_tools:modify_notebook_cells",
     "jupyter_mcp_executor.notebook_execution_tools:query_notebook",
-    "jupyter_mcp_executor.notebook_execution_tools:read_cell",
 
     # Optional: Add file system tools from jupyter-ai-tools (if installed)
     # "jupyter_ai_tools.toolkits.file_system:read",
@@ -56,29 +55,6 @@ c.MCPExtensionApp.mcp_tools = [
     # "time:time",
     # "platform:system",
 ]
-
-# ============================================================================
-# Tool Descriptions
-# ============================================================================
-
-# list_running_kernels: Lists all currently running Jupyter kernels
-#   - Returns kernel IDs, names, states, and connection counts
-#   - Useful for discovering available kernels before execution
-#
-# execute_cell: Executes Python code in a Jupyter kernel
-#   - Can use existing kernel or start a new one
-#   - Returns outputs, execution count, and any errors
-#   - Supports timeout configuration
-#   - Perfect for running generated code snippets
-#
-# execute_notebook: Executes all cells in a notebook file
-#   - Runs entire notebook from start to finish
-#   - Saves executed notebook with outputs
-#   - Useful for batch processing or testing notebooks
-#
-# shutdown_kernel: Shuts down a running kernel
-#   - Cleans up kernel resources
-#   - Use after completing code execution tasks
 
 # ============================================================================
 # Example Usage with Claude Code

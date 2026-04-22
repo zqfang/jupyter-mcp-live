@@ -219,3 +219,5 @@ __marimo__/
 !.pixi/config.toml
 # 
 uv.lock
+.jupyter
+*.ipynb
