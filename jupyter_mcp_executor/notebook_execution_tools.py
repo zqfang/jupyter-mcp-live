@@ -8,7 +8,9 @@ the MCP-exported function interfaces that are registered as MCP tools.
 """
 
 from typing import Any
+
 from jupyter_ai_tools.utils import collaborative_tool
+
 from jupyter_mcp_executor.notebook_config import CellOperation, QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
 from jupyter_mcp_executor.path_utils import normalize_path
