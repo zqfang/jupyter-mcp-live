@@ -8,7 +8,7 @@ the MCP-exported function interfaces that are registered as MCP tools.
 """
 
 from typing import Any
-
+from jupyter_ai_tools.utils import collaborative_tool
 from jupyter_mcp_executor.notebook_config import CellOperation, QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
 from jupyter_mcp_executor.path_utils import normalize_path
@@ -18,8 +18,17 @@ from jupyter_mcp_executor.service_container import container
 # ============================================================================
 # MCP-Exported Functions (Public API)
 # ============================================================================
+# Define user information
+user_info = {
+    "name": "Jupyter AI User",
+    "color": "var(--jp-collaborator-color1)",
+    "display_name": "Jupyter AI User"
+}
 
 
+
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def list_notebook_kernels() -> dict[str, Any]:
     """List all available kernel specifications.
 
@@ -28,7 +37,8 @@ async def list_notebook_kernels() -> dict[str, Any]:
     """
     return await container.kernel_manager.list_notebook_kernels()
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def list_notebook_sessions() -> list[dict[str, Any]]:
     """List all active notebook sessions with their kernels.
 
@@ -51,7 +61,8 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
     """
     return await container.query_service.list_sessions()
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def setup_notebook(
     notebook_path: str, kernel_name: str = "python3", force_new_kernel: bool = False
 ) -> dict[str, Any]:
@@ -115,7 +126,8 @@ async def setup_notebook(
     )
     return result.model_dump(exclude_none=True)
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def switch_notebook_kernel(
     notebook_path: str, kernel_name: str
 ) -> dict[str, Any]:
@@ -147,7 +159,8 @@ async def switch_notebook_kernel(
     result = await container.kernel_manager.switch_kernel(notebook_path, kernel_name)
     return result.model_dump(exclude_none=True)
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def shutdown_notebook(
     notebook_path: str, shutdown_kernel: bool = True
 ) -> dict[str, Any]:
@@ -178,7 +191,8 @@ async def shutdown_notebook(
     )
     return result.model_dump(exclude_none=True)
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def execute_notebook_code(
     notebook_path: str,
     position_index: int,
@@ -214,7 +228,8 @@ async def execute_notebook_code(
     # Convert ExecutionResult to filtered dict for MCP response
     return result.to_filtered_dict()
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def modify_notebook_cells(
     notebook_path: str,
     operation: CellOperation,
@@ -312,7 +327,8 @@ async def modify_notebook_cells(
     msg = f"Invalid operation: {operation}"
     raise ValueError(msg)
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def query_notebook(
     notebook_path: str,
     query_type: QueryType,
@@ -388,7 +404,8 @@ async def query_notebook(
         cell_id=cell_id,
     )
 
-
+# Apply collaborative awareness 
+@collaborative_tool(user=user_info)
 async def read_cell(
     notebook_path: str,
     position_index: int | None = None,

@@ -22,7 +22,7 @@ classifiers = [
 dependencies = [
     "jupyter_server>=1.6,<3",
     "fastmcp[code-mode]>=3.2.4",
-    # "jupyterlab-ai-commands",
+    "jupyter-ai-tools>=0.1.0",
     "jupyterlab_commands_toolkit",
     "jupyterlab_notebook_awareness",
     "nbformat>=5.0",

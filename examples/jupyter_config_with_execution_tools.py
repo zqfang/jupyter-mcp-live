@@ -135,7 +135,7 @@ c.ServerApp.ip = '0.0.0.0'
 c.ServerApp.open_browser = False
 
 # Set a custom port for Jupyter Lab (separate from MCP port)
-c.ServerApp.port = 8000
+c.ServerApp.port = 8888
 
 # Allow cross-origin requests (if accessing from different origins)
 c.ServerApp.allow_origin = '*'
@@ -144,12 +144,12 @@ c.ServerApp.allow_origin = '*'
 c.IdentityProvider.token = 'BLOCK'
 
 # Enable debug logging for troubleshooting
-c.MCPExtensionApp.log_level = 'DEBUG'
+c.MCPExtensionApp.log_level = 'INFO'
 
 # Set Jupyter root directory to current folder
 c.ServerApp.root_dir = "."
 
 # Enable autoreload for development
 c.ServerApp.autoreload = True  
-# Set Jupyter log level to DEBUG
-c.ServerApp.log_level = 'DEBUG'
+# Set Jupyter log level to INFO
+c.ServerApp.log_level = 'INFO'
