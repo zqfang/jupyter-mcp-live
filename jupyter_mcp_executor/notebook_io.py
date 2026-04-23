@@ -33,13 +33,13 @@ class NotebookContext:
         self.notebook = read_notebook(self.notebook_path)
         return self.notebook
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, _exc_val, _exc_tb):
         """Write notebook on context exit if no exception occurred.
 
         Args:
             exc_type: Exception type (if any)
-            exc_val: Exception value (if any)
-            exc_tb: Exception traceback (if any)
+            _exc_val: Exception value (if any)
+            _exc_tb: Exception traceback (if any)
         """
         if exc_type is None and self.notebook is not None:
             write_notebook(self.notebook_path, self.notebook)
