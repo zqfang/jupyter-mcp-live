@@ -1,4 +1,5 @@
 """Simple MCP server for registering Python functions as tools."""
+
 import asyncio
 import contextlib
 import errno
@@ -15,12 +16,12 @@ from typing import Any, Union, get_args, get_origin
 
 import uvicorn
 from fastmcp import FastMCP
+from fastmcp import settings as fastmcp_settings
 from fastmcp.experimental.transforms.code_mode import (
     CodeMode,
     GetSchemas,
     ListTools,
 )
-from fastmcp import settings as fastmcp_settings
 from fastmcp.utilities.cli import log_server_banner
 from traitlets import Int, Unicode
 from traitlets.config.configurable import LoggingConfigurable

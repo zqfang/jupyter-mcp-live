@@ -1,6 +1,5 @@
 """Jupyter Server extension for managing MCP server."""
 
-
 import asyncio
 import contextlib
 import importlib
@@ -252,7 +251,7 @@ logger = logging.getLogger(__name__)
 #             self.log.error(f"Failed to start MCP server: {e}")
 #             raise
 
-#     async def _start_jupyter_server_extension(self, serverapp):  # noqa: ARG002
+#     async def _start_jupyter_server_extension(self, serverapp):
 #         """Start the extension - called after Jupyter Server starts."""
 #         await self.start_extension()
 
@@ -268,7 +267,6 @@ logger = logging.getLogger(__name__)
 #         self.mcp_server_task = None
 #         self.mcp_server_instance = None
 #         self.log.info("MCP server stopped")
-
 
 
 class MCPExtensionApp(ExtensionApp):
@@ -486,7 +484,6 @@ class MCPExtensionApp(ExtensionApp):
         with contextlib.suppress(asyncio.CancelledError):
             await self.mcp_server_task
 
-
     def _bridge_package_logging(self) -> None:
         """Make package loggers use Jupyter Server's logging handlers/level."""
         # Parent logger for the whole package
@@ -512,7 +509,6 @@ class MCPExtensionApp(ExtensionApp):
             if NOTEBOOK_TOOLS_AVAILABLE:
                 notebook_execution_tools.set_server_context(self.serverapp)
                 self.log.info("Server context set for notebook execution tools")
-
 
             self.mcp_server_instance = MCPServer(
                 parent=self, name=self.mcp_name, port=self.mcp_port
