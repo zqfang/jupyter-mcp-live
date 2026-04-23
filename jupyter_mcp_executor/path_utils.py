@@ -44,9 +44,8 @@ def normalize_path(path: str) -> str:
         resolved = (root_dir / decoded_path).resolve()
         # Guard: relative paths must not escape the server root (traversal prevention)
         if not resolved.is_relative_to(root_dir):
-            raise ValueError(
-                f"Path '{path}' resolves outside server root '{root_dir}'"
-            )
+            e = f"Path '{path}' resolves outside server root '{root_dir}'"
+            raise ValueError(e)
     else:
         resolved = Path(decoded_path).resolve()
 
