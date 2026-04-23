@@ -3,14 +3,17 @@
 from pathlib import Path
 from urllib.parse import unquote
 
-from jupyter_mcp_executor.server_context import get_server_context
-
 
 def normalize_path(path: str) -> str:
     """Normalize a file path to an absolute path.
 
     Handles URL-encoded paths and resolves relative paths against
     the Jupyter server root directory if available.
+
+    Relative paths that resolve outside the server root are rejected to
+    prevent path traversal attacks (e.g. "../../etc/passwd"). Absolute
+    paths are trusted as-is because notebooks may legitimately reside
+    outside the server root directory.
 
     Args:
         path: File path (possibly URL-encoded or relative)
@@ -19,29 +22,35 @@ def normalize_path(path: str) -> str:
         Absolute normalized path
 
     Raises:
-        ValueError: If path is empty
+        ValueError: If path is empty or a relative path escapes server root
     """
     if not path or not path.strip():
         msg = "path cannot be empty"
         raise ValueError(msg)
 
-    # URL decode in case path contains encoded characters
     decoded_path = unquote(path)
 
-    # If already absolute, return normalized
-    if Path(decoded_path).is_absolute():
-        return str(Path(decoded_path).resolve())
-
-    # Try to resolve relative to Jupyter server root
+    # Deferred import to avoid circular dependencies at module load time
     from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
+    root_dir: Path | None = None
     if serverapp and hasattr(serverapp, "root_dir"):
-        root_dir = serverapp.root_dir
-        return str((Path(root_dir) / decoded_path).resolve())
+        root_dir = Path(serverapp.root_dir).resolve()
 
-    # Fall back to current working directory
-    return str(Path(decoded_path).resolve())
+    if Path(decoded_path).is_absolute():
+        resolved = Path(decoded_path).resolve()
+    elif root_dir is not None:
+        resolved = (root_dir / decoded_path).resolve()
+        # Guard: relative paths must not escape the server root (traversal prevention)
+        if not resolved.is_relative_to(root_dir):
+            raise ValueError(
+                f"Path '{path}' resolves outside server root '{root_dir}'"
+            )
+    else:
+        resolved = Path(decoded_path).resolve()
+
+    return str(resolved)
 
 
 def to_api_path(absolute_path: str) -> str:
@@ -75,6 +84,8 @@ def to_api_path(absolute_path: str) -> str:
     """
 
     abs_path = Path(absolute_path)
+
+    from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     if serverapp and hasattr(serverapp, "root_dir"):

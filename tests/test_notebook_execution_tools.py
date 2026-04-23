@@ -10,7 +10,7 @@ from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 # Import from new modular structure
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
-from jupyter_mcp_executor.notebook_execution_tools import (
+from jupyter_mcp_executor.execution_tools import (
     execute_notebook_code,
     get_server_context,
     list_notebook_kernels,

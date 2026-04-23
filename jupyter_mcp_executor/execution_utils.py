@@ -64,9 +64,10 @@ async def collect_outputs(
     error_msg = None
 
     # Wait for execution to complete
-    start_time = asyncio.get_event_loop().time()
+    loop = asyncio.get_running_loop()
+    start_time = loop.time()
     while True:
-        if asyncio.get_event_loop().time() - start_time > timeout:
+        if loop.time() - start_time > timeout:
             status = "error"
             error_msg = f"Execution timed out after {timeout} seconds"
             break

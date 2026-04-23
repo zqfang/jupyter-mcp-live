@@ -5,7 +5,7 @@ import pytest
 
 def test_import_main_module():
     """Test that main module imports correctly."""
-    import jupyter_mcp_executor.notebook_execution_tools as tools  # noqa: PLC0415
+    import jupyter_mcp_executor.execution_tools as tools  # noqa: PLC0415
 
     # Verify all MCP-exported functions exist
     assert hasattr(tools, 'list_notebook_sessions')
