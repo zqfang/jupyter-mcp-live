@@ -9,7 +9,7 @@ from typing import Any
 
 from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.ydoc_helpers import get_ynotebook
+from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook
 
 
 class NotebookAdapter(ABC):
@@ -163,8 +163,8 @@ async def get_notebook_adapter(notebook_path: str) -> NotebookAdapter:
 
     notebook_path = normalize_path(notebook_path)
 
-    # Try to get YDoc (collaborative mode)
-    ydoc = await get_ynotebook(notebook_path)
+    # Try to get YDoc (collaborative mode), recreating the room if needed
+    ydoc = await ensure_ynotebook(notebook_path)
     if ydoc:
         return YDocAdapter(ydoc, notebook_path)
 

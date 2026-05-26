@@ -38,34 +38,6 @@ class CellIdentifier:
         return "cell_id"
 
 
-class KernelInfo(BaseModel):
-    """Information about a running Jupyter kernel."""
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "id": "abc-123-def",
-                    "name": "python3",
-                    "last_activity": "2025-01-16T10:30:00Z",
-                    "execution_state": "idle",
-                    "connections": 1,
-                }
-            ]
-        }
-    )
-
-    id: str = Field(description="Unique identifier for the kernel")
-    name: str = Field(description="Name of the kernel spec (e.g., 'python3', 'ir')")
-    last_activity: str | None = Field(
-        None, description="ISO timestamp of last activity"
-    )
-    execution_state: str = Field(
-        description="Current execution state: 'idle', 'busy', or 'starting'"
-    )
-    connections: int = Field(ge=0, description="Number of active connections")
-
-
 class ExecutionResult(BaseModel):
     """Result of code execution in a Jupyter kernel."""
 
@@ -155,34 +127,6 @@ class CellOperationResult(BaseModel):
     cell_type: Literal["code", "markdown"] | None = Field(
         None,
         description="Type of cell: 'code' for executable code, 'markdown' for text",
-    )
-
-
-class NotebookInfo(BaseModel):
-    """Information about a Jupyter notebook."""
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "path": "/path/to/notebook.ipynb",
-                    "kernel_name": "python3",
-                    "kernel_id": "abc-123-def",
-                    "cell_count": 5,
-                    "is_open": True,
-                }
-            ]
-        }
-    )
-
-    path: str = Field(description="Path to the notebook file")
-    kernel_name: str = Field(
-        description="Name of the kernel spec associated with this notebook"
-    )
-    kernel_id: str | None = Field(None, description="ID of the running kernel if any")
-    cell_count: int = Field(ge=0, description="Number of cells in the notebook")
-    is_open: bool = Field(
-        description="Whether notebook is open in JupyterLab (YDoc collaborative mode available)"
     )
 
 

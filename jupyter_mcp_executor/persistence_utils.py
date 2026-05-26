@@ -24,6 +24,7 @@ from nbformat.v4 import new_code_cell, new_markdown_cell
 from jupyter_mcp_executor.notebook_io import NotebookContext, read_notebook
 from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
+from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ async def persist_cell_addition_to_disk(
             assigned by YDoc to prevent duplication when JupyterLab syncs
             the file change back into YDoc (it matches cells by ID).
     """
+    notebook_path = normalize_path(notebook_path)
     try:
         with NotebookContext(notebook_path) as nb:
             # Validate position
@@ -100,6 +102,7 @@ async def persist_cell_edit_to_disk(
         position: Position of edited cell
         cell_content: New content for the cell
     """
+    notebook_path = normalize_path(notebook_path)
     try:
         with NotebookContext(notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
@@ -136,6 +139,7 @@ async def persist_cell_deletion_to_disk(
         notebook_path: Path to notebook
         position: Position of deleted cell
     """
+    notebook_path = normalize_path(notebook_path)
     try:
         with NotebookContext(notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):
@@ -167,6 +171,7 @@ async def persist_cell_outputs_to_disk(
         execution_count: Execution count
         outputs: Output list
     """
+    notebook_path = normalize_path(notebook_path)
     try:
         with NotebookContext(notebook_path) as nb:
             if position < 0 or position >= len(nb.cells):

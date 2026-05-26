@@ -44,10 +44,6 @@ class ServiceProvider(Protocol):
         """Get CellOperations instance."""
         ...
 
-    def reset(self) -> None:
-        """Reset all service instances."""
-        ...
-
 
 class ServiceContainer:
     """Singleton service container with lazy initialization via @cached_property.
@@ -126,39 +122,6 @@ class ServiceContainer:
         logger.debug("Creating CellOperations instance")
         # Dependency injection: pass execution_engine to CellOperations
         return CellOperations(self.execution_engine)
-
-    def reset(self) -> None:
-        """Reset all service instances by clearing cached properties.
-
-        Useful for testing to ensure clean state between tests.
-        After reset, services will be re-created on next access.
-        """
-        for attr in self._SERVICE_ATTRS:
-            # Remove from instance __dict__ to force re-creation
-            self.__dict__.pop(attr, None)
-        logger.debug("Reset all service instances")
-
-    def override_service(self, attr: str, instance: object) -> None:
-        """Override a specific service instance (for testing/mocking).
-
-        This is type-safe and validates the service name.
-
-        Args:
-            attr: Name of the service property (e.g., "execution_engine")
-            instance: Service instance to use
-
-        Raises:
-            ValueError: If attr is not a valid service name
-
-        Example:
-            container.override_service("execution_engine", mock_engine)
-        """
-        if attr not in self._SERVICE_ATTRS:
-            msg = f"Unknown service: {attr}. Valid services: {', '.join(self._SERVICE_ATTRS)}"
-            raise ValueError(msg)
-
-        self.__dict__[attr] = instance
-        logger.debug(f"Override {attr} with {type(instance).__name__}")
 
 
 # Create and export singleton instance with type annotation
