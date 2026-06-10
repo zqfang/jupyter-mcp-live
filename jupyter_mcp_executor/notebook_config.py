@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
 
 
 class KernelLanguage(Enum):
@@ -48,17 +47,6 @@ class OutputFilterConfig:
         "text/html",
     )
     filter_threshold: int = 1000  # minimum size to consider filtering
-
-
-# Type aliases for operation types
-# Note: kernel/session listing intentionally lives only in the dedicated
-# list_notebook_kernels / list_notebook_sessions tools — duplicating them here
-# made tool selection ambiguous for MCP agents.
-QueryType = Literal["view_source", "check_server", "get_position_index"]
-
-CellOperation = Literal[
-    "add_code", "edit_code", "add_markdown", "edit_markdown", "delete"
-]
 
 
 # Singleton instances

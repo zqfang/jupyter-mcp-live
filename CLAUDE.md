@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 **Project**: Jupyter MCP Executor
-**Version**: 0.2.0
-**Python**: 3.10+
+**Version**: 0.3.0
+**Python**: 3.11+
 **Status**: Production Ready
 
 ## What This Project Does
@@ -43,7 +43,7 @@ pytest
 pytest tests/test_notebook_execution_tools.py -v
 
 # Run single test
-pytest tests/test_notebook_execution_tools.py::TestExecuteNotebookCode::test_execute_cell -v
+pytest tests/test_notebook_execution_tools.py::TestExecuteCell::test_execute_cell -v
 
 # Run with coverage
 pytest --cov=jupyter_mcp_executor --cov-report=html
@@ -145,7 +145,7 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 
 - `extension.py` - Jupyter Server extension (`MCPExtensionApp`)
 - `mcp_server.py` - FastMCP server wrapper (`MCPServer`)
-- `execution_tools.py` - Public MCP interface (9 tool functions, decorated with `@collaborative_tool`)
+- `execution_tools.py` - Public MCP interface (13 tool functions, decorated with `@collaborative_tool`)
 
 ### Service Layer
 
@@ -181,23 +181,45 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 
 ## MCP Functions (Public API)
 
-All functions in `execution_tools.py`:
+All functions in `execution_tools.py` (13 tools):
+
+**Kernel/session management:**
 
 1. **list_notebook_kernels()** - Get available kernel specs (the ONLY way to list kernels)
 2. **list_notebook_sessions()** - List active kernel sessions (the ONLY way to list sessions)
 3. **setup_notebook(path, kernel_name, force_new_kernel)** - Create notebook and start/reuse kernel
-4. **execute_notebook_code(path, position_index)** - Execute an existing code cell
-5. **modify_notebook_cells(path, operation, ...)** - Add/edit/delete cells (optionally execute)
-6. **query_notebook(path, query_type, ...)** - Read-only queries; query_type is one of
-   `view_source`, `get_position_index`, `check_server` (path optional for check_server)
-7. **read_cell(path, position_index/cell_id/execution_count)** - Read specific cell
-8. **switch_notebook_kernel(path, kernel_name)** - Switch to different kernel
-9. **shutdown_notebook(path, shutdown_kernel)** - Shutdown kernel session
+4. **switch_notebook_kernel(path, kernel_name)** - Switch to different kernel
+5. **shutdown_notebook(path, shutdown_kernel)** - Shutdown kernel session
 
-**Tool design rule**: each capability is exposed through exactly ONE tool. The
-`list_kernels`/`list_sessions` query types were removed from `query_notebook`
-in 0.2.0 because duplicating them made tool selection ambiguous for MCP agents —
-do not re-add overlapping query types.
+**Cell operations (fine-grained, one tool per operation):**
+
+6. **add_code_cell(path, source, position_index, execute)** - Add code cell (executes by default)
+7. **edit_code_cell(path, position_index, source, execute)** - Edit code cell (re-executes by default)
+8. **add_markdown_cell(path, source, position_index)** - Add markdown cell
+9. **edit_markdown_cell(path, position_index, source)** - Edit markdown cell
+10. **delete_cell(path, position_index)** - Delete cell (later cells shift down)
+11. **execute_cell(path, position_index)** - Execute an existing code cell
+
+**Read-only queries:**
+
+12. **view_notebook(path)** - All cells in order (list index == position_index)
+13. **read_cell(path, position_index/cell_id/execution_count)** - One cell;
+    the returned dict includes `position`
+
+**Tool design rules** (the primary client path is FastMCP Code Mode):
+
+- Each capability is exposed through exactly ONE tool. In 0.3.0 the enum-dispatched
+  `query_notebook(query_type=...)` and `modify_notebook_cells(operation=...)`
+  tools were dismantled: cell operations became the five cell tools, and
+  `query_notebook` was replaced by `view_notebook` (its single-cell and
+  get-position modes were already covered by `read_cell`, which returns
+  `position`; `check_server` was dropped — a connected MCP client already knows
+  the server is up). Enum-dispatched tools make tool selection ambiguous,
+  produce untypeable conditionally-required parameters, and force polymorphic
+  return types that hurt Code Mode codegen.
+- Keep tools as small primitives with fully-typed signatures (every parameter
+  unconditionally meaningful) and one predictable return shape; agents compose
+  batches/loops in Code Mode scripts, so do not add batch/composite tools.
 
 ## Development Guidelines
 
@@ -271,7 +293,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-170 tests total across:
+162 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests

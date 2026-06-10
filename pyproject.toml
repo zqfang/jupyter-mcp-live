@@ -8,13 +8,12 @@ authors = [{name = "Zhuoqing Fang", email = "fzq518@gmail.com"}]
 description = "MCP server extension for Jupyter Server to execute code and manage notebooks via AI assistants"
 dynamic = ["version"]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["Jupyter", "Execution", "MCP", "FastMCP", "Code Execution", "Kernels"]
 classifiers = [
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Framework :: Jupyter",
 ]

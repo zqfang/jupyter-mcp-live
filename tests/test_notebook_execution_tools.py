@@ -11,16 +11,20 @@ from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 # Import from new modular structure
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.execution_tools import (
-    execute_notebook_code,
+    add_code_cell,
+    add_markdown_cell,
+    delete_cell,
+    edit_code_cell,
+    edit_markdown_cell,
+    execute_cell,
     get_server_context,
     list_notebook_kernels,
-    modify_notebook_cells,
-    query_notebook,
     read_cell,
     set_server_context,
     setup_notebook,
     shutdown_notebook,
     switch_notebook_kernel,
+    view_notebook,
 )
 from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
@@ -439,8 +443,8 @@ class TestListFunctions:
         assert "ir" in result["kernelspecs"]
 
 
-class TestExecuteNotebookCode:
-    """Test execute_notebook_code function."""
+class TestExecuteCell:
+    """Test execute_cell function."""
 
     @pytest.mark.asyncio
     async def test_execute_cell_by_position_no_context(self, temp_notebook):
@@ -451,7 +455,7 @@ class TestExecuteNotebookCode:
         write_notebook(temp_notebook, nb)
 
         # ExecutionEngine checks server context and returns error dict
-        result = await execute_notebook_code(
+        result = await execute_cell(
             temp_notebook,
             position_index=0
         )
@@ -468,7 +472,7 @@ class TestExecuteNotebookCode:
         nb.cells.append(new_code_cell("print('hello')"))
         write_notebook(temp_notebook, nb)
 
-        result = await execute_notebook_code(
+        result = await execute_cell(
             temp_notebook,
             position_index=0
         )
@@ -646,15 +650,13 @@ class TestShutdownNotebook:
         assert "Notebook session closed" in result["message"]
 
 
-class TestModifyNotebookCells:
-    """Test modify_notebook_cells function."""
+class TestCellTools:
+    """Test the five fine-grained cell tools."""
 
     @pytest.mark.asyncio
     async def test_add_code_cell_no_execute(self, temp_notebook):
         """Test adding a code cell without execution."""
-        result = await modify_notebook_cells(
-            temp_notebook, "add_code", "print('hello')", execute=False
-        )
+        result = await add_code_cell(temp_notebook, "print('hello')", execute=False)
         assert "message" in result
         assert "position" in result
 
@@ -668,18 +670,14 @@ class TestModifyNotebookCells:
         """Test adding and executing a code cell."""
         set_server_context(mock_serverapp)
 
-        result = await modify_notebook_cells(
-            temp_notebook, "add_code", "print('hello')", execute=True
-        )
+        result = await add_code_cell(temp_notebook, "print('hello')", execute=True)
         assert result["status"] == "ok"
         assert "execution_count" in result
 
     @pytest.mark.asyncio
     async def test_add_markdown_cell(self, temp_notebook):
         """Test adding a markdown cell."""
-        result = await modify_notebook_cells(
-            temp_notebook, "add_markdown", "# Title"
-        )
+        result = await add_markdown_cell(temp_notebook, "# Title")
         assert "message" in result
 
         # Verify cell was added
@@ -694,12 +692,10 @@ class TestModifyNotebookCells:
         set_server_context(mock_serverapp)
 
         # First add a cell
-        await modify_notebook_cells(temp_notebook, "add_code", "x = 1", execute=False)
+        await add_code_cell(temp_notebook, "x = 1", execute=False)
 
         # Then edit it
-        result = await modify_notebook_cells(
-            temp_notebook, "edit_code", "x = 2", position_index=0, execute=True
-        )
+        result = await edit_code_cell(temp_notebook, 0, "x = 2", execute=True)
         assert result["status"] == "ok"
 
         # Verify edit
@@ -710,12 +706,10 @@ class TestModifyNotebookCells:
     async def test_edit_markdown_cell(self, temp_notebook):
         """Test editing a markdown cell."""
         # First add a cell
-        await modify_notebook_cells(temp_notebook, "add_markdown", "# Old")
+        await add_markdown_cell(temp_notebook, "# Old")
 
         # Then edit it
-        result = await modify_notebook_cells(
-            temp_notebook, "edit_markdown", "# New", position_index=0
-        )
+        result = await edit_markdown_cell(temp_notebook, 0, "# New")
         assert "message" in result
 
         # Verify edit
@@ -726,12 +720,10 @@ class TestModifyNotebookCells:
     async def test_delete_cell(self, temp_notebook):
         """Test deleting a cell."""
         # First add a cell
-        await modify_notebook_cells(temp_notebook, "add_code", "x = 1", execute=False)
+        await add_code_cell(temp_notebook, "x = 1", execute=False)
 
         # Then delete it
-        result = await modify_notebook_cells(
-            temp_notebook, "delete", position_index=0
-        )
+        result = await delete_cell(temp_notebook, 0)
         assert "message" in result
 
         # Verify cell was deleted
@@ -739,22 +731,14 @@ class TestModifyNotebookCells:
         assert len(nb.cells) == 0
 
     @pytest.mark.asyncio
-    async def test_invalid_operation(self, temp_notebook):
-        """Test invalid operation."""
-        with pytest.raises(ValueError, match="Invalid operation"):
-            await modify_notebook_cells(temp_notebook, "invalid_op")
-
-    @pytest.mark.asyncio
     async def test_add_code_at_position(self, temp_notebook):
         """Test adding code cell at specific position."""
         # Add two cells
-        await modify_notebook_cells(temp_notebook, "add_code", "x = 1", execute=False)
-        await modify_notebook_cells(temp_notebook, "add_code", "x = 3", execute=False)
+        await add_code_cell(temp_notebook, "x = 1", execute=False)
+        await add_code_cell(temp_notebook, "x = 3", execute=False)
 
         # Insert at position 1 (middle)
-        await modify_notebook_cells(
-            temp_notebook, "add_code", "x = 2", position_index=1, execute=False
-        )
+        await add_code_cell(temp_notebook, "x = 2", position_index=1, execute=False)
 
         # Verify order
         nb = read_notebook(temp_notebook)
@@ -764,93 +748,31 @@ class TestModifyNotebookCells:
         assert nb.cells[2].source == "x = 3"
 
 
-class TestQueryNotebook:
-    """Test query_notebook function."""
+class TestViewNotebook:
+    """Test view_notebook function."""
 
     @pytest.mark.asyncio
-    async def test_query_view_source_all_cells(self, temp_notebook):
-        """Test viewing all cells."""
+    async def test_view_notebook_all_cells(self, temp_notebook):
+        """Test viewing all cells in order."""
         nb = read_notebook(temp_notebook)
         nb.cells.append(new_code_cell("x = 1"))
         nb.cells.append(new_markdown_cell("# Header"))
         write_notebook(temp_notebook, nb)
 
-        result = await query_notebook(temp_notebook, "view_source")
+        result = await view_notebook(temp_notebook)
         assert isinstance(result, list)
         assert len(result) == 2
+        # List index == position_index (documented contract)
+        assert result[0]["cell_type"] == "code"
+        assert result[0]["source"] == "x = 1"
+        assert result[1]["cell_type"] == "markdown"
+        assert result[1]["source"] == "# Header"
 
     @pytest.mark.asyncio
-    async def test_query_view_source_by_position(self, temp_notebook):
-        """Test viewing cell by position."""
-        nb = read_notebook(temp_notebook)
-        nb.cells.append(new_code_cell("x = 1"))
-        write_notebook(temp_notebook, nb)
-
-        result = await query_notebook(temp_notebook, "view_source", position_index=0)
-        assert isinstance(result, dict)
-        assert result["source"] == "x = 1"
-
-    @pytest.mark.asyncio
-    async def test_query_view_source_by_execution_count(self, temp_notebook):
-        """Test viewing cell by execution count."""
-        nb = read_notebook(temp_notebook)
-        cell = new_code_cell("x = 1")
-        cell.execution_count = 5
-        nb.cells.append(cell)
-        write_notebook(temp_notebook, nb)
-
-        result = await query_notebook(temp_notebook, "view_source", execution_count=5)
-        assert isinstance(result, dict)
-        assert result["source"] == "x = 1"
-        assert result["execution_count"] == 5
-
-    @pytest.mark.asyncio
-    async def test_query_check_server(self, mock_serverapp):
-        """Test checking server status — notebook_path not required."""
-        set_server_context(mock_serverapp)
-        result = await query_notebook(query_type="check_server")
-        assert "running" in result.lower()
-
-    @pytest.mark.asyncio
-    async def test_query_list_sessions_removed(self, mock_serverapp):
-        """list_sessions was removed from query_notebook (use list_notebook_sessions)."""
-        set_server_context(mock_serverapp)
-        with pytest.raises(ValueError, match="Invalid query_type"):
-            await query_notebook("dummy.ipynb", "list_sessions")
-
-    @pytest.mark.asyncio
-    async def test_query_list_kernels_removed(self, mock_serverapp):
-        """list_kernels was removed from query_notebook (use list_notebook_kernels)."""
-        set_server_context(mock_serverapp)
-        with pytest.raises(ValueError, match="Invalid query_type"):
-            await query_notebook("dummy.ipynb", "list_kernels")
-
-    @pytest.mark.asyncio
-    async def test_query_requires_path_for_view_source(self, mock_serverapp):
-        """view_source without notebook_path raises a clear error."""
-        set_server_context(mock_serverapp)
-        with pytest.raises(ValueError, match="notebook_path is required"):
-            await query_notebook(query_type="view_source")
-
-    @pytest.mark.asyncio
-    async def test_query_get_position_index(self, temp_notebook):
-        """Test getting position index by execution count."""
-        nb = read_notebook(temp_notebook)
-        cell = new_code_cell("x = 1")
-        cell.execution_count = 10
-        nb.cells.append(cell)
-        write_notebook(temp_notebook, nb)
-
-        result = await query_notebook(
-            temp_notebook, "get_position_index", execution_count=10
-        )
-        assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_query_invalid_type(self, temp_notebook):
-        """Test invalid query type."""
-        with pytest.raises(ValueError, match="Invalid query_type"):
-            await query_notebook(temp_notebook, "invalid_type")
+    async def test_view_notebook_empty(self, temp_notebook):
+        """Test viewing an empty notebook returns an empty list."""
+        result = await view_notebook(temp_notebook)
+        assert result == []
 
 
 class TestReadCell:
@@ -959,16 +881,14 @@ class TestIntegration:
         assert "kernel_id" in setup_result
 
         # 2. Add markdown header
-        await modify_notebook_cells(str(nb_path), "add_markdown", "# My Notebook")
+        await add_markdown_cell(str(nb_path), "# My Notebook")
 
         # 3. Add and execute code
-        exec_result = await modify_notebook_cells(
-            str(nb_path), "add_code", "x = 42", execute=True
-        )
+        exec_result = await add_code_cell(str(nb_path), "x = 42", execute=True)
         assert exec_result["status"] == "ok"
 
         # 4. Query notebook
-        cells = await query_notebook(str(nb_path), "view_source")
+        cells = await view_notebook(str(nb_path))
         assert len(cells) == 2
         assert cells[0]["cell_type"] == "markdown"
         assert cells[1]["cell_type"] == "code"

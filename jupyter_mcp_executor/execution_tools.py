@@ -11,7 +11,6 @@ from typing import Any
 
 from jupyter_ai_tools.utils import collaborative_tool
 
-from jupyter_mcp_executor.notebook_config import CellOperation, QueryType
 from jupyter_mcp_executor.notebook_models import CellIdentifier
 from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.server_context import get_server_context, set_server_context
@@ -66,7 +65,7 @@ async def setup_notebook(
     """Setup a notebook and start/reuse its kernel — CALL THIS FIRST, before any other notebook tool.
 
     Creates an empty notebook if it doesn't exist; add content afterwards
-    with modify_notebook_cells.
+    with add_code_cell / add_markdown_cell.
 
     By default, reuses the notebook's existing kernel session (e.g., one already
     open in JupyterLab), preserving kernel state. Set force_new_kernel=True for
@@ -151,7 +150,7 @@ async def shutdown_notebook(
 
 # Apply collaborative awareness
 @collaborative_tool(user=user_info)
-async def execute_notebook_code(
+async def execute_cell(
     notebook_path: str,
     position_index: int,
 ) -> dict[str, Any]:
@@ -171,7 +170,7 @@ async def execute_notebook_code(
 
     Recovery: If you get IndexError or the cell isn't what you expected, the
     notebook may have changed (cells shift after add/delete, and the user can
-    edit concurrently in JupyterLab). Call query_notebook(view_source) to
+    edit concurrently in JupyterLab). Call view_notebook() to
     re-check positions before retrying — don't retry the same index blindly.
     """
     notebook_path = normalize_path(notebook_path)
@@ -182,161 +181,179 @@ async def execute_notebook_code(
     return result.to_filtered_dict()
 
 
+def _cell_result_to_dict(result: Any) -> dict[str, Any]:
+    """Convert a cell-operation result model to an MCP response dict.
+
+    ExecutionResult uses to_filtered_dict() for token efficiency;
+    CellOperationResult uses plain model_dump.
+    """
+    if hasattr(result, "to_filtered_dict"):
+        return result.to_filtered_dict()
+    return result.model_dump(exclude_none=True)
+
+
 # Apply collaborative awareness
 @collaborative_tool(user=user_info)
-async def modify_notebook_cells(
+async def add_code_cell(
     notebook_path: str,
-    operation: CellOperation,
-    cell_content: str | None = None,
+    source: str,
     position_index: int | None = None,
     execute: bool = True,
 ) -> dict[str, Any]:
-    """Modify notebook cells (add, edit, delete).
+    """Add a code cell and execute it immediately by default.
 
     Default to execute=True unless the user requests otherwise or you have good
     reason not to execute immediately.
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
-        operation: Type of cell operation. Options:
-            - 'add_code': Add (and optionally execute) a code cell at end or specific position
-            - 'edit_code': Edit a code cell at specific position
-            - 'add_markdown': Add a markdown cell at end or specific position
-            - 'edit_markdown': Edit an existing markdown cell at specific position
-            - 'delete': Delete a cell at specific position
-        cell_content: Content for the cell (required for all operations except delete)
-        position_index: Position index (0-indexed cell location). Must be an integer.
-            - Optional for add_code/add_markdown: inserts there if provided, else appends at end
-            - Required for edit_code/edit_markdown/delete: which cell to modify
-        execute: Whether to execute code cells after adding/editing (default: True)
+        source: Code for the new cell
+        position_index: Where to insert (0-indexed); appends at end if omitted
+        execute: Whether to execute the cell after adding (default: True)
 
     Returns:
-        dict: For add_code/edit_code with execute=True: execution_count, outputs, status.
-            Otherwise: message (and error if the operation failed).
-
-    Raises:
-        ValueError: If invalid operation or missing required parameters
-        IndexError: If position_index is out of range
-
-    Recovery: If you get IndexError or the edited cell isn't what you expected,
-    the notebook may have changed (cells shift after add/delete, and the user
-    can edit concurrently in JupyterLab). Call query_notebook(view_source) to
-    re-check positions before retrying — don't retry the same index blindly.
+        dict: With execute=True: execution_count, outputs, status, kernel_id.
+            With execute=False: message, position, cell_type.
     """
-    notebook_path = normalize_path(notebook_path)
-
-    if operation == "add_code":
-        if cell_content is None:
-            msg = "cell_content required for add_code"
-            raise ValueError(msg)
-        result = await container.cell_operations.add_code_cell(
-            notebook_path, cell_content, position_index, execute
-        )
-        # Convert Pydantic model to dict
-        # ExecutionResult uses to_filtered_dict() for token efficiency
-        if hasattr(result, "to_filtered_dict"):
-            return result.to_filtered_dict()
-        return result.model_dump(exclude_none=True)
-
-    if operation == "edit_code":
-        if cell_content is None or position_index is None:
-            msg = "cell_content and position_index required for edit_code"
-            raise ValueError(msg)
-        result = await container.cell_operations.edit_code_cell(
-            notebook_path, position_index, cell_content, execute
-        )
-        # Convert Pydantic model to dict
-        # ExecutionResult uses to_filtered_dict() for token efficiency
-        if hasattr(result, "to_filtered_dict"):
-            return result.to_filtered_dict()
-        return result.model_dump(exclude_none=True)
-
-    if operation == "add_markdown":
-        if cell_content is None:
-            msg = "cell_content required for add_markdown"
-            raise ValueError(msg)
-        result = await container.cell_operations.add_markdown_cell(
-            notebook_path, cell_content, position_index
-        )
-        return result.model_dump(exclude_none=True)
-
-    if operation == "edit_markdown":
-        if cell_content is None or position_index is None:
-            msg = "cell_content and position_index required for edit_markdown"
-            raise ValueError(msg)
-        result = await container.cell_operations.edit_markdown_cell(
-            notebook_path, position_index, cell_content
-        )
-        return result.model_dump(exclude_none=True)
-
-    if operation == "delete":
-        if position_index is None:
-            msg = "position_index required for delete"
-            raise ValueError(msg)
-        result = await container.cell_operations.delete_cell(
-            notebook_path, position_index
-        )
-        return result.model_dump(exclude_none=True)
-
-    msg = f"Invalid operation: {operation}"
-    raise ValueError(msg)
+    result = await container.cell_operations.add_code_cell(
+        notebook_path, source, position_index, execute
+    )
+    return _cell_result_to_dict(result)
 
 
 # Apply collaborative awareness
 @collaborative_tool(user=user_info)
-async def query_notebook(
-    notebook_path: str | None = None,
-    query_type: QueryType = "view_source",
-    execution_count: int | None = None,
-    position_index: int | None = None,
-    cell_id: str | None = None,
-) -> dict[str, Any] | list | str | int:
-    """Read notebook cells and positions (read-only); not for listing kernels/sessions.
-
-    To list kernels or sessions, use list_notebook_kernels / list_notebook_sessions
-    instead — those are NOT available here.
+async def edit_code_cell(
+    notebook_path: str,
+    position_index: int,
+    source: str,
+    execute: bool = True,
+) -> dict[str, Any]:
+    """Replace a code cell's source and re-execute it immediately by default.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute).
-            Required for view_source and get_position_index; ignored for check_server.
-        query_type: Type of query to perform. Options:
-            - 'view_source': View source of one cell, or all cells if no identifier given
-            - 'get_position_index': Get the position index of a cell
-            - 'check_server': Check if Jupyter server is running (no notebook_path needed)
-        execution_count: (view_source/get_position_index) The number shown in square
-            brackets like [3] in Jupyter UI. Only set for executed code cells.
-            COMMON MISTAKE: Don't confuse with position_index!
-            - execution_count=3 finds the cell that was executed 3rd (shows [3] in Jupyter)
-            - position_index=3 finds the 4th cell in the notebook (0-indexed position)
-        position_index: (view_source) Physical position of the cell, 0-indexed.
-            Works for all cell types.
-        cell_id: (get_position_index) Cell UUID like "205658d6-093c-...".
+        notebook_path: Path to the notebook file (relative or absolute)
+        position_index: Which cell to edit (0-indexed)
+        source: New code for the cell
+        execute: Whether to execute the cell after editing (default: True)
 
     Returns:
-        - view_source: dict (single cell) or list[dict] (all cells)
-        - get_position_index: int
-        - check_server: str status message
-
-    Examples:
-        # View all cells
-        await query_notebook("my_notebook.ipynb", "view_source")
-
-        # View cell by execution count (the [3] shown in Jupyter UI)
-        await query_notebook("my_notebook.ipynb", "view_source", execution_count=3)
-
-        # Get position index of cell with execution count [5]
-        await query_notebook("my_notebook.ipynb", "get_position_index", execution_count=5)
+        dict: With execute=True: execution_count, outputs, status, kernel_id.
+            With execute=False: message, position, cell_type.
 
     Raises:
-        ValueError: If invalid query_type or missing required parameters
+        ValueError: If the cell at position_index is not a code cell
+        IndexError: If position_index is out of range
+
+    Recovery: If you get IndexError or the edited cell isn't what you expected,
+    the notebook may have changed (cells shift after add/delete, and the user
+    can edit concurrently in JupyterLab). Call view_notebook() to
+    re-check positions before retrying — don't retry the same index blindly.
     """
-    return await container.query_service.query(
-        notebook_path,
-        query_type,
-        execution_count=execution_count,
-        position_index=position_index,
-        cell_id=cell_id,
+    result = await container.cell_operations.edit_code_cell(
+        notebook_path, position_index, source, execute
     )
+    return _cell_result_to_dict(result)
+
+
+# Apply collaborative awareness
+@collaborative_tool(user=user_info)
+async def add_markdown_cell(
+    notebook_path: str,
+    source: str,
+    position_index: int | None = None,
+) -> dict[str, Any]:
+    """Add a markdown cell.
+
+    Args:
+        notebook_path: Path to the notebook file (relative or absolute)
+        source: Markdown content for the new cell
+        position_index: Where to insert (0-indexed); appends at end if omitted
+
+    Returns:
+        dict with message, position, and cell_type
+    """
+    result = await container.cell_operations.add_markdown_cell(
+        notebook_path, source, position_index
+    )
+    return _cell_result_to_dict(result)
+
+
+# Apply collaborative awareness
+@collaborative_tool(user=user_info)
+async def edit_markdown_cell(
+    notebook_path: str,
+    position_index: int,
+    source: str,
+) -> dict[str, Any]:
+    """Replace a markdown cell's content.
+
+    Args:
+        notebook_path: Path to the notebook file (relative or absolute)
+        position_index: Which cell to edit (0-indexed)
+        source: New markdown content
+
+    Returns:
+        dict with message, position, and cell_type
+
+    Raises:
+        ValueError: If the cell at position_index is not a markdown cell
+        IndexError: If position_index is out of range
+
+    Recovery: If you get IndexError or the edited cell isn't what you expected,
+    the notebook may have changed — call view_notebook() to re-check
+    positions before retrying.
+    """
+    result = await container.cell_operations.edit_markdown_cell(
+        notebook_path, position_index, source
+    )
+    return _cell_result_to_dict(result)
+
+
+# Apply collaborative awareness
+@collaborative_tool(user=user_info)
+async def delete_cell(
+    notebook_path: str,
+    position_index: int,
+) -> dict[str, Any]:
+    """Delete a cell; all later cells shift down by one position.
+
+    Args:
+        notebook_path: Path to the notebook file (relative or absolute)
+        position_index: Which cell to delete (0-indexed)
+
+    Returns:
+        dict with message
+
+    Raises:
+        IndexError: If position_index is out of range
+
+    Recovery: If you get IndexError, the notebook may have changed — call
+    view_notebook() to re-check positions before retrying.
+    """
+    result = await container.cell_operations.delete_cell(notebook_path, position_index)
+    return _cell_result_to_dict(result)
+
+
+# Apply collaborative awareness
+@collaborative_tool(user=user_info)
+async def view_notebook(notebook_path: str) -> list[dict[str, Any]]:
+    """View all cells of a notebook in order (read-only).
+
+    Use this to see the notebook's current structure — e.g., to find cell
+    positions before editing, or after add/delete operations shifted them.
+    For a single cell, use read_cell instead. Not for listing kernels/sessions
+    (use list_notebook_kernels / list_notebook_sessions).
+
+    Args:
+        notebook_path: Path to the notebook file (relative or absolute)
+
+    Returns:
+        list[dict]: One dict per cell, in notebook order, each containing
+            cell_type, source, metadata, execution_count, outputs (filtered
+            for token efficiency), and id. List index == position_index.
+    """
+    return await container.query_service.view_notebook(notebook_path)
 
 
 # Apply collaborative awareness
@@ -349,7 +366,8 @@ async def read_cell(
 ) -> dict[str, Any]:
     """Read a single notebook cell - convenience function.
 
-    Simpler alternative to query_notebook for reading individual cells.
+    Single-cell complement to view_notebook; the returned dict includes the
+    cell's position.
     Supports multiple ways to identify cells: position index, cell UUID, or execution count.
 
     Args:
@@ -384,15 +402,19 @@ async def read_cell(
 
 # Export context management functions (used by extension.py)
 __all__ = [
-    "execute_notebook_code",
+    "add_code_cell",
+    "add_markdown_cell",
+    "delete_cell",
+    "edit_code_cell",
+    "edit_markdown_cell",
+    "execute_cell",
     "get_server_context",
     "list_notebook_kernels",
     "list_notebook_sessions",
-    "modify_notebook_cells",
-    "query_notebook",
     "read_cell",
     "set_server_context",
     "setup_notebook",
     "shutdown_notebook",
     "switch_notebook_kernel",
+    "view_notebook",
 ]

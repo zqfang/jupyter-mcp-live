@@ -29,12 +29,17 @@ c.MCPExtensionApp.mcp_tools = [
     # Notebook execution and kernel management tools
     "jupyter_mcp_executor.execution_tools:list_notebook_sessions",
     "jupyter_mcp_executor.execution_tools:list_notebook_kernels",
-    "jupyter_mcp_executor.execution_tools:execute_notebook_code",
     "jupyter_mcp_executor.execution_tools:setup_notebook",
     "jupyter_mcp_executor.execution_tools:switch_notebook_kernel",
     "jupyter_mcp_executor.execution_tools:shutdown_notebook",
-    "jupyter_mcp_executor.execution_tools:modify_notebook_cells",
-    "jupyter_mcp_executor.execution_tools:query_notebook",
+    "jupyter_mcp_executor.execution_tools:view_notebook",
+    "jupyter_mcp_executor.execution_tools:add_code_cell",
+    "jupyter_mcp_executor.execution_tools:edit_code_cell",
+    "jupyter_mcp_executor.execution_tools:add_markdown_cell",
+    "jupyter_mcp_executor.execution_tools:edit_markdown_cell",
+    "jupyter_mcp_executor.execution_tools:read_cell",
+    "jupyter_mcp_executor.execution_tools:execute_cell",
+    "jupyter_mcp_executor.execution_tools:delete_cell",
 
     # Optional: Add file system tools from jupyter-ai-tools (if installed)
     # "jupyter_ai_tools.toolkits.file_system:read",
