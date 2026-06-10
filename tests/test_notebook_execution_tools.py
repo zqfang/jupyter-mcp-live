@@ -455,6 +455,80 @@ class TestExecuteCell:
         assert result["status"] == "ok"
         assert "execution_count" in result
 
+    @pytest.mark.asyncio
+    async def test_execute_cell_reuses_session_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
+        """execute_cell without setup_notebook reuses an existing session kernel."""
+        set_server_context(mock_serverapp)
+
+        # Simulate notebook already open (e.g., in JupyterLab) with a kernel
+        existing_kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+        normalized_path = normalize_path(temp_notebook)
+        mock_serverapp.session_manager.add_session(
+            normalized_path, existing_kernel_id, "python3"
+        )
+
+        nb = read_notebook(temp_notebook)
+        nb.cells.append(new_code_cell("x = 1"))
+        write_notebook(temp_notebook, nb)
+
+        result = await execute_cell(temp_notebook, position_index=0)
+
+        assert result["status"] == "ok"
+        assert result["kernel_id"] == existing_kernel_id
+        assert result["started_new_kernel"] is False
+        # No new kernel was forked
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_cell_starts_session_backed_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
+        """Auto-started kernels get a Jupyter session so they are discoverable later."""
+        set_server_context(mock_serverapp)
+
+        nb = read_notebook(temp_notebook)
+        nb.cells.append(new_code_cell("x = 1"))
+        write_notebook(temp_notebook, nb)
+
+        result = await execute_cell(temp_notebook, position_index=0)
+
+        assert result["status"] == "ok"
+        assert result["started_new_kernel"] is True
+        # Kernel is session-backed, not a bare orphan kernel
+        sessions = await mock_serverapp.session_manager.list_sessions()
+        assert len(sessions) == 1
+        assert sessions[0]["kernel"]["id"] == result["kernel_id"]
+        # And tracked for subsequent calls
+        tracker = get_kernel_tracker()
+        assert tracker.get(normalize_path(temp_notebook)) == result["kernel_id"]
+
+    @pytest.mark.asyncio
+    async def test_reconnect_after_auto_start_reuses_same_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
+        """Regression: setup_notebook after an auto-started kernel must reuse it.
+
+        Scenario: agent executes cells without calling setup_notebook first
+        (kernel auto-started), then later "reconnects" via setup_notebook.
+        The same kernel must be reused so user state is preserved.
+        """
+        set_server_context(mock_serverapp)
+
+        nb = read_notebook(temp_notebook)
+        nb.cells.append(new_code_cell("x = 1"))
+        write_notebook(temp_notebook, nb)
+
+        exec_result = await execute_cell(temp_notebook, position_index=0)
+        auto_kernel_id = exec_result["kernel_id"]
+
+        # Later: agent reconnects to the same notebook
+        setup_result = await setup_notebook(temp_notebook, kernel_name="python3")
+
+        assert setup_result["kernel_id"] == auto_kernel_id
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
 
 class TestSetupNotebook:
     """Test setup_notebook function."""
@@ -577,6 +651,39 @@ class TestSetupNotebook:
         # Verify a new kernel was created
         assert len(mock_serverapp.kernel_manager.kernels) == 1
 
+    @pytest.mark.asyncio
+    async def test_setup_notebook_reuses_tracked_kernel_without_session(
+        self, temp_notebook, mock_serverapp
+    ):
+        """setup_notebook falls back to a tracked kernel when no session exists."""
+        set_server_context(mock_serverapp)
+
+        # A live kernel tracked for the notebook, but with no Jupyter session
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+        tracker = get_kernel_tracker()
+        tracker.track(normalize_path(temp_notebook), kernel_id)
+
+        result = await setup_notebook(temp_notebook, kernel_name="python3")
+
+        assert result["kernel_id"] == kernel_id
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_ignores_dead_tracked_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
+        """A dead tracked kernel is untracked and a new kernel is started."""
+        set_server_context(mock_serverapp)
+
+        tracker = get_kernel_tracker()
+        tracker.track(normalize_path(temp_notebook), "kernel-dead-123")
+
+        result = await setup_notebook(temp_notebook, kernel_name="python3")
+
+        assert result["kernel_id"] != "kernel-dead-123"
+        assert result["kernel_id"] is not None
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
 
 class TestSwitchNotebookKernel:
     """Test switch_notebook_kernel function."""
@@ -648,6 +755,24 @@ class TestCellTools:
         result = await add_code_cell(temp_notebook, "print('hello')", execute=True)
         assert result["status"] == "ok"
         assert "execution_count" in result
+
+    @pytest.mark.asyncio
+    async def test_add_code_cell_reuses_session_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
+        """add_code_cell reuses an existing session kernel instead of forking one."""
+        set_server_context(mock_serverapp)
+
+        existing_kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+        mock_serverapp.session_manager.add_session(
+            normalize_path(temp_notebook), existing_kernel_id, "python3"
+        )
+
+        result = await add_code_cell(temp_notebook, "x = 1", execute=True)
+
+        assert result["status"] == "ok"
+        assert result["kernel_id"] == existing_kernel_id
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
 
     @pytest.mark.asyncio
     async def test_add_markdown_cell(self, temp_notebook):

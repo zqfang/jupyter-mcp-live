@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
+from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.notebook_adapter import NotebookAdapter, get_notebook_adapter
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
@@ -24,9 +25,16 @@ class ExecutionEngine:
     - Persistence to disk for collaborative mode
     """
 
-    def __init__(self):
-        """Initialize execution engine."""
+    def __init__(self, kernel_service: KernelManager | None = None):
+        """Initialize execution engine.
+
+        Args:
+            kernel_service: KernelManager used to resolve/reuse kernels for
+                notebooks. A new instance is created if not provided (it is
+                stateless apart from the shared kernel tracker singleton).
+        """
         self.kernel_tracker = get_kernel_tracker()
+        self.kernel_service = kernel_service or KernelManager()
 
     async def execute_cell_code(
         self,
@@ -124,7 +132,9 @@ class ExecutionEngine:
             adapter: Notebook adapter (YDoc or nbformat)
             cell_position: Position of cell to update
             code: Code to execute
-            kernel_id: Optional kernel ID
+            kernel_id: Optional kernel ID. If None, the notebook's existing
+                kernel is reused (tracked kernel or running Jupyter session);
+                a new session-backed kernel is started only if none exists.
             timeout: Execution timeout
 
         Returns:
@@ -133,10 +143,22 @@ class ExecutionEngine:
         if timeout is None:
             timeout = EXECUTION_CONFIG.default_timeout
 
+        # Resolve the notebook's kernel: reuse tracked/session kernel, or start
+        # a session-backed one. Never silently fork a bare untracked kernel —
+        # that loses user state and is invisible to later session lookups.
+        started_new = False
+        if kernel_id is None:
+            kernel_id, started_new = await self.kernel_service.get_kernel_for_notebook(
+                adapter.notebook_path
+            )
+
         # Execute code
         exec_result = await self.execute_cell_code(
             code, kernel_id=kernel_id, timeout=timeout
         )
+
+        if started_new and not exec_result.started_new_kernel:
+            exec_result = exec_result.model_copy(update={"started_new_kernel": True})
 
         # Track kernel if new
         if exec_result.started_new_kernel:
@@ -184,10 +206,7 @@ class ExecutionEngine:
 
         code = cell.get_source_as_string()
 
-        # Get tracked kernel for this notebook
-        kernel_id = self.kernel_tracker.get(notebook_path)
-
-        # Execute and update
+        # Execute and update; kernel is resolved per-notebook (reuse before create)
         return await self.execute_and_update_cell(
-            adapter, position, code, kernel_id=kernel_id, timeout=timeout
+            adapter, position, code, timeout=timeout
         )

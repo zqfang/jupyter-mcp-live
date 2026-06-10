@@ -83,7 +83,7 @@ class ServiceContainer:
             ExecutionEngine singleton instance
         """
         logger.debug("Creating ExecutionEngine instance")
-        return ExecutionEngine()
+        return ExecutionEngine(kernel_service=self.kernel_manager)
 
     @cached_property
     def kernel_manager(self) -> KernelManager:

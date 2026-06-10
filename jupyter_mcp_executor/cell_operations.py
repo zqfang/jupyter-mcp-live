@@ -76,11 +76,9 @@ class CellOperations:
             if timeout is None:
                 timeout = EXECUTION_CONFIG.default_timeout
 
-            # Get tracked kernel for this notebook
-            kernel_id = self.execution_engine.kernel_tracker.get(notebook_path)
-
+            # Kernel is resolved per-notebook inside the engine (reuse before create)
             return await self.execution_engine.execute_and_update_cell(
-                adapter, actual_position, code, kernel_id=kernel_id, timeout=timeout
+                adapter, actual_position, code, timeout=timeout
             )
 
         return CellOperationResult(
@@ -137,11 +135,9 @@ class CellOperations:
             if timeout is None:
                 timeout = EXECUTION_CONFIG.default_timeout
 
-            # Get tracked kernel for this notebook
-            kernel_id = self.execution_engine.kernel_tracker.get(notebook_path)
-
+            # Kernel is resolved per-notebook inside the engine (reuse before create)
             return await self.execution_engine.execute_and_update_cell(
-                adapter, position, code, kernel_id=kernel_id, timeout=timeout
+                adapter, position, code, timeout=timeout
             )
 
         return CellOperationResult(

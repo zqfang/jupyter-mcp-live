@@ -290,7 +290,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-138 tests total across:
+144 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
@@ -370,9 +370,23 @@ When using `YDocAdapter` (notebook is open):
 When using `NbformatAdapter` (notebook is closed):
 - Changes are written directly to the .ipynb file on disk
 
-### Kernel Tracking
+### Kernel Tracking and Reuse
 
 Each notebook maintains its own kernel session via `kernel_tracker.py`. Kernels are reused across operations on the same notebook until explicitly shut down.
+
+Kernel resolution (`KernelManager.get_kernel_for_notebook()`) reuses before
+creating, in this order:
+
+1. Locally tracked kernel (verified still alive)
+2. Kernel from an existing Jupyter session (e.g., notebook open in JupyterLab)
+3. Start a new kernel **with a Jupyter session** so it stays discoverable
+
+Execution tools (`execute_cell`, `add_code_cell`, `edit_code_cell`) resolve
+through this path automatically — they never fork a bare, sessionless kernel
+when the tracker has no entry (that used to silently lose user state on
+"reconnect"). Symmetrically, `setup_notebook` falls back to the tracked kernel
+when no session exists, so reconnecting to a notebook always reattaches to the
+running kernel unless `force_new_kernel=True`.
 
 ### Cell Identification
 

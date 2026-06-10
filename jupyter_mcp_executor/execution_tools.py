@@ -67,9 +67,12 @@ async def setup_notebook(
     Creates an empty notebook if it doesn't exist; add content afterwards
     with add_code_cell / add_markdown_cell.
 
-    By default, reuses the notebook's existing kernel session (e.g., one already
-    open in JupyterLab), preserving kernel state. Set force_new_kernel=True for
-    a fresh kernel.
+    By default, reuses the notebook's existing kernel (a running Jupyter
+    session, e.g. one open in JupyterLab, or a kernel started earlier through
+    these tools), preserving kernel state. When resuming work on a notebook
+    from an earlier conversation, call this again with the same path — it
+    reattaches to the still-running kernel and all variables remain available.
+    Only set force_new_kernel=True if the user explicitly wants a clean state.
 
     Args:
         notebook_path: Path to the notebook (relative or absolute)
@@ -156,6 +159,11 @@ async def execute_cell(
 ) -> dict[str, Any]:
     """Execute an existing code cell in a notebook.
 
+    Runs on the notebook's existing kernel (reused automatically); a new kernel
+    is started only if none is running. started_new_kernel=True in the result
+    means prior kernel state (variables) was NOT preserved — if that's
+    unexpected, the previous kernel died; re-run setup cells.
+
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
         position_index: Positional index of cell to execute (0-based)
@@ -203,7 +211,9 @@ async def add_code_cell(
     """Add a code cell and execute it immediately by default.
 
     Default to execute=True unless the user requests otherwise or you have good
-    reason not to execute immediately.
+    reason not to execute immediately. Execution reuses the notebook's existing
+    kernel automatically; a new kernel is started only if none is running
+    (started_new_kernel=True in the result means prior variables were lost).
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
@@ -230,6 +240,9 @@ async def edit_code_cell(
     execute: bool = True,
 ) -> dict[str, Any]:
     """Replace a code cell's source and re-execute it immediately by default.
+
+    Execution reuses the notebook's existing kernel automatically; a new kernel
+    is started only if none is running.
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)

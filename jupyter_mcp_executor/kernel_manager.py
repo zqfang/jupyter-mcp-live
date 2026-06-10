@@ -68,7 +68,8 @@ class KernelManager:
 
         Workflow:
         1. Check if notebook file exists
-        2. Check if notebook has an existing kernel session (via list_sessions)
+        2. Check for an existing kernel: Jupyter session first (via
+           list_sessions), then a locally tracked kernel without a session
         3. If notebook doesn't exist: create new notebook and start new kernel
         4. If notebook exists with running kernel: reuse the existing kernel
         5. If notebook exists without kernel: start new kernel
@@ -95,9 +96,9 @@ class KernelManager:
         # Step 2: Check for existing kernel session (unless force_new_kernel is True)
         kernel_id = None
         reused_kernel = False
-        existing_session = None
 
         if not force_new_kernel:
+            serverapp = get_server_context()
             existing_session = await self._find_session_for_notebook(notebook_path)
 
             if existing_session:
@@ -106,7 +107,6 @@ class KernelManager:
                 existing_kernel_name = kernel_info.get("name", kernel_name)
 
                 # Verify kernel is still alive
-                serverapp = get_server_context()
                 if serverapp and kernel_id:
                     try:
                         # Verify kernel exists and is accessible
@@ -125,6 +125,24 @@ class KernelManager:
                             f"Existing kernel {kernel_id} not found, will start new kernel"
                         )
                         kernel_id = None
+
+            if not reused_kernel and serverapp:
+                # Fallback: a kernel may be tracked without a Jupyter session
+                # (e.g., auto-started by an execute call). Reuse it instead of
+                # starting a new kernel and losing its state.
+                tracked_id = self.kernel_tracker.get(notebook_path)
+                if tracked_id:
+                    try:
+                        kernel = serverapp.kernel_manager.get_kernel(tracked_id)
+                        kernel_id = tracked_id
+                        kernel_name = getattr(kernel, "kernel_name", kernel_name)
+                        reused_kernel = True
+                        logger.info(
+                            f"Reusing tracked kernel {kernel_id} ({kernel_name}) "
+                            f"for {notebook_path} (no session found)"
+                        )
+                    except KeyError:
+                        self.kernel_tracker.untrack(notebook_path)
 
         # Step 3: Handle notebook creation/setup based on existence and kernel state
         if not notebook_exists:
@@ -187,6 +205,85 @@ class KernelManager:
             kernel_name=kernel_name,
             kernel_id=kernel_id,
         )
+
+    async def get_kernel_for_notebook(
+        self, notebook_path: str, kernel_name: str | None = None
+    ) -> tuple[str | None, bool]:
+        """Resolve a live kernel for a notebook, reusing before creating.
+
+        Resolution order:
+        1. Kernel already tracked for this notebook (if still alive)
+        2. Kernel from an existing Jupyter session (e.g., notebook open in
+           JupyterLab, or set up by another client)
+        3. Start a new kernel with a proper Jupyter session, so it is
+           discoverable by later setup_notebook/session lookups
+
+        Args:
+            notebook_path: Path to notebook
+            kernel_name: Kernel to use only if a new kernel must be started;
+                defaults to the notebook's kernelspec metadata, then "python3"
+
+        Returns:
+            Tuple of (kernel_id, started_new). kernel_id is None if no server
+            context is available or kernel startup failed. started_new is True
+            only when a brand-new kernel was started (no prior state preserved).
+        """
+        notebook_path = normalize_path(notebook_path)
+        serverapp = get_server_context()
+        if not serverapp:
+            return self.kernel_tracker.get(notebook_path), False
+
+        # 1. Tracked kernel, verified alive
+        tracked_id = self.kernel_tracker.get(notebook_path)
+        if tracked_id:
+            try:
+                serverapp.kernel_manager.get_kernel(tracked_id)
+            except KeyError:
+                logger.info(
+                    f"Tracked kernel {tracked_id} for {notebook_path} is gone; "
+                    f"untracking"
+                )
+                self.kernel_tracker.untrack(notebook_path)
+            else:
+                return tracked_id, False
+
+        # 2. Existing Jupyter session
+        session = await self._find_session_for_notebook(notebook_path)
+        if session:
+            session_kernel_id = session.get("kernel", {}).get("id")
+            if session_kernel_id:
+                try:
+                    serverapp.kernel_manager.get_kernel(session_kernel_id)
+                except KeyError:
+                    logger.info(
+                        f"Session kernel {session_kernel_id} for {notebook_path} "
+                        f"is gone; starting a new kernel"
+                    )
+                else:
+                    self.kernel_tracker.track(notebook_path, session_kernel_id)
+                    logger.info(
+                        f"Attached to existing session kernel {session_kernel_id} "
+                        f"for {notebook_path}"
+                    )
+                    return session_kernel_id, False
+
+        # 3. Start a new session-backed kernel
+        if kernel_name is None:
+            kernel_name = self._read_notebook_kernel_name(notebook_path) or "python3"
+        available_kernels = await self.list_notebook_kernels()
+        kernel_name = resolve_kernel_name(
+            kernel_name, available_kernels.get("kernelspecs", {}), fallback="python3"
+        )
+        kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+        return kernel_id, kernel_id is not None
+
+    def _read_notebook_kernel_name(self, notebook_path: str) -> str | None:
+        """Read the kernelspec name from notebook metadata, if present."""
+        try:
+            nb = nbformat.read(notebook_path, as_version=4)
+        except Exception:
+            return None
+        return nb.metadata.get("kernelspec", {}).get("name")
 
     async def switch_kernel(
         self, notebook_path: str, kernel_name: str
