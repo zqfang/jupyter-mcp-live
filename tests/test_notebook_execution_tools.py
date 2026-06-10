@@ -8,8 +8,6 @@ import nbformat
 import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-# Import from new modular structure
-from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.execution_tools import (
     add_code_cell,
     add_markdown_cell,
@@ -26,12 +24,14 @@ from jupyter_mcp_executor.execution_tools import (
     switch_notebook_kernel,
     view_notebook,
 )
+
+# Import from new modular structure
+from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.output_filter import OutputFilter
 from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
 from jupyter_mcp_executor.server_context import _server_context
-from jupyter_mcp_executor.validation import validate_cell_index, validate_code_cell
 
 
 class MockKernelManager:
@@ -180,7 +180,7 @@ class MockServerApp:
 class MockContentsManager:
     """Minimal contents manager to satisfy KernelManager preflight checks."""
 
-    def get(self, path, type=None):  # noqa: A002, ARG002
+    def get(self, path, type=None):  # noqa: ARG002
         # Return a minimal notebook model dict similar to Jupyter contents API
         return {"type": "notebook", "path": path, "name": Path(path).name}
 
@@ -376,31 +376,6 @@ class TestHelperFunctions:
         nodes = convert_outputs_to_notebook_nodes(outputs)
         assert len(nodes) == 2
         assert nodes[0]["output_type"] == "stream"
-
-    def test_validate_cell_index(self, temp_notebook):
-        """Test cell index validation."""
-        nb = read_notebook(temp_notebook)
-        nb.cells.append(new_code_cell("x = 1"))
-
-        # Valid index
-        validate_cell_index(nb, 0)  # Should not raise
-
-        # Invalid index
-        with pytest.raises(IndexError, match="Cannot access cell at index 5"):
-            validate_cell_index(nb, 5)
-
-    def test_validate_code_cell(self, temp_notebook):
-        """Test code cell validation."""
-        nb = read_notebook(temp_notebook)
-        nb.cells.append(new_code_cell("x = 1"))
-        nb.cells.append(new_markdown_cell("# Header"))
-
-        # Valid code cell
-        validate_code_cell(nb.cells[0], 0)  # Should not raise
-
-        # Invalid - markdown cell
-        with pytest.raises(ValueError, match="not a code cell"):
-            validate_code_cell(nb.cells[1], 1)
 
     def test_output_filter(self):
         """Test output filtering."""

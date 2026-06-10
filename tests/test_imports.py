@@ -98,15 +98,9 @@ def test_import_utilities():
     )
     from jupyter_mcp_executor.output_filter import OutputFilter  # noqa: PLC0415
     from jupyter_mcp_executor.path_utils import normalize_path  # noqa: PLC0415
-    from jupyter_mcp_executor.validation import (  # noqa: PLC0415
-        validate_cell_index,
-        validate_code_cell,
-    )
 
     # Verify functions exist
     assert normalize_path is not None
-    assert validate_cell_index is not None
-    assert validate_code_cell is not None
     assert OutputFilter is not None
     assert convert_outputs_to_notebook_nodes is not None
     assert NotebookContext is not None
@@ -118,20 +112,12 @@ def test_import_config():
     """Test that config module imports correctly."""
     from jupyter_mcp_executor.notebook_config import (  # noqa: PLC0415
         EXECUTION_CONFIG,
-        LANGUAGE_PATTERNS,
         OUTPUT_FILTER_CONFIG,
-        KernelLanguage,
     )
 
     # Verify constants exist
     assert EXECUTION_CONFIG is not None
     assert OUTPUT_FILTER_CONFIG is not None
-    assert KernelLanguage is not None
-    assert LANGUAGE_PATTERNS is not None
-
-    # Verify LANGUAGE_PATTERNS structure
-    assert "python" in LANGUAGE_PATTERNS
-    assert "R" in LANGUAGE_PATTERNS
 
 
 def test_kernel_tracker():

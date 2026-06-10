@@ -166,18 +166,15 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 ### Foundation/Utilities
 
 - `notebook_models.py` - Dataclasses (CellIdentifier, ExecutionResult, etc.)
-- `notebook_config.py` - Configuration constants and enums
+- `notebook_config.py` - Configuration constants (EXECUTION_CONFIG, OUTPUT_FILTER_CONFIG)
 - `kernel_utils.py` - Kernel detection and language resolution
 - `kernel_tracker.py` - Tracks kernel sessions per notebook
 - `output_filter.py` - Filter large outputs for token efficiency
 - `output_converter.py` - Output format conversion
 - `notebook_io.py` - File I/O operations
 - `path_utils.py` - Path normalization utilities
-- `validation.py` - Input validation utilities
 - `server_context.py` - Server context management
-- `exceptions.py` - Custom exception classes
 - `execution_utils.py` - Low-level kernel execution primitives
-- `persistence_utils.py` - Disk persistence helpers (used for nbformat adapter and execution output writes)
 
 ## MCP Functions (Public API)
 
@@ -293,11 +290,10 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-162 tests total across:
+138 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
-- `tests/test_persistence_utils.py` - Disk persistence helper tests
 - `tests/test_sessions.py` - Session matching tests
 - `tests/test_imports.py` - Import validation tests
 - `tests/test_kernel_utils.py` - Kernel utilities tests
@@ -396,8 +392,8 @@ Cells can be identified three ways (see `CellIdentifier` in `notebook_models.py`
 - Absolute paths are allowed anywhere on the filesystem (JupyterLab supports
   notebooks outside root_dir)
 
-All MCP tools and `persistence_utils.py` helpers call `normalize_path()` before
-touching disk.
+All MCP tools call `normalize_path()` (directly or via the service layer)
+before touching disk.
 
 ## Coding Standards
 
