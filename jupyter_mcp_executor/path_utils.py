@@ -46,13 +46,15 @@ def normalize_path(path: str) -> str:
         resolved = (root_dir / decoded_path).resolve()
         # Guard: relative paths must not escape the server root (traversal prevention)
         if not resolved.is_relative_to(root_dir):
-            raise ValueError("Path is not permitted")
+            msg = "Path is not permitted"
+            raise ValueError(msg)
     else:
         resolved = Path(decoded_path).resolve()
 
     # Only .ipynb files are allowed through the notebook API
     if resolved.suffix != ".ipynb":
-        raise ValueError("Only .ipynb files are permitted")
+        msg = "Only .ipynb files are permitted"
+        raise ValueError(msg)
 
     return str(resolved)
 

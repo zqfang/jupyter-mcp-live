@@ -51,9 +51,10 @@ class OutputFilterConfig:
 
 
 # Type aliases for operation types
-QueryType = Literal[
-    "view_source", "check_server", "list_sessions", "list_kernels", "get_position_index"
-]
+# Note: kernel/session listing intentionally lives only in the dedicated
+# list_notebook_kernels / list_notebook_sessions tools — duplicating them here
+# made tool selection ambiguous for MCP agents.
+QueryType = Literal["view_source", "check_server", "get_position_index"]
 
 CellOperation = Literal[
     "add_code", "edit_code", "add_markdown", "edit_markdown", "delete"

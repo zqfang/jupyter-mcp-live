@@ -806,24 +806,31 @@ class TestQueryNotebook:
 
     @pytest.mark.asyncio
     async def test_query_check_server(self, mock_serverapp):
-        """Test checking server status."""
+        """Test checking server status — notebook_path not required."""
         set_server_context(mock_serverapp)
-        result = await query_notebook("dummy.ipynb", "check_server")
+        result = await query_notebook(query_type="check_server")
         assert "running" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_query_list_sessions(self, mock_serverapp):
-        """Test listing sessions."""
+    async def test_query_list_sessions_removed(self, mock_serverapp):
+        """list_sessions was removed from query_notebook (use list_notebook_sessions)."""
         set_server_context(mock_serverapp)
-        result = await query_notebook("dummy.ipynb", "list_sessions")
-        assert isinstance(result, list)
+        with pytest.raises(ValueError, match="Invalid query_type"):
+            await query_notebook("dummy.ipynb", "list_sessions")
 
     @pytest.mark.asyncio
-    async def test_query_list_kernels(self, mock_serverapp):
-        """Test listing kernel specs."""
+    async def test_query_list_kernels_removed(self, mock_serverapp):
+        """list_kernels was removed from query_notebook (use list_notebook_kernels)."""
         set_server_context(mock_serverapp)
-        result = await query_notebook("dummy.ipynb", "list_kernels")
-        assert "kernelspecs" in result
+        with pytest.raises(ValueError, match="Invalid query_type"):
+            await query_notebook("dummy.ipynb", "list_kernels")
+
+    @pytest.mark.asyncio
+    async def test_query_requires_path_for_view_source(self, mock_serverapp):
+        """view_source without notebook_path raises a clear error."""
+        set_server_context(mock_serverapp)
+        with pytest.raises(ValueError, match="notebook_path is required"):
+            await query_notebook(query_type="view_source")
 
     @pytest.mark.asyncio
     async def test_query_get_position_index(self, temp_notebook):

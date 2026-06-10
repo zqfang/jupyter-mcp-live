@@ -56,14 +56,14 @@ c.MCPExtensionApp.mcp_port = 8080
 # Register tools from existing packages
 c.MCPExtensionApp.mcp_tools = [
     # Notebook execution and kernel management tools
-    "jupyter_mcp_executor.notebook_execution_tools:list_running_kernels",
-    "jupyter_mcp_executor.notebook_execution_tools:list_notebook_kernels",
-    "jupyter_mcp_executor.notebook_execution_tools:execute_notebook_code",
-    "jupyter_mcp_executor.notebook_execution_tools:setup_notebook",
-    "jupyter_mcp_executor.notebook_execution_tools:switch_notebook_kernel",
-    "jupyter_mcp_executor.notebook_execution_tools:shutdown_notebook",
-    "jupyter_mcp_executor.notebook_execution_tools:modify_notebook_cells",
-    "jupyter_mcp_executor.notebook_execution_tools:query_notebook"
+    "jupyter_mcp_executor.execution_tools:list_running_kernels",
+    "jupyter_mcp_executor.execution_tools:list_notebook_kernels",
+    "jupyter_mcp_executor.execution_tools:execute_notebook_code",
+    "jupyter_mcp_executor.execution_tools:setup_notebook",
+    "jupyter_mcp_executor.execution_tools:switch_notebook_kernel",
+    "jupyter_mcp_executor.execution_tools:shutdown_notebook",
+    "jupyter_mcp_executor.execution_tools:modify_notebook_cells",
+    "jupyter_mcp_executor.execution_tools:query_notebook"
 ]
 ```
 

@@ -28,7 +28,7 @@ class QueryService:
 
     async def query(
         self,
-        notebook_path: str,
+        notebook_path: str | None,
         query_type: QueryType,
         execution_count: int | None = None,
         position_index: int | None = None,
@@ -37,7 +37,7 @@ class QueryService:
         """Execute a query operation.
 
         Args:
-            notebook_path: Path to notebook
+            notebook_path: Path to notebook (not needed for check_server)
             query_type: Type of query
             execution_count: Cell execution count (for some queries)
             position_index: Cell position (for some queries)
@@ -46,22 +46,24 @@ class QueryService:
         Returns:
             Query results (type depends on query_type)
         """
+        if query_type == "check_server":
+            return self.check_server()
+
+        if notebook_path is None:
+            msg = f"notebook_path is required for query_type='{query_type}'"
+            raise ValueError(msg)
+
         if query_type == "view_source":
             return await self.view_source(
                 notebook_path, execution_count, position_index
             )
-        if query_type == "check_server":
-            return self.check_server()
-        if query_type == "list_sessions":
-            return await self.list_sessions()
         if query_type == "get_position_index":
             return await self.get_position_index(
                 notebook_path, execution_count, cell_id
             )
         msg = (
             f"Invalid query_type: {query_type}. "
-            f"Must be one of: view_source, check_server, list_sessions, "
-            f"get_position_index"
+            f"Must be one of: view_source, check_server, get_position_index"
         )
         raise ValueError(msg)
 

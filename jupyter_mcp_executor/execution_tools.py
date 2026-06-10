@@ -44,8 +44,8 @@ async def list_notebook_kernels() -> dict[str, Any]:
 async def list_notebook_sessions() -> list[dict[str, Any]]:
     """List all active notebook sessions with their kernels.
 
-    This is useful for debugging kernel reuse - you can see which notebooks
-    are currently open and which kernels they're using.
+    Useful for seeing which notebooks are currently open and which kernels
+    they're using (e.g., to debug kernel reuse).
 
     Returns:
         List of session dicts, each containing:
@@ -54,12 +54,6 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
         - name: Notebook filename
         - type: Session type (usually "notebook")
         - kernel: Dict with kernel info (id, name, execution_state, etc.)
-
-    Example usage:
-        sessions = await list_notebook_sessions()
-        for session in sessions:
-            print(f"Notebook: {session['path']}")
-            print(f"Kernel: {session['kernel']['id']} ({session['kernel']['name']})")
     """
     return await container.query_service.list_sessions()
 
@@ -69,56 +63,32 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
 async def setup_notebook(
     notebook_path: str, kernel_name: str = "python3", force_new_kernel: bool = False
 ) -> dict[str, Any]:
-    """Setup a notebook (create if needed) and start or reuse kernel.
+    """Setup a notebook and start/reuse its kernel — CALL THIS FIRST, before any other notebook tool.
 
-    Will create a new empty Jupyter notebook if it doesn't exist.
+    Creates an empty notebook if it doesn't exist; add content afterwards
+    with modify_notebook_cells.
 
-    **KERNEL REUSE**: By default, this function will check if the notebook already has
-    a running kernel session (e.g., from JupyterLab). If so, it will reuse that kernel
-    instead of creating a new one, preserving kernel state and avoiding conflicts.
-
-    **CALL THIS FIRST** - This tool must be called before using other notebook tools
-    to establish the server connection. All subsequent notebook operations will
-    use the server URL stored by this tool.
-
-    This tool creates an empty notebook or reuses an existing one. To add content, use the modify_notebook_cells
-    tool after creation.
-
-    Example usage:
-        # Step 1: Setup notebook with Python kernel
-        await setup_notebook("demo.ipynb")
-
-        # Step 2: Add cells
-        await modify_notebook_cells("demo.ipynb", "add_markdown", "# Title\\n\\nDescription")
-        await modify_notebook_cells("demo.ipynb", "add_code", "print('Hello World')")
-
-        # For R notebooks:
-        await setup_notebook("demo_r.ipynb", kernel_name="ir")
-        await modify_notebook_cells("demo_r.ipynb", "add_code", "library(ggplot2)")
-
-        # Force a new kernel even if one exists:
-        await setup_notebook("demo.ipynb", force_new_kernel=True)
+    By default, reuses the notebook's existing kernel session (e.g., one already
+    open in JupyterLab), preserving kernel state. Set force_new_kernel=True for
+    a fresh kernel.
 
     Args:
         notebook_path: Path to the notebook (relative or absolute)
-        kernel_name: Name of the kernel to use (default: "python3")
-                     - Examples: "python3", "python3.11", "ir" (R), "julia-1.10"
-                     - For R kernels, you can use "r", "ir", or "irkernel"
-                     - To discover available kernels, call list_notebook_kernels() first
-                     - Only used when starting a new kernel (ignored if reusing existing)
-        force_new_kernel: If True, always start a new kernel even if one exists (default: False)
-                          Use this if you need a fresh kernel state.
+        kernel_name: Kernel spec name (default: "python3").
+            Examples: "python3", "ir" (R), "julia-1.10". For R, "r"/"ir"/"irkernel"
+            all auto-detect the available R kernel. Ignored when reusing an
+            existing kernel.
+        force_new_kernel: Always start a new kernel even if one exists (default: False)
 
     Agent guidance:
-        - Always honor an explicitly provided `kernel_name` from the user.
-        - If the user specifies a language (e.g., R/Julia) rather than a kernel name, map it by first calling
-          `list_notebook_kernels` and selecting the closest matching kernelspec key.
-        - For R kernels, you can use "r", "ir", or "irkernel" - the system will auto-detect the correct available kernel.
-        - If setup fails due to an unknown kernel, surface the list from `list_notebook_kernels` in the error/help message.
-        - If the notebook is already open in JupyterLab, this will reuse its kernel unless force_new_kernel=True.
+        - Honor an explicitly provided kernel_name from the user.
+        - If the user names a language (R/Julia) rather than a kernel, call
+          list_notebook_kernels first and pick the closest matching kernelspec key.
+        - If setup fails due to an unknown kernel, surface the list from
+          list_notebook_kernels in your error message.
 
     Returns:
-        dict: Information about the notebook and status message, including:
+        dict with:
             - path: Normalized notebook path
             - exists: Whether notebook existed before this call
             - kernel_name: Name of the kernel being used
@@ -137,28 +107,18 @@ async def switch_notebook_kernel(
 ) -> dict[str, Any]:
     """Switch notebook to use a different kernel.
 
-    This updates the notebook's kernelspec metadata and creates a new
-    kernel session with the specified kernel.
+    Updates the notebook's kernelspec metadata, shuts down the previous kernel,
+    and starts a new kernel session. Kernel state from the previous kernel is lost.
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
-        kernel_name: Name of the kernel to switch to (e.g., "python3", "ir", "julia-1.10")
+        kernel_name: Kernel to switch to (e.g., "python3", "ir", "julia-1.10")
 
     Returns:
-        dict: Status information containing:
+        dict with:
             - kernel_name: Name of the new kernel
             - kernel_id: ID of the new kernel
             - previous_kernel_id: ID of the previous kernel that was shut down
-
-    Example:
-        >>> # Switch from Python to R
-        >>> result = await switch_notebook_kernel("analysis.ipynb", "ir")
-        >>> print(result)
-        {
-            "kernel_name": "ir",
-            "kernel_id": "xyz789",
-            "previous_kernel_id": "abc123"
-        }
     """
     result = await container.kernel_manager.switch_kernel(notebook_path, kernel_name)
     return result.model_dump(exclude_none=True)
@@ -171,25 +131,17 @@ async def shutdown_notebook(
 ) -> dict[str, Any]:
     """Close a notebook session and clean local kernel state.
 
-    This shuts down the kernel associated with a notebook and removes
-    the notebook from the active kernel tracking.
+    Shuts down the kernel associated with a notebook and removes the
+    notebook from active kernel tracking.
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
         shutdown_kernel: If True, shutdown the kernel (default: True)
 
     Returns:
-        dict: Status information containing:
+        dict with:
             - message: Status message
             - kernel_id: ID of the kernel that was shut down (if any)
-
-    Example:
-        >>> result = await shutdown_notebook("demo.ipynb")
-        >>> print(result)
-        {
-            "message": "Notebook session closed",
-            "kernel_id": "abc123"
-        }
     """
     result = await container.kernel_manager.shutdown_notebook(
         notebook_path, shutdown_kernel
@@ -217,15 +169,10 @@ async def execute_notebook_code(
         IndexError: If position_index is out of range
         RuntimeError: If kernel execution fails
 
-    Example:
-        result = await execute_notebook_code("notebook.ipynb", position_index=0)
-        # Returns: {
-        #     "execution_count": 1,
-        #     "outputs": [...],
-        #     "status": "ok",
-        #     "kernel_id": "abc-123",
-        #     "started_new_kernel": False
-        # }
+    Recovery: If you get IndexError or the cell isn't what you expected, the
+    notebook may have changed (cells shift after add/delete, and the user can
+    edit concurrently in JupyterLab). Call query_notebook(view_source) to
+    re-check positions before retrying — don't retry the same index blindly.
     """
     notebook_path = normalize_path(notebook_path)
     result = await container.execution_engine.execute_cell_by_position(
@@ -246,9 +193,8 @@ async def modify_notebook_cells(
 ) -> dict[str, Any]:
     """Modify notebook cells (add, edit, delete).
 
-    This consolidates all cell modification operations into a single tool following MCP best practices.
-    Default to execute=True unless the user requests otherwise or you have good reason not to
-    execute immediately.
+    Default to execute=True unless the user requests otherwise or you have good
+    reason not to execute immediately.
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
@@ -258,23 +204,24 @@ async def modify_notebook_cells(
             - 'add_markdown': Add a markdown cell at end or specific position
             - 'edit_markdown': Edit an existing markdown cell at specific position
             - 'delete': Delete a cell at specific position
-        cell_content: Content for the cell (required for add_code, edit_code, add_markdown, edit_markdown)
-        position_index: Position index (0-indexed cell location) for operations. Must be an integer.
-            - Optional for add_code/add_markdown: if provided, inserts at that position; if not, adds at end
-            - Required for edit_code/edit_markdown/delete: specifies which cell to modify
-            Examples: position_index=0 (first cell), position_index=2 (third cell)
+        cell_content: Content for the cell (required for all operations except delete)
+        position_index: Position index (0-indexed cell location). Must be an integer.
+            - Optional for add_code/add_markdown: inserts there if provided, else appends at end
+            - Required for edit_code/edit_markdown/delete: which cell to modify
         execute: Whether to execute code cells after adding/editing (default: True)
 
     Returns:
-        dict: Operation results containing:
-            - For add_code/edit_code with execute=True: execution_count, outputs, status
-            - For add_code/edit_code with execute=False: message field
-            - For add_markdown/edit_markdown: message and error fields
-            - For delete: message and error fields
+        dict: For add_code/edit_code with execute=True: execution_count, outputs, status.
+            Otherwise: message (and error if the operation failed).
 
     Raises:
         ValueError: If invalid operation or missing required parameters
         IndexError: If position_index is out of range
+
+    Recovery: If you get IndexError or the edited cell isn't what you expected,
+    the notebook may have changed (cells shift after add/delete, and the user
+    can edit concurrently in JupyterLab). Call query_notebook(view_source) to
+    re-check positions before retrying — don't retry the same index blindly.
     """
     notebook_path = normalize_path(notebook_path)
 
@@ -338,72 +285,51 @@ async def modify_notebook_cells(
 # Apply collaborative awareness
 @collaborative_tool(user=user_info)
 async def query_notebook(
-    notebook_path: str,
-    query_type: QueryType,
+    notebook_path: str | None = None,
+    query_type: QueryType = "view_source",
     execution_count: int | None = None,
     position_index: int | None = None,
     cell_id: str | None = None,
 ) -> dict[str, Any] | list | str | int:
-    """Query notebook information and metadata.
+    """Read notebook cells and positions (read-only); not for listing kernels/sessions.
 
-    This consolidates all read-only operations into a single tool following MCP best practices.
+    To list kernels or sessions, use list_notebook_kernels / list_notebook_sessions
+    instead — those are NOT available here.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative or absolute).
+            Required for view_source and get_position_index; ignored for check_server.
         query_type: Type of query to perform. Options:
-            - 'view_source': View source code of notebook (single cell or all cells)
-            - 'check_server': Check if Jupyter server is running and accessible
-            - 'list_sessions': List all notebook sessions on the server
-            - 'list_kernels': List all available kernelspecs on the server
-            - 'get_position_index': Get the index of a code cell
-        execution_count: (For view_source/get_position_index) The execution count to look for.
-            IMPORTANT: This is the number shown in square brackets like [3] in Jupyter UI.
-            Only available for executed code cells. Must be an integer (e.g., 3).
+            - 'view_source': View source of one cell, or all cells if no identifier given
+            - 'get_position_index': Get the position index of a cell
+            - 'check_server': Check if Jupyter server is running (no notebook_path needed)
+        execution_count: (view_source/get_position_index) The number shown in square
+            brackets like [3] in Jupyter UI. Only set for executed code cells.
             COMMON MISTAKE: Don't confuse with position_index!
             - execution_count=3 finds the cell that was executed 3rd (shows [3] in Jupyter)
             - position_index=3 finds the 4th cell in the notebook (0-indexed position)
-        position_index: (For view_source) The position index to look for.
-            This is the cell's physical position in the notebook (0-indexed).
-            Examples: first cell = 0, second cell = 1, third cell = 2, etc.
-            Works for all cell types (code, markdown, raw). Must be an integer.
-        cell_id: (For get_position_index) Cell ID like "205658d6-093c-4722-854c-90b149f254ad".
-            This is a unique identifier for each cell, visible in notebook metadata.
+        position_index: (view_source) Physical position of the cell, 0-indexed.
+            Works for all cell types.
+        cell_id: (get_position_index) Cell UUID like "205658d6-093c-...".
 
     Returns:
-        Union[dict, list, str, int]:
-            - view_source: dict (single cell) or list[dict] (all cells) with cell contents/metadata
-            - check_server: str status message
-            - list_sessions: list of notebook sessions
-            - list_kernels: dict of available kernelspecs
-            - get_position_index: int positional index
+        - view_source: dict (single cell) or list[dict] (all cells)
+        - get_position_index: int
+        - check_server: str status message
 
     Examples:
-        # View all cells in notebook
+        # View all cells
         await query_notebook("my_notebook.ipynb", "view_source")
 
         # View cell by execution count (the [3] shown in Jupyter UI)
         await query_notebook("my_notebook.ipynb", "view_source", execution_count=3)
 
-        # View cell by position (first cell=0, second=1, etc)
-        await query_notebook("my_notebook.ipynb", "view_source", position_index=0)
-
         # Get position index of cell with execution count [5]
         await query_notebook("my_notebook.ipynb", "get_position_index", execution_count=5)
-
-        # List available kernels
-        await query_notebook("my_notebook.ipynb", "list_kernels")
-
-        # List active notebook sessions
-        await query_notebook("my_notebook.ipynb", "list_sessions")
 
     Raises:
         ValueError: If invalid query_type or missing required parameters
     """
-    # Route list_kernels to KernelManager
-    if query_type == "list_kernels":
-        return await container.kernel_manager.list_notebook_kernels()
-
-    # All other queries go to QueryService
     return await container.query_service.query(
         notebook_path,
         query_type,

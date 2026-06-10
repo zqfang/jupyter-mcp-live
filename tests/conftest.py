@@ -43,12 +43,23 @@ if "jupyter_mcp_executor.query_service" not in sys.modules:
 
         async def query(
             self,
-            notebook_path: str,
+            notebook_path: str | None,
             query_type: str,
             execution_count: int | None = None,
             position_index: int | None = None,
             cell_id: str | None = None,
         ):
+            if query_type == "check_server":
+                return (
+                    "Jupyter server is running and accessible"
+                    if get_server_context()
+                    else "Jupyter server context not available"
+                )
+
+            if notebook_path is None:
+                msg = f"notebook_path is required for query_type='{query_type}'"
+                raise ValueError(msg)
+
             notebook_path = normalize_path(notebook_path)
 
             if query_type == "view_source":
@@ -96,22 +107,6 @@ if "jupyter_mcp_executor.query_service" not in sys.modules:
                     )
                 return cell_dict
 
-            if query_type == "check_server":
-                return (
-                    "Jupyter server is running and accessible"
-                    if get_server_context()
-                    else "Jupyter server context not available"
-                )
-
-            if query_type == "list_sessions":
-                serverapp = require_server_context()
-                sessions = await serverapp.session_manager.list_sessions()
-                return [dict(s) for s in sessions]
-
-            if query_type == "list_kernels":
-                serverapp = require_server_context()
-                return {"kernelspecs": serverapp.kernel_spec_manager.get_all_specs()}
-
             if query_type == "get_position_index":
                 adapter = await get_notebook_adapter(notebook_path)
                 if execution_count is not None:
@@ -132,11 +127,11 @@ if "jupyter_mcp_executor.query_service" not in sys.modules:
                     return position
                 raise ValueError("Must provide either execution_count or cell_id")
 
-            raise ValueError(
-                "Invalid query_type: {query_type}. "
-                "Must be one of: view_source, check_server, list_sessions, "
-                "list_kernels, get_position_index"
+            msg = (
+                f"Invalid query_type: {query_type}. "
+                "Must be one of: view_source, check_server, get_position_index"
             )
+            raise ValueError(msg)
 
         async def read_cell(self, notebook_path: str, identifier: CellIdentifier):
             notebook_path = normalize_path(notebook_path)

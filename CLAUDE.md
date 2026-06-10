@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 **Project**: Jupyter MCP Executor
-**Version**: 0.1.0
+**Version**: 0.2.0
 **Python**: 3.10+
 **Status**: Production Ready
 
@@ -24,12 +24,14 @@ A Model Context Protocol (MCP) server extension for Jupyter Server that enables 
 ### Development Setup
 
 ```bash
-# Install in development mode
-pip install -e ".[dev]"
+# Install in development mode with test dependencies (pytest etc.)
+pip install -e ".[test]"
 
 # Or with uv (faster)
-uv pip install -e ".[dev]"
+uv pip install -e ".[test]"
 ```
+
+Note: the `[dev]` extra only contains ruff — use `[test]` to get pytest and plugins.
 
 ### Testing
 
@@ -69,7 +71,8 @@ ruff check --fix jupyter_mcp_executor/
 # Start Jupyter with MCP extension
 jupyter lab --config examples/jupyter_config_with_execution_tools.py
 
-# MCP server runs on http://localhost:8080/mcp (default port 3001)
+# MCP server runs at http://localhost:<mcp_port>/mcp
+# Default port is 3001; the example config sets c.MCPExtensionApp.mcp_port = 8080
 ```
 
 ## Architecture Overview
@@ -81,7 +84,7 @@ MCP Client (Claude/Gemini)
     ↓
 FastMCP Server (mcp_server.py)
     ↓
-MCP Tools Interface (notebook_execution_tools.py)
+MCP Tools Interface (execution_tools.py)
     ↓
 Service Layer (kernel_manager, execution_engine, cell_operations, query_service)
     ↓
@@ -142,7 +145,7 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 
 - `extension.py` - Jupyter Server extension (`MCPExtensionApp`)
 - `mcp_server.py` - FastMCP server wrapper (`MCPServer`)
-- `notebook_execution_tools.py` - Public MCP interface (9 exported functions)
+- `execution_tools.py` - Public MCP interface (9 tool functions, decorated with `@collaborative_tool`)
 
 ### Service Layer
 
@@ -157,7 +160,8 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 - `notebook_adapter.py` - Abstract adapter protocol + factory function
 - `ydoc_adapter.py` - YDoc-based (collaborative editing)
 - `nbformat_adapter.py` - File-based (disk persistence)
-- `ydoc_helpers.py` - YDoc utility functions
+- `ydoc_helpers.py` - YDoc utilities, including `ensure_ynotebook()` which
+  recreates cleaned-up YDoc rooms to preserve CRDT history
 
 ### Foundation/Utilities
 
@@ -177,17 +181,23 @@ Large outputs (images, HTML >1KB) are automatically filtered to reduce token usa
 
 ## MCP Functions (Public API)
 
-All functions in `notebook_execution_tools.py`:
+All functions in `execution_tools.py`:
 
-1. **list_notebook_kernels()** - Get available kernel specs
-2. **list_notebook_sessions()** - List active kernel sessions
-3. **setup_notebook(path, kernel_name)** - Create notebook and start kernel
-4. **execute_notebook_code(path, execution_type, ...)** - Execute cell or install packages
-5. **modify_notebook_cells(path, operation, ...)** - Add/edit/delete cells
-6. **query_notebook(path, query_type, ...)** - Read notebook/cells
+1. **list_notebook_kernels()** - Get available kernel specs (the ONLY way to list kernels)
+2. **list_notebook_sessions()** - List active kernel sessions (the ONLY way to list sessions)
+3. **setup_notebook(path, kernel_name, force_new_kernel)** - Create notebook and start/reuse kernel
+4. **execute_notebook_code(path, position_index)** - Execute an existing code cell
+5. **modify_notebook_cells(path, operation, ...)** - Add/edit/delete cells (optionally execute)
+6. **query_notebook(path, query_type, ...)** - Read-only queries; query_type is one of
+   `view_source`, `get_position_index`, `check_server` (path optional for check_server)
 7. **read_cell(path, position_index/cell_id/execution_count)** - Read specific cell
 8. **switch_notebook_kernel(path, kernel_name)** - Switch to different kernel
 9. **shutdown_notebook(path, shutdown_kernel)** - Shutdown kernel session
+
+**Tool design rule**: each capability is exposed through exactly ONE tool. The
+`list_kernels`/`list_sessions` query types were removed from `query_notebook`
+in 0.2.0 because duplicating them made tool selection ambiguous for MCP agents —
+do not re-add overlapping query types.
 
 ## Development Guidelines
 
@@ -228,8 +238,11 @@ adapter = await get_notebook_adapter(notebook_path)
 ### Adding New MCP Tools
 
 1. Add service method in appropriate service module (e.g., `query_service.py`)
-2. Add public function to `notebook_execution_tools.py`
-3. Register in `mcp_server.py` via `mcp.tool()(function_name)`
+2. Add public function to `execution_tools.py` (decorate with `@collaborative_tool(user=user_info)`
+   and add it to `__all__`)
+3. Register it: tools are loaded from the `c.MCPExtensionApp.mcp_tools` config list
+   (`"module:function"` strings — see `examples/jupyter_config_with_execution_tools.py`)
+   or via `jupyter_mcp_executor.tools` entrypoints
 4. Add tests to `test_notebook_execution_tools.py`
 5. Update this documentation
 
@@ -241,23 +254,35 @@ async def get_notebook_metadata(self, notebook_path: str) -> dict:
     adapter = await get_notebook_adapter(notebook_path)
     return await adapter.get_metadata()
 
-# 2. In notebook_execution_tools.py
+# 2. In execution_tools.py
+@collaborative_tool(user=user_info)
 async def get_notebook_metadata(notebook_path: str) -> dict:
     """Get notebook metadata."""
-    return await _query_service.get_notebook_metadata(notebook_path)
+    return await container.query_service.get_notebook_metadata(notebook_path)
 
-# 3. In extension.py, register the tool
+# 3. Add "jupyter_mcp_executor.execution_tools:get_notebook_metadata" to mcp_tools config
 # 4. Add test in test_notebook_execution_tools.py
 ```
 
+**Docstrings are agent prompts**: FastMCP sends each function's full docstring to the
+MCP client as the tool description on every request. Keep them short, state behavioral
+defaults explicitly, disambiguate confusable parameters (e.g., execution_count vs
+position_index), and include a recovery hint for the common failure mode.
+
 ### Test Structure
 
-- `tests/test_notebook_execution_tools.py` - Main test suite (46 tests)
+170 tests total across:
+
+- `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions)
+- `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
+- `tests/test_persistence_utils.py` - Disk persistence helper tests
+- `tests/test_sessions.py` - Session matching tests
 - `tests/test_imports.py` - Import validation tests
-- `tests/test_kernel_utils.py` - Kernel utilities tests (29 tests)
+- `tests/test_kernel_utils.py` - Kernel utilities tests
 - `tests/test_mcp_server.py` - MCP server tests
 - `tests/test_extension.py` - Extension tests
-- `tests/conftest.py` - Shared fixtures and mocks
+- `tests/conftest.py` - Shared fixtures and mocks (includes a `QueryService` stub
+  that must be kept in sync with the real `query_service.py` routing)
 
 All tests use comprehensive mocks (no actual kernels/servers started).
 
@@ -273,13 +298,17 @@ logging.basicConfig(level=logging.DEBUG)
 **Check which adapter is being used**:
 
 ```python
-from jupyter_mcp_executor.ydoc_helpers import get_ynotebook
+from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
-ydoc = await get_ynotebook(notebook_path)
+# get_ynotebook: returns the live YNotebook only if a room currently exists
+# ensure_ynotebook: same, but recreates the room (from ystore) if it was
+# cleaned up after the browser disconnected — this is what the adapter
+# factory uses
+ydoc = await ensure_ynotebook(notebook_path)
 if ydoc:
     print("Using YDoc (collaborative)")
 else:
-    print("Using nbformat (file-based)")
+    print("Using nbformat (file-based) — YDoc infra unavailable")
 ```
 
 **Inspect tracked kernels**:
@@ -295,10 +324,24 @@ print(tracker.get_all_tracked())
 
 ### YDoc vs Nbformat Selection
 
-The adapter is selected automatically in `get_notebook_adapter()`:
+The adapter is selected automatically in `get_notebook_adapter()` via
+`ensure_ynotebook()`:
 
-- If notebook is open in JupyterLab → `YDocAdapter`
-- Otherwise → `NbformatAdapter`
+- If a YDoc room exists for the notebook → `YDocAdapter`
+- If the room was cleaned up (browser disconnected for >60s) → the room is
+  **recreated from the same ystore** and `YDocAdapter` is still used
+- Only if YDoc infrastructure is unavailable entirely → `NbformatAdapter`
+
+**Why recreate the room instead of falling back to NbformatAdapter?**
+When the user's browser disconnects, `jupyter_server_ydoc` destroys the room
+after `document_cleanup_delay` (60s). If we then wrote via `NbformatAdapter`,
+the .ipynb on disk would advance while the ystore (CRDT op history) did not.
+On browser reconnect, the new room detects the ystore/disk mismatch and resets
+CRDT state — the browser's stored state vector no longer matches, and cells
+appear **duplicated** in JupyterLab. `ensure_ynotebook()` recreates the room
+with the same `file_id` (same ystore path), preserving CRDT history so
+reconnecting browsers sync cleanly. Room creation is guarded by a per-room
+asyncio lock in `ydoc_helpers.py` to prevent duplicate rooms under concurrency.
 
 ### Persistence Strategy
 
@@ -321,6 +364,19 @@ Cells can be identified three ways (see `CellIdentifier` in `notebook_models.py`
 - `cell_id` (UUID)
 - `execution_count` (execution number)
 
+### Path Validation
+
+`normalize_path()` in `path_utils.py` enforces:
+
+- Only `.ipynb` files are accepted (prevents arbitrary file read/write through
+  the notebook API)
+- Relative paths must not escape the server root (traversal prevention)
+- Absolute paths are allowed anywhere on the filesystem (JupyterLab supports
+  notebooks outside root_dir)
+
+All MCP tools and `persistence_utils.py` helpers call `normalize_path()` before
+touching disk.
+
 ## Coding Standards
 
 - **Python Version**: 3.10+
@@ -335,6 +391,7 @@ Cells can be identified three ways (see `CellIdentifier` in `notebook_models.py`
 
 - [README.md](README.md) - User-facing documentation
 - [pyproject.toml](pyproject.toml) - Package configuration
-- [jupyter_mcp_executor/notebook_execution_tools.py](jupyter_mcp_executor/notebook_execution_tools.py) - Public API
+- [jupyter_mcp_executor/execution_tools.py](jupyter_mcp_executor/execution_tools.py) - Public API
 - [jupyter_mcp_executor/notebook_adapter.py](jupyter_mcp_executor/notebook_adapter.py) - Adapter pattern
+- [jupyter_mcp_executor/ydoc_helpers.py](jupyter_mcp_executor/ydoc_helpers.py) - YDoc room lifecycle
 - [tests/conftest.py](tests/conftest.py) - Test fixtures and mocks

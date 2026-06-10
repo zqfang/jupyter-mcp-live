@@ -125,11 +125,14 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
         return None
 
     try:
-        from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
         from jupyter_server_ydoc.rooms import DocumentRoom  # noqa: PLC0415
         from jupyter_server_ydoc.utils import (  # noqa: PLC0415
             encode_file_path,
             room_id_from_encoded_path,
+        )
+
+        from jupyter_mcp_executor.server_context import (  # noqa: PLC0415
+            get_server_context,
         )
 
         serverapp = get_server_context()
@@ -194,7 +197,9 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
         # Unexpected failure — log at ERROR so it is visible in production
         # rather than silently falling back to NbformatAdapter (which would
         # reintroduce the ystore/disk desync bug).
-        logger.error(f"Failed to recreate YDoc room for {file_path}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to recreate YDoc room for {file_path}: {e}", exc_info=True
+        )
 
     return None
 
