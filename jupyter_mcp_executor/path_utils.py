@@ -12,8 +12,9 @@ def normalize_path(path: str) -> str:
 
     Relative paths that resolve outside the server root are rejected to
     prevent path traversal attacks (e.g. "../../etc/passwd"). Absolute
-    paths are trusted as-is because notebooks may legitimately reside
-    outside the server root directory.
+    paths are accepted as-is because JupyterLab allows notebooks to reside
+    anywhere on the filesystem. Only `.ipynb` files are accepted to prevent
+    arbitrary file reads/writes through the notebook API.
 
     Args:
         path: File path (possibly URL-encoded or relative)
@@ -22,7 +23,8 @@ def normalize_path(path: str) -> str:
         Absolute normalized path
 
     Raises:
-        ValueError: If path is empty or a relative path escapes server root
+        ValueError: If path is empty, not a .ipynb file, or a relative path
+            escapes the server root
     """
     if not path or not path.strip():
         msg = "path cannot be empty"
@@ -44,10 +46,13 @@ def normalize_path(path: str) -> str:
         resolved = (root_dir / decoded_path).resolve()
         # Guard: relative paths must not escape the server root (traversal prevention)
         if not resolved.is_relative_to(root_dir):
-            e = f"Path '{path}' resolves outside server root '{root_dir}'"
-            raise ValueError(e)
+            raise ValueError("Path is not permitted")
     else:
         resolved = Path(decoded_path).resolve()
+
+    # Only .ipynb files are allowed through the notebook API
+    if resolved.suffix != ".ipynb":
+        raise ValueError("Only .ipynb files are permitted")
 
     return str(resolved)
 
