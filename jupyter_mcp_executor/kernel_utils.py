@@ -142,22 +142,28 @@ def find_kernel_by_language(
 
 
 def resolve_kernel_name(
-    requested_name: str, kernelspecs: dict[str, Any], fallback: str = "python3"
+    requested_name: str, kernelspecs: dict[str, Any], fallback: str | None = None
 ) -> str:
     """Resolve a kernel name to an available kernel.
 
     This function handles:
     1. Exact match: kernel name exists in kernelspecs
     2. Language match: requested name is a language, find matching kernel
-    3. Fallback: return fallback kernel if nothing matches
+    3. Fallback: return fallback kernel if provided, otherwise raise
 
     Args:
         requested_name: Requested kernel name or language
         kernelspecs: Available kernel specifications
-        fallback: Fallback kernel name if resolution fails
+        fallback: Fallback kernel name if resolution fails. When None
+            (default), an unresolvable name raises ValueError instead of
+            silently running code on the wrong kernel.
 
     Returns:
         Resolved kernel name
+
+    Raises:
+        ValueError: If the name cannot be resolved and no fallback is given.
+            The message lists the available kernels.
 
     Example:
         >>> specs = {
@@ -177,8 +183,8 @@ def resolve_kernel_name(
         >>> resolve_kernel_name("python", specs)
         'python3'
 
-        # Fallback
-        >>> resolve_kernel_name("nonexistent", specs)
+        # Explicit fallback
+        >>> resolve_kernel_name("nonexistent", specs, fallback="python3")
         'python3'
     """
     # 1. Check for exact match
@@ -205,13 +211,20 @@ def resolve_kernel_name(
             )
             return language_match
 
-    # 4. Fallback
-    logger.warning(
-        f"Kernel '{requested_name}' not found. "
-        f"Available: {list(kernelspecs.keys())}. "
-        f"Using fallback: {fallback}"
+    # 4. Fallback or fail loudly
+    available = list(kernelspecs.keys())
+    if fallback is not None:
+        logger.warning(
+            f"Kernel '{requested_name}' not found. "
+            f"Available: {available}. Using fallback: {fallback}"
+        )
+        return fallback
+
+    msg = (
+        f"Kernel '{requested_name}' not found and no matching language kernel "
+        f"is installed. Available kernels: {available}"
     )
-    return fallback
+    raise ValueError(msg)
 
 
 def get_kernel_info(kernel_name: str, kernelspecs: dict[str, Any]) -> dict[str, str]:

@@ -137,7 +137,20 @@ kernel_name = resolve_kernel_name("R", kernelspecs)       # → "r45" or "ir"
 ```
 
 **Output Filtering**:
-Large outputs (images, HTML >1KB) are automatically filtered to reduce token usage in MCP responses.
+Filtering applies to MCP responses only (the notebook keeps full outputs; the
+filter never mutates the original dicts):
+
+- Large images/HTML (>1KB, `OUTPUT_FILTER_CONFIG.filter_threshold`) are
+  replaced by a placeholder.
+- Large plain text — stream output, error tracebacks, and `text/plain`
+  results over `OUTPUT_FILTER_CONFIG.max_text_length` (4000 chars) — is
+  truncated head+tail with an omission marker.
+
+**Kernel name resolution is strict for explicit requests**:
+`resolve_kernel_name()` raises `ValueError` (listing available kernels) when
+an explicitly requested kernel can't be resolved — it no longer silently
+falls back to python3. The lenient fallback is only used for names read from
+notebook metadata (auto-start path), via `fallback="python3"`.
 
 ## Module Structure
 
@@ -290,7 +303,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-144 tests total across:
+158 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
@@ -387,6 +400,34 @@ when the tracker has no entry (that used to silently lose user state on
 "reconnect"). Symmetrically, `setup_notebook` falls back to the tracked kernel
 when no session exists, so reconnecting to a notebook always reattaches to the
 running kernel unless `force_new_kernel=True`.
+
+Session-to-notebook matching (`_find_session_for_notebook`) compares exact,
+normalized, and `samefile` paths — deliberately **no filename-only matching**:
+two notebooks with the same name in different folders must never share a
+kernel. Non-notebook sessions (e.g., consoles) are skipped per-session, not
+allowed to abort the scan.
+
+### Execution Internals
+
+- Kernel clients are cached per kernel in `ExecutionEngine`, and executions
+  on the same kernel are serialized with a per-kernel asyncio lock (a shared
+  client's iopub channel must have a single consumer). The cached client is
+  dropped when the kernel disappears or a connection-level error occurs.
+- The shell-reply wait and iopub collection share one deadline, so a hung
+  kernel blocks at most `EXECUTION_CONFIG.default_timeout` (+ small grace),
+  not 2x. Channel timeouts raise `queue.Empty` in jupyter_client — both
+  `Empty` and `TimeoutError` are handled. Stale shell replies are drained.
+- After execution, the target cell is re-located by `cell_id` before outputs
+  are written, so outputs land in the right cell even if the user
+  added/deleted cells in JupyterLab while the code ran. If the cell was
+  deleted, the output update is skipped (the result is still returned).
+- All nbformat disk I/O and kernelspec scans run via `asyncio.to_thread` —
+  never block the Jupyter server's event loop. Read-only operations
+  (`view_notebook`, `read_cell`, finders) never write the file back.
+- Editing a code cell resets its outputs/execution_count (both adapters), so
+  stale outputs from the old source never linger.
+- `switch_notebook_kernel` updates kernelspec metadata through the live YDoc
+  when the notebook is open (disk write only for closed notebooks).
 
 ### Cell Identification
 

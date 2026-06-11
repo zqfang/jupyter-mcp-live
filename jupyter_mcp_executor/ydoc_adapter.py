@@ -116,7 +116,12 @@ class YDocAdapter(NotebookAdapter):
         return position, cell_id
 
     async def edit_cell(self, position: int, content: CellContent) -> None:
-        """Edit cell in YDoc."""
+        """Edit cell in YDoc.
+
+        For code cells the previous outputs and execution_count are replaced
+        by the ones in `content` (typically empty), so stale outputs from the
+        old source never linger on the edited cell.
+        """
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -141,6 +146,12 @@ class YDocAdapter(NotebookAdapter):
 
             ycell["metadata"] = Map(content.metadata)
 
+        # Reset execution state for code cells so outputs from the previous
+        # source don't linger on the edited cell
+        if content.cell_type == "code" and ycell.get("cell_type") == "code":
+            await self.update_cell_outputs(position, None, list(content.outputs or []))
+            ycell["execution_count"] = content.execution_count
+
         logger.info(f"Edited {content.cell_type} cell via YDoc at position {position}")
 
         # Set activeCellIndex in YDoc metadata (instant, no browser needed)
@@ -151,10 +162,13 @@ class YDocAdapter(NotebookAdapter):
 
         Instant, in-memory hint — no browser required.
 
-        Best-effort; older jupyter_ydoc versions may not expose ``ymeta``.
+        Best-effort; jupyter_ydoc exposes the meta map as ``ymeta`` in some
+        versions and ``_ymeta`` in others (e.g. 3.4.x).
         """
         try:
-            ymeta = getattr(self.ydoc, "ymeta", None)
+            ymeta = getattr(self.ydoc, "ymeta", None) or getattr(
+                self.ydoc, "_ymeta", None
+            )
             if ymeta is not None:
                 ymeta["activeCellIndex"] = position
         except Exception:

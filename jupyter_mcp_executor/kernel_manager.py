@@ -1,5 +1,6 @@
 """Kernel management service for Jupyter notebooks."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -48,8 +49,9 @@ class KernelManager:
         serverapp = require_server_context()
         kernel_spec_manager = serverapp.kernel_spec_manager
 
-        # Get all kernel specs
-        specs = kernel_spec_manager.get_all_specs()
+        # get_all_specs scans kernelspec directories on disk — run it in a
+        # worker thread so it never blocks the server's event loop
+        specs = await asyncio.to_thread(kernel_spec_manager.get_all_specs)
 
         return {"kernelspecs": specs}
 
@@ -88,10 +90,8 @@ class KernelManager:
         notebook_exists = Path(notebook_path).exists()
         logger.info(f"Notebook exists: {notebook_exists} - {notebook_path}")
 
-        # Get available kernels and resolve kernel name
         available_kernels = await self.list_notebook_kernels()
         kernelspecs = available_kernels.get("kernelspecs", {})
-        kernel_name = resolve_kernel_name(kernel_name, kernelspecs, fallback="python3")
 
         # Step 2: Check for existing kernel session (unless force_new_kernel is True)
         kernel_id = None
@@ -144,6 +144,13 @@ class KernelManager:
                     except KeyError:
                         self.kernel_tracker.untrack(notebook_path)
 
+        if not reused_kernel:
+            # Resolve the requested kernel name strictly only when a kernel
+            # will actually be started: an unknown kernel raises (listing the
+            # available ones) instead of silently running code on python3.
+            # Reusing an existing kernel never needs the name resolved.
+            kernel_name = resolve_kernel_name(kernel_name, kernelspecs)
+
         # Step 3: Handle notebook creation/setup based on existence and kernel state
         if not notebook_exists:
             # Step 3a: Create new notebook and start new kernel
@@ -172,7 +179,7 @@ class KernelManager:
                 },
             )
 
-            write_notebook(notebook_path, nb)
+            await asyncio.to_thread(write_notebook, notebook_path, nb)
 
             # Start new kernel for the new notebook
             if kernel_id is None:
@@ -267,9 +274,14 @@ class KernelManager:
                     )
                     return session_kernel_id, False
 
-        # 3. Start a new session-backed kernel
+        # 3. Start a new session-backed kernel.  The name comes from notebook
+        # metadata here (not an explicit user request), so resolution stays
+        # lenient: an alien kernelspec name falls back to python3 with a
+        # warning instead of making every execution fail.
         if kernel_name is None:
-            kernel_name = self._read_notebook_kernel_name(notebook_path) or "python3"
+            kernel_name = (
+                await self._read_notebook_kernel_name(notebook_path) or "python3"
+            )
         available_kernels = await self.list_notebook_kernels()
         kernel_name = resolve_kernel_name(
             kernel_name, available_kernels.get("kernelspecs", {}), fallback="python3"
@@ -277,13 +289,17 @@ class KernelManager:
         kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
         return kernel_id, kernel_id is not None
 
-    def _read_notebook_kernel_name(self, notebook_path: str) -> str | None:
+    async def _read_notebook_kernel_name(self, notebook_path: str) -> str | None:
         """Read the kernelspec name from notebook metadata, if present."""
-        try:
-            nb = nbformat.read(notebook_path, as_version=4)
-        except Exception:
-            return None
-        return nb.metadata.get("kernelspec", {}).get("name")
+
+        def _read() -> str | None:
+            try:
+                nb = nbformat.read(notebook_path, as_version=4)
+            except Exception:
+                return None
+            return nb.metadata.get("kernelspec", {}).get("name")
+
+        return await asyncio.to_thread(_read)
 
     async def switch_kernel(
         self, notebook_path: str, kernel_name: str
@@ -317,7 +333,7 @@ class KernelManager:
         )
 
         # Update notebook metadata
-        self._update_notebook_kernel_metadata(notebook_path, kernel_name)
+        await self._update_notebook_kernel_metadata(notebook_path, kernel_name)
 
         return KernelSwitchResult(
             kernel_name=kernel_name,
@@ -426,9 +442,6 @@ class KernelManager:
             for session in await session_manager.list_sessions():
                 sessions.append(dict(session))
 
-            # Get the notebook filename for comparison
-            notebook_name = Path(notebook_path).name
-
             logger.debug(f"Checking for existing session for: {notebook_path}")
             logger.debug(f"Found {len(sessions)} active sessions")
 
@@ -447,8 +460,12 @@ class KernelManager:
                 # Try multiple path matching strategies:
                 # 1. Exact match on full path
                 # 2. Match on normalized paths
-                # 3. Match on filename only
-                # 4. Match using samefile (for symlinks/relative paths)
+                # 3. Match using samefile (for symlinks/relative paths)
+                #
+                # Deliberately NO filename-only matching: two notebooks with
+                # the same name in different folders must not share a kernel
+                # (code would run in one project's kernel while outputs land
+                # in the other's file).
 
                 path_match = False
 
@@ -457,21 +474,23 @@ class KernelManager:
                     path_match = True
                     logger.debug("  -> Matched via exact path comparison")
 
-                # Strategy 2: Both normalized
-                elif normalize_path(session_path) == notebook_path:
-                    path_match = True
-                    logger.debug("  -> Matched via normalized path comparison")
-
-                # Strategy 3: Filename match (when paths are relative/different)
-                elif (
-                    session_name == notebook_name
-                    or Path(session_path).name == notebook_name
-                ):
-                    path_match = True
-                    logger.debug("  -> Matched via filename comparison")
-
-                # Strategy 4: samefile (handles symlinks, relative paths)
                 else:
+                    # Strategy 2: Both normalized.  Guarded per-session: a
+                    # non-notebook session (e.g., a console with a non-.ipynb
+                    # path) raises ValueError from normalize_path and must
+                    # not abort the scan of the remaining sessions.
+                    try:
+                        if normalize_path(session_path) == notebook_path:
+                            path_match = True
+                            logger.debug("  -> Matched via normalized path comparison")
+                    except ValueError:
+                        logger.debug(
+                            f"  -> Session path '{session_path}' is not a "
+                            f"notebook path; skipping normalization"
+                        )
+
+                # Strategy 3: samefile (handles symlinks, relative paths)
+                if not path_match:
                     try:
                         if (
                             Path(session_path).exists()
@@ -622,38 +641,74 @@ class KernelManager:
         info = get_kernel_info(kernel_name, kernelspecs)
         return (info["language"], info["display_name"])
 
-    def _update_notebook_kernel_metadata(
+    async def _update_notebook_kernel_metadata(
         self, notebook_path: str, kernel_name: str
     ) -> None:
-        """Update notebook's kernel metadata.
+        """Update notebook's kernelspec metadata.
+
+        For notebooks open in JupyterLab the metadata is updated through the
+        live YDoc — a direct disk write while the notebook is open would
+        trigger JupyterLab's stale-file reload (scroll-to-top, potential cell
+        duplication after reconnect).  Only closed notebooks are written to
+        disk, and that write runs in a worker thread.
 
         Args:
             notebook_path: Path to notebook
             kernel_name: New kernel name
         """
         try:
-            nb = nbformat.read(notebook_path, as_version=4)
-
-            # Get kernel info
-            # Prefer synchronous retrieval to avoid awaiting in a sync method
-            serverapp = require_server_context()
-            kernel_spec_manager = serverapp.kernel_spec_manager
-            # Get all kernel specs
-            kernelspecs = kernel_spec_manager.get_all_specs()
-
+            available_kernels = await self.list_notebook_kernels()
             language_name, display_name = self._get_kernel_display_info(
-                kernel_name, kernelspecs
+                kernel_name, available_kernels.get("kernelspecs", {})
             )
-
-            # Update metadata
-            nb.metadata["kernelspec"] = {
+            kernelspec = {
                 "name": kernel_name,
                 "display_name": display_name,
                 "language": language_name,
             }
 
-            write_notebook(notebook_path, nb)
+            # Open notebook: update through YDoc only
+            from jupyter_mcp_executor.ydoc_helpers import (  # noqa: PLC0415
+                ensure_ynotebook,
+            )
+
+            ydoc = await ensure_ynotebook(notebook_path)
+            if ydoc is not None and self._set_ydoc_kernelspec(ydoc, kernelspec):
+                logger.info(f"Updated kernel metadata via YDoc for {notebook_path}")
+                return
+
+            # Closed notebook: write to disk off the event loop
+            def _write() -> None:
+                nb = nbformat.read(notebook_path, as_version=4)
+                nb.metadata["kernelspec"] = kernelspec
+                write_notebook(notebook_path, nb)
+
+            await asyncio.to_thread(_write)
             logger.info(f"Updated kernel metadata in {notebook_path}")
 
         except Exception as e:
             logger.warning(f"Could not update notebook kernel metadata: {e}")
+
+    @staticmethod
+    def _set_ydoc_kernelspec(ydoc: Any, kernelspec: dict[str, str]) -> bool:
+        """Set the kernelspec in a live YNotebook's metadata map.
+
+        jupyter_ydoc exposes the meta map as ``ymeta`` in some versions and
+        ``_ymeta`` in others (e.g. 3.4.x).  Returns False when the structure
+        is not available so the caller can fall back to a disk write.
+        """
+        try:
+            from pycrdt import Map  # noqa: PLC0415
+
+            ymeta = getattr(ydoc, "ymeta", None) or getattr(ydoc, "_ymeta", None)
+            if ymeta is None:
+                return False
+            metadata = ymeta.get("metadata")
+            if metadata is None:
+                ymeta["metadata"] = Map({"kernelspec": kernelspec})
+            else:
+                metadata["kernelspec"] = kernelspec
+        except Exception as e:
+            logger.debug(f"Could not set kernelspec via YDoc: {e}")
+            return False
+        return True

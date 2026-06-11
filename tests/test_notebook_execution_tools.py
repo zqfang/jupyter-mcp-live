@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from queue import Empty
 
 import nbformat
 import pytest
@@ -24,6 +25,7 @@ from jupyter_mcp_executor.execution_tools import (
     switch_notebook_kernel,
     view_notebook,
 )
+from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 
 # Import from new modular structure
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
@@ -32,6 +34,7 @@ from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_no
 from jupyter_mcp_executor.output_filter import OutputFilter
 from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
 from jupyter_mcp_executor.server_context import _server_context
+from jupyter_mcp_executor.service_container import container
 
 
 class MockKernelManager:
@@ -282,18 +285,18 @@ def mock_serverapp():
 @pytest.fixture(autouse=True)
 def reset_context():
     """Reset global context before each test."""
-    # Reset server context
-    _server_context["serverapp"] = None
 
-    # Reset kernel tracker
-    tracker = get_kernel_tracker()
-    tracker._kernels = {}
+    def _reset():
+        _server_context["serverapp"] = None
+        get_kernel_tracker()._kernels = {}
+        # Kernel IDs repeat across tests (each MockServerApp starts at
+        # kernel-0), so cached clients from a previous test must not leak in.
+        container.execution_engine._clients = {}
+        container.execution_engine._kernel_locks = {}
 
+    _reset()
     yield
-
-    # Clean up after test
-    _server_context["serverapp"] = None
-    tracker._kernels = {}
+    _reset()
 
 
 class TestHelperFunctions:
@@ -999,6 +1002,291 @@ class TestIntegration:
 
         # 6. Shutdown
         await shutdown_notebook(str(nb_path))
+
+
+class TestExecutionMessageHandling:
+    """Regression tests for kernel message collection (execution_utils)."""
+
+    @pytest.mark.asyncio
+    async def test_iopub_gap_does_not_crash_execution(self):
+        """A queue.Empty from an idle iopub poll must not abort execution.
+
+        jupyter_client raises queue.Empty (not asyncio.TimeoutError) when the
+        channel poll times out; this used to propagate and lose the outputs.
+        """
+
+        class GapClient:
+            def __init__(self):
+                self.iopub_calls = 0
+
+            def execute(self, _code):
+                return "msg-1"
+
+            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+                return {
+                    "header": {"msg_type": "execute_reply"},
+                    "parent_header": {"msg_id": "msg-1"},
+                    "content": {"status": "ok", "execution_count": 7},
+                }
+
+            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+                self.iopub_calls += 1
+                if self.iopub_calls == 1:
+                    raise Empty
+                return {
+                    "header": {"msg_type": "status"},
+                    "parent_header": {"msg_id": "msg-1"},
+                    "content": {"execution_state": "idle"},
+                }
+
+        result = await execute_code_on_kernel(GapClient(), "x = 1", "k1", timeout=5)
+        assert result["status"] == "ok"
+        assert result["execution_count"] == 7
+
+    @pytest.mark.asyncio
+    async def test_stale_shell_message_is_drained(self):
+        """A leftover shell reply from a previous execution must be skipped."""
+
+        class StaleShellClient:
+            def __init__(self):
+                self.shell_msgs = [
+                    {  # stale reply from an earlier, timed-out execution
+                        "header": {"msg_type": "execute_reply"},
+                        "parent_header": {"msg_id": "old-msg"},
+                        "content": {"status": "ok", "execution_count": 3},
+                    },
+                    {  # the reply we are waiting for
+                        "header": {"msg_type": "execute_reply"},
+                        "parent_header": {"msg_id": "msg-2"},
+                        "content": {"status": "ok", "execution_count": 4},
+                    },
+                ]
+
+            def execute(self, _code):
+                return "msg-2"
+
+            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+                return self.shell_msgs.pop(0)
+
+            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+                return {
+                    "header": {"msg_type": "status"},
+                    "parent_header": {"msg_id": "msg-2"},
+                    "content": {"execution_state": "idle"},
+                }
+
+        result = await execute_code_on_kernel(
+            StaleShellClient(), "x = 1", "k1", timeout=5
+        )
+        assert result["execution_count"] == 4
+
+
+class TestSessionMatching:
+    """Regression tests for session-to-notebook matching."""
+
+    @pytest.mark.asyncio
+    async def test_same_filename_different_dir_not_matched(
+        self, tmp_path, mock_serverapp
+    ):
+        """Notebooks sharing a filename in different folders must not share kernels."""
+        set_server_context(mock_serverapp)
+
+        dir_a = tmp_path / "project_a"
+        dir_b = tmp_path / "project_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        nb_a = dir_a / "analysis.ipynb"
+        nb_b = dir_b / "analysis.ipynb"
+        for p in (nb_a, nb_b):
+            with p.open("w") as f:
+                nbformat.write(new_notebook(cells=[]), f)
+
+        # Notebook A has a running session
+        kernel_a = await mock_serverapp.kernel_manager.start_kernel("python3")
+        mock_serverapp.session_manager.add_session(
+            normalize_path(str(nb_a)), kernel_a, "python3"
+        )
+
+        # Setting up notebook B must NOT reuse A's kernel
+        result = await setup_notebook(str(nb_b), kernel_name="python3")
+
+        assert result["kernel_id"] != kernel_a
+        assert len(mock_serverapp.kernel_manager.kernels) == 2
+
+    @pytest.mark.asyncio
+    async def test_non_notebook_session_does_not_abort_scan(
+        self, temp_notebook, mock_serverapp
+    ):
+        """A console session with a non-.ipynb path must not break matching."""
+        set_server_context(mock_serverapp)
+
+        # Console-style session whose path normalize_path would reject
+        mock_serverapp.session_manager.add_session("console-1", "kernel-console", "python3")
+
+        # Valid session for our notebook, listed after the console session
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+        mock_serverapp.session_manager.add_session(
+            normalize_path(temp_notebook), kernel_id, "python3"
+        )
+
+        result = await setup_notebook(temp_notebook, kernel_name="python3")
+        assert result["kernel_id"] == kernel_id
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_unknown_kernel_raises(
+        self, temp_notebook, mock_serverapp
+    ):
+        """An unresolvable kernel name fails loudly, listing available kernels."""
+        set_server_context(mock_serverapp)
+
+        with pytest.raises(ValueError, match="python3"):
+            await setup_notebook(temp_notebook, kernel_name="nonexistent_kernel")
+
+
+class TestReadOnlyAccess:
+    """Read operations must never rewrite the notebook file."""
+
+    @pytest.mark.asyncio
+    async def test_view_and_read_do_not_rewrite_file(self, temp_notebook):
+        """view_notebook/read_cell leave the file untouched (mtime stable)."""
+        await add_code_cell(temp_notebook, "x = 1", execute=False)
+
+        before = Path(temp_notebook).stat().st_mtime_ns
+        await view_notebook(temp_notebook)
+        await read_cell(temp_notebook, position_index=0)
+        after = Path(temp_notebook).stat().st_mtime_ns
+
+        assert before == after
+
+
+class TestEditClearsOutputs:
+    """Editing a code cell must not leave stale outputs from the old source."""
+
+    @pytest.mark.asyncio
+    async def test_edit_without_execute_clears_outputs(
+        self, temp_notebook, mock_serverapp
+    ):
+        set_server_context(mock_serverapp)
+
+        # Add + execute so the cell has outputs and an execution_count
+        await add_code_cell(temp_notebook, "print('hello')", execute=True)
+
+        # Edit without executing
+        await edit_code_cell(temp_notebook, 0, "y = 2", execute=False)
+
+        nb = read_notebook(temp_notebook)
+        assert nb.cells[0].source == "y = 2"
+        assert nb.cells[0].outputs == []
+        assert nb.cells[0].execution_count is None
+
+
+class TestOutputPlacement:
+    """Outputs must land in the executed cell even if positions shift."""
+
+    @pytest.mark.asyncio
+    async def test_outputs_follow_cell_when_positions_shift(self, mock_serverapp):
+        """The engine re-locates the cell by ID before writing outputs."""
+        set_server_context(mock_serverapp)
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+
+        class ShiftingAdapter:
+            """Adapter stub where the cell moved from position 1 to 2."""
+
+            notebook_path = "/tmp/shifting.ipynb"
+
+            def __init__(self):
+                self.updated_position = None
+
+            async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+                return (None, 2)  # cell is now at position 2
+
+            async def update_cell_outputs(self, position, _count, _outputs):
+                self.updated_position = position
+
+        adapter = ShiftingAdapter()
+        await container.execution_engine.execute_and_update_cell(
+            adapter, 1, "x = 1", kernel_id=kernel_id, cell_id="cell-abc"
+        )
+        assert adapter.updated_position == 2
+
+    @pytest.mark.asyncio
+    async def test_no_output_update_when_cell_deleted(self, mock_serverapp):
+        """If the cell was deleted mid-execution, outputs are not misplaced."""
+        set_server_context(mock_serverapp)
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+
+        class DeletedAdapter:
+            notebook_path = "/tmp/deleted.ipynb"
+
+            def __init__(self):
+                self.update_called = False
+
+            async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+                return None  # cell no longer exists
+
+            async def update_cell_outputs(self, *_args):
+                self.update_called = True
+
+        adapter = DeletedAdapter()
+        result = await container.execution_engine.execute_and_update_cell(
+            adapter, 0, "x = 1", kernel_id=kernel_id, cell_id="cell-gone"
+        )
+        assert result.status == "ok"  # execution result still returned
+        assert adapter.update_called is False
+
+
+class TestOutputTruncation:
+    """Large plain-text outputs are truncated in MCP responses."""
+
+    def test_large_stream_output_truncated(self):
+        big = "x" * 10_000
+        out = {"output_type": "stream", "name": "stdout", "text": big}
+
+        filtered = OutputFilter.filter_single_output(out)
+
+        assert len(filtered["text"]) < len(big)
+        assert "truncated" in filtered["text"]
+        # Head and tail are preserved
+        assert filtered["text"].startswith("x")
+        assert filtered["text"].endswith("x")
+        # Original dict is not mutated (the notebook keeps full output)
+        assert out["text"] == big
+
+    def test_small_stream_output_untouched(self):
+        out = {"output_type": "stream", "name": "stdout", "text": "hello\n"}
+        assert OutputFilter.filter_single_output(out) is out
+
+    def test_large_error_traceback_truncated(self):
+        traceback = [f"frame {i}: something went wrong" for i in range(500)]
+        out = {
+            "output_type": "error",
+            "ename": "RuntimeError",
+            "evalue": "boom",
+            "traceback": traceback,
+        }
+
+        filtered = OutputFilter.filter_single_output(out)
+
+        assert sum(len(line) for line in filtered["traceback"]) < sum(
+            len(line) for line in traceback
+        )
+        assert any("truncated" in line for line in filtered["traceback"])
+        assert out["traceback"] == traceback  # original not mutated
+
+    def test_large_text_plain_result_truncated(self):
+        big_repr = "row\n" * 5_000
+        out = {
+            "output_type": "execute_result",
+            "data": {"text/plain": big_repr},
+            "metadata": {},
+            "execution_count": 1,
+        }
+
+        filtered = OutputFilter.filter_single_output(out)
+
+        assert len(filtered["data"]["text/plain"]) < len(big_repr)
+        assert "truncated" in filtered["data"]["text/plain"]
+        assert out["data"]["text/plain"] == big_repr  # original not mutated
 
 
 if __name__ == "__main__":

@@ -8,13 +8,47 @@ from jupyter_mcp_executor.notebook_config import OUTPUT_FILTER_CONFIG
 logger = logging.getLogger(__name__)
 
 
+def _as_text(value: Any) -> str:
+    """Normalize an output text field (str or list of str) to a string."""
+    if isinstance(value, list):
+        return "".join(value)
+    return value if isinstance(value, str) else str(value)
+
+
+def _truncate_text(text: str) -> str:
+    """Truncate oversized text, preserving the head and tail.
+
+    The head usually carries the meaningful content and the tail carries the
+    final state (last log lines, the actual exception at the end of a
+    traceback), so both are kept.
+    """
+    max_len = OUTPUT_FILTER_CONFIG.max_text_length
+    if len(text) <= max_len:
+        return text
+
+    head = OUTPUT_FILTER_CONFIG.truncation_head
+    tail = OUTPUT_FILTER_CONFIG.truncation_tail
+    omitted = len(text) - head - tail
+    return (
+        f"{text[:head]}\n"
+        f"... [output truncated: {omitted} characters omitted, "
+        f"full output available in notebook] ...\n"
+        f"{text[-tail:]}"
+    )
+
+
 class OutputFilter:
     """Filter notebook outputs to reduce token count in MCP responses.
 
-    Filters large binary data (images, HTML) that would consume too many tokens.
+    - Large binary/markup data (images, HTML) is replaced by a placeholder.
+    - Large plain text (stream output, tracebacks, text/plain results) is
+      truncated head+tail.
+
+    Filtering never mutates the input dicts — the same output objects are
+    also stored in the notebook, which must keep the full data.
     """
 
-    # MIME types that should be considered for filtering
+    # MIME types that should be considered for placeholder filtering
     FILTERABLE_TYPES: ClassVar[set[str]] = {
         "image/png",
         "image/jpeg",
@@ -60,36 +94,86 @@ class OutputFilter:
         }
 
     @staticmethod
+    def _filter_data_output(output: dict[str, Any]) -> dict[str, Any]:
+        """Filter an execute_result/display_data output."""
+        data = output.get("data", {})
+        if not data:
+            return output
+
+        mime_types = list(data.keys())
+
+        # Estimate size without copying large payloads
+        size_estimate = sum(
+            len(v) if isinstance(v, str) else len(str(v)) for v in data.values()
+        )
+
+        if OutputFilter.should_filter(mime_types, size_estimate):
+            logger.debug(
+                f"Filtering output with types {mime_types} (size ~{size_estimate} bytes)"
+            )
+            placeholder = OutputFilter.create_placeholder(mime_types)
+
+            # Preserve execution_count if present
+            if "execution_count" in output:
+                placeholder["execution_count"] = output["execution_count"]
+
+            return placeholder
+
+        # Not placeholder-filtered: still truncate an oversized text/plain repr
+        # (e.g., printing a huge DataFrame)
+        text_plain = data.get("text/plain")
+        if text_plain is not None:
+            text = _as_text(text_plain)
+            if len(text) > OUTPUT_FILTER_CONFIG.max_text_length:
+                filtered = dict(output)
+                filtered["data"] = {**data, "text/plain": _truncate_text(text)}
+                return filtered
+
+        return output
+
+    @staticmethod
+    def _filter_stream_output(output: dict[str, Any]) -> dict[str, Any]:
+        """Truncate an oversized stream output (stdout/stderr)."""
+        text = _as_text(output.get("text", ""))
+        if len(text) <= OUTPUT_FILTER_CONFIG.max_text_length:
+            return output
+
+        filtered = dict(output)
+        filtered["text"] = _truncate_text(text)
+        return filtered
+
+    @staticmethod
+    def _filter_error_output(output: dict[str, Any]) -> dict[str, Any]:
+        """Truncate an oversized error traceback."""
+        traceback = output.get("traceback", [])
+        text = "\n".join(_as_text(line) for line in traceback)
+        if len(text) <= OUTPUT_FILTER_CONFIG.max_text_length:
+            return output
+
+        filtered = dict(output)
+        filtered["traceback"] = _truncate_text(text).split("\n")
+        return filtered
+
+    @staticmethod
     def filter_single_output(output: dict[str, Any]) -> dict[str, Any]:
-        """Filter a single output if it contains large binary data.
+        """Filter a single output if it contains large data.
 
         Args:
             output: Output dict to potentially filter
 
         Returns:
-            Original or filtered output
+            Original output, or a filtered copy (input is never mutated)
         """
-        if output.get("output_type") in ("execute_result", "display_data"):
-            data = output.get("data", {})
-            if not data:
-                return output
+        output_type = output.get("output_type")
 
-            mime_types = list(data.keys())
+        if output_type in ("execute_result", "display_data"):
+            return OutputFilter._filter_data_output(output)
 
-            # Estimate size (rough approximation)
-            size_estimate = sum(len(str(v)) for v in data.values())
+        if output_type == "stream":
+            return OutputFilter._filter_stream_output(output)
 
-            if OutputFilter.should_filter(mime_types, size_estimate):
-                logger.debug(
-                    f"Filtering output with types {mime_types} (size ~{size_estimate} bytes)"
-                )
-                placeholder = OutputFilter.create_placeholder(mime_types)
-
-                # Preserve execution_count if present
-                if "execution_count" in output:
-                    placeholder["execution_count"] = output["execution_count"]
-
-                return placeholder
+        if output_type == "error":
+            return OutputFilter._filter_error_output(output)
 
         return output
 

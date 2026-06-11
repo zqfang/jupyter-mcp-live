@@ -63,7 +63,7 @@ class CellOperations:
         )
 
         # Add cell
-        actual_position, _cell_id = await adapter.add_cell(cell_content, position)
+        actual_position, cell_id = await adapter.add_cell(cell_content, position)
 
         # Collaborative mode: YDoc CRDT broadcast already delivered the cell to JupyterLab.
         # Any backend disk write while the notebook is open (direct or via CM) causes
@@ -76,9 +76,11 @@ class CellOperations:
             if timeout is None:
                 timeout = EXECUTION_CONFIG.default_timeout
 
-            # Kernel is resolved per-notebook inside the engine (reuse before create)
+            # Kernel is resolved per-notebook inside the engine (reuse before
+            # create); cell_id lets the engine re-locate the cell if positions
+            # shift during execution.
             return await self.execution_engine.execute_and_update_cell(
-                adapter, actual_position, code, timeout=timeout
+                adapter, actual_position, code, timeout=timeout, cell_id=cell_id
             )
 
         return CellOperationResult(
@@ -135,9 +137,15 @@ class CellOperations:
             if timeout is None:
                 timeout = EXECUTION_CONFIG.default_timeout
 
-            # Kernel is resolved per-notebook inside the engine (reuse before create)
+            # Kernel is resolved per-notebook inside the engine (reuse before
+            # create); cell_id lets the engine re-locate the cell if positions
+            # shift during execution.
             return await self.execution_engine.execute_and_update_cell(
-                adapter, position, code, timeout=timeout
+                adapter,
+                position,
+                code,
+                timeout=timeout,
+                cell_id=existing_cell.cell_id,
             )
 
         return CellOperationResult(

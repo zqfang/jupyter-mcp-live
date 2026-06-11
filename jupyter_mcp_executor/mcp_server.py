@@ -275,6 +275,9 @@ class MCPServer(LoggingConfigurable):
         # Initialize FastMCP and tools registry
         self.mcp = FastMCP(self.name, transforms=[code_mode])
         self._registered_tools = {}
+        # Set by _run_http_async_without_signals; stop_server() must not
+        # AttributeError when called before the server task has started.
+        self._uvicorn_server: uvicorn.Server | None = None
         self.log.info(
             f"Initialized MCP server '{self.name}' on {self.host}:{self.port}"
         )

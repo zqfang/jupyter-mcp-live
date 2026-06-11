@@ -8,6 +8,11 @@ import nbformat
 class NotebookContext:
     """Context manager for reading/writing notebooks atomically.
 
+    Only use this for mutations: the notebook is written back on clean exit.
+    For read-only access use read_notebook() directly — wrapping a read in
+    this context needlessly rewrites the file (mtime churn, lost-update
+    races with concurrent writers).
+
     Usage:
         with NotebookContext(notebook_path) as nb:
             # Modify nb

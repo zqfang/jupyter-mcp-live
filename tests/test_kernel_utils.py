@@ -1,5 +1,6 @@
 """Tests for kernel utilities."""
 
+import pytest
 
 from jupyter_mcp_executor.kernel_utils import (
     detect_kernel_language_from_name,
@@ -155,12 +156,20 @@ class TestResolveKernelName:
         result = resolve_kernel_name("python", specs)
         assert result in ["python3", "rapids"]
 
-    def test_fallback(self):
-        """Test fallback to default."""
+    def test_unresolvable_raises_with_available_kernels(self):
+        """Without a fallback, an unknown kernel raises listing what exists."""
         specs = {
             "python3": {"spec": {"language": "python"}},
         }
-        assert resolve_kernel_name("nonexistent", specs) == "python3"
+        with pytest.raises(ValueError, match="python3"):
+            resolve_kernel_name("nonexistent", specs)
+
+    def test_explicit_fallback(self):
+        """An explicit fallback is honored instead of raising."""
+        specs = {
+            "python3": {"spec": {"language": "python"}},
+        }
+        assert resolve_kernel_name("nonexistent", specs, fallback="python3") == "python3"
 
     def test_custom_fallback(self):
         """Test custom fallback kernel."""
