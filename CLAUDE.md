@@ -303,12 +303,12 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-172 tests total across:
+176 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
-- `tests/test_ydoc_adapter.py` - YDocAdapter output operations against a real
-  YNotebook (append/coalesce/clear)
+- `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
+  real YNotebook (edit_cell, append/coalesce/clear)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
 - `tests/test_sessions.py` - Session matching tests
 - `tests/test_imports.py` - Import validation tests

@@ -135,7 +135,7 @@ class YDocAdapter(NotebookAdapter):
         if YText and isinstance(ysource, YText):
             # Clear and update YText (preserves collaboration)
             ysource.clear()
-            ysource.extend(source_str)
+            ysource += source_str
         else:
             # Fall back to direct assignment
             ycell["source"] = YText(source_str) if YText else source_str

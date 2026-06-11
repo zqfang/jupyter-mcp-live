@@ -106,6 +106,56 @@ class TestAppendCellOutput:
             )
 
 
+class TestEditCell:
+    """edit_cell rewrites the live pycrdt Text source in place.
+
+    Regression coverage for the real-YNotebook path: cells created via
+    create_ycell store source as pycrdt.Text, which has no .extend()
+    (that API was y_py's) — the mocked main suite never reaches this branch.
+    """
+
+    @pytest.mark.asyncio
+    async def test_edit_replaces_source(self):
+        adapter, pos = await make_adapter_with_code_cell()
+
+        await adapter.edit_cell(
+            pos, CellContent(source="x = 1\nprint(x)", cell_type="code")
+        )
+
+        cell = await adapter.read_cell(pos)
+        assert cell.source == "x = 1\nprint(x)"
+
+    @pytest.mark.asyncio
+    async def test_edit_resets_outputs_and_execution_count(self):
+        adapter, pos = await make_adapter_with_code_cell()
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stdout", "text": "stale\n"}
+        )
+        await adapter.update_cell_outputs(pos, 3, None)
+
+        await adapter.edit_cell(pos, CellContent(source="y = 2", cell_type="code"))
+
+        cell = await adapter.read_cell(pos)
+        assert cell.outputs == []
+        assert cell.execution_count is None
+
+    @pytest.mark.asyncio
+    async def test_edit_to_empty_source(self):
+        adapter, pos = await make_adapter_with_code_cell()
+
+        await adapter.edit_cell(pos, CellContent(source="", cell_type="code"))
+
+        cell = await adapter.read_cell(pos)
+        assert cell.source == ""
+
+    @pytest.mark.asyncio
+    async def test_edit_out_of_range_raises(self):
+        adapter, _pos = await make_adapter_with_code_cell()
+
+        with pytest.raises(IndexError):
+            await adapter.edit_cell(99, CellContent(source="x", cell_type="code"))
+
+
 class TestClearAndCountOnlyUpdate:
     """clear_cell_outputs and execution_count-only updates."""
 
