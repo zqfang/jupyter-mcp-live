@@ -2,12 +2,16 @@
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from queue import Empty
 from typing import Any
 
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
 logger = logging.getLogger(__name__)
+
+# Async callback fired once per collected output (live streaming hook)
+OutputCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 async def wait_for_execute_reply(
@@ -64,15 +68,24 @@ async def wait_for_execute_reply(
 
 
 async def collect_outputs(
-    client: Any, msg_id: str, execution_count: int | None, deadline: float
+    client: Any,
+    msg_id: str,
+    execution_count: int | None,
+    deadline: float,
+    on_output: OutputCallback | None = None,
 ) -> tuple[list[dict], str, str | None]:
     """Collect outputs from iopub channel until the kernel reports idle.
 
     Args:
         client: Kernel client
         msg_id: Message ID to match
-        execution_count: Execution count from shell reply (for validation)
+        execution_count: Execution count from shell reply (for validation),
+            or None when collecting concurrently with the shell wait —
+            execute_result outputs then carry their own iopub-reported count
         deadline: Absolute event-loop time after which collection times out
+        on_output: Optional async callback fired once per collected output as
+            it arrives (live streaming). Callback errors are logged and
+            disable further callbacks; they never abort execution.
 
     Returns:
         Tuple of (outputs, status, error_msg)
@@ -118,63 +131,76 @@ async def collect_outputs(
             continue
 
         # Handle different message types
+        output: dict[str, Any] | None = None
+
         if msg_type == "execute_result":
-            # Validate execution_count matches
+            # Validate execution_count when the caller already knows it.
+            # (In concurrent collection it is None here; execute_code_on_kernel
+            # reconciles against the shell reply afterwards.)
             result_exec_count = content.get("execution_count")
-            if result_exec_count != execution_count:
+            if execution_count is not None and result_exec_count != execution_count:
                 logger.warning(
                     f"execution_count mismatch: shell={execution_count}, "
                     f"execute_result={result_exec_count}"
                 )
 
-            outputs.append(
-                {
-                    "output_type": "execute_result",
-                    "data": content.get("data", {}),
-                    "metadata": content.get("metadata", {}),
-                    "execution_count": execution_count,  # Use from shell reply
-                }
-            )
+            output = {
+                "output_type": "execute_result",
+                "data": content.get("data", {}),
+                "metadata": content.get("metadata", {}),
+                "execution_count": execution_count or result_exec_count,
+            }
 
         elif msg_type == "stream":
-            outputs.append(
-                {
-                    "output_type": "stream",
-                    "name": content.get("name", "stdout"),
-                    "text": content.get("text", ""),
-                }
-            )
+            output = {
+                "output_type": "stream",
+                "name": content.get("name", "stdout"),
+                "text": content.get("text", ""),
+            }
 
         elif msg_type == "display_data":
-            outputs.append(
-                {
-                    "output_type": "display_data",
-                    "data": content.get("data", {}),
-                    "metadata": content.get("metadata", {}),
-                }
-            )
+            output = {
+                "output_type": "display_data",
+                "data": content.get("data", {}),
+                "metadata": content.get("metadata", {}),
+            }
 
         elif msg_type == "error":
             status = "error"
             error_msg = "\n".join(content.get("traceback", []))
-            outputs.append(
-                {
-                    "output_type": "error",
-                    "ename": content.get("ename", ""),
-                    "evalue": content.get("evalue", ""),
-                    "traceback": content.get("traceback", []),
-                }
-            )
+            output = {
+                "output_type": "error",
+                "ename": content.get("ename", ""),
+                "evalue": content.get("evalue", ""),
+                "traceback": content.get("traceback", []),
+            }
 
         elif msg_type == "status" and content.get("execution_state") == "idle":
             # Execution complete
             break
 
+        if output is not None:
+            outputs.append(output)
+            if on_output is not None:
+                try:
+                    await on_output(output)
+                except Exception:
+                    logger.warning(
+                        "Output streaming callback failed; live updates "
+                        "disabled for the rest of this execution",
+                        exc_info=True,
+                    )
+                    on_output = None
+
     return outputs, status, error_msg
 
 
 async def execute_code_on_kernel(
-    client: Any, code: str, kernel_id: str, timeout: int
+    client: Any,
+    code: str,
+    kernel_id: str,
+    timeout: int,
+    on_output: OutputCallback | None = None,
 ) -> dict[str, Any]:
     """Execute code on kernel and collect results.
 
@@ -186,6 +212,8 @@ async def execute_code_on_kernel(
         code: Code to execute
         kernel_id: Kernel ID for logging
         timeout: Execution timeout in seconds (total budget)
+        on_output: Optional async callback fired per collected output
+            (live streaming); see collect_outputs
 
     Returns:
         dict with execution_count, outputs, status, and optional error
@@ -197,17 +225,34 @@ async def execute_code_on_kernel(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
 
-    # Get execution_count from execute_reply on shell channel.  The reply
-    # arrives when execution finishes, so iopub output is buffered by then.
-    execution_count = await wait_for_execute_reply(client, msg_id, deadline)
-
-    # Collect outputs from iopub channel.  Allow a small grace period past
-    # the shared deadline so already-buffered output is still drained when
-    # the shell wait consumed the entire budget.
-    iopub_deadline = max(deadline, loop.time() + 5)
-    outputs, status, error_msg = await collect_outputs(
-        client, msg_id, execution_count, iopub_deadline
+    # Wait for the execute_reply (shell) and collect outputs (iopub)
+    # CONCURRENTLY.  The execute_reply only arrives when execution finishes,
+    # so collecting sequentially would buffer all output until the end —
+    # outputs must be consumed while the code is still running for the
+    # on_output streaming callback to deliver live updates.  The iopub task
+    # gets a small grace past the shared deadline so already-buffered output
+    # is still drained when the kernel hits the timeout.
+    shell_task = asyncio.create_task(wait_for_execute_reply(client, msg_id, deadline))
+    iopub_task = asyncio.create_task(
+        collect_outputs(client, msg_id, None, deadline + 5, on_output=on_output)
     )
+    execution_count = await shell_task
+    outputs, status, error_msg = await iopub_task
+
+    # execute_result messages were collected before the shell reply supplied
+    # the authoritative execution_count; reconcile them now (the kernel
+    # reports the same count on both channels, so mismatches are anomalies).
+    if execution_count is not None:
+        for out in outputs:
+            if (
+                out.get("output_type") == "execute_result"
+                and out.get("execution_count") != execution_count
+            ):
+                logger.warning(
+                    f"execution_count mismatch: shell={execution_count}, "
+                    f"execute_result={out.get('execution_count')}"
+                )
+                out["execution_count"] = execution_count
 
     logger.info(f"Execution complete: status={status}, outputs={len(outputs)}")
 

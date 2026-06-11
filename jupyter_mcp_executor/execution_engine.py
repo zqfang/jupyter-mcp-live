@@ -5,7 +5,7 @@ import contextlib
 import logging
 from typing import Any
 
-from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
+from jupyter_mcp_executor.execution_utils import OutputCallback, execute_code_on_kernel
 from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.notebook_adapter import NotebookAdapter, get_notebook_adapter
@@ -15,6 +15,52 @@ from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
+
+
+class _CellOutputStreamer:
+    """Mirrors outputs into the notebook as the kernel emits them.
+
+    Used only for collaborative (YDoc) adapters so JupyterLab renders output
+    live during long-running executions.  The cell is re-located by ID before
+    every write so streamed output follows the cell if positions shift.  Any
+    failure disables streaming for the rest of the run; the final batch write
+    in execute_and_update_cell then reconciles the cell.
+    """
+
+    def __init__(self, adapter: NotebookAdapter, cell_id: str, position: int):
+        self._adapter = adapter
+        self._cell_id = cell_id
+        self._position = position
+        self.streamed_ok = True
+
+    async def _locate_cell(self) -> int:
+        """Resolve the cell's current position by ID (positions can shift)."""
+        found = await self._adapter.find_cell_by_id(self._cell_id)
+        if found is None:
+            msg = f"Cell {self._cell_id} no longer exists"
+            raise LookupError(msg)
+        self._position = found[1]
+        return self._position
+
+    async def clear_outputs(self) -> None:
+        """Clear stale outputs at execution start."""
+        try:
+            position = await self._locate_cell()
+            await self._adapter.clear_cell_outputs(position)
+        except Exception as e:
+            logger.warning(f"Could not clear outputs before execution: {e}")
+            self.streamed_ok = False
+
+    async def on_output(self, output: dict[str, Any]) -> None:
+        """Append one output to the cell as it arrives from the kernel."""
+        if not self.streamed_ok:
+            return
+        try:
+            position = await self._locate_cell()
+            await self._adapter.append_cell_output(position, output)
+        except Exception as e:
+            logger.warning(f"Live output streaming disabled for this run: {e}")
+            self.streamed_ok = False
 
 
 class ExecutionEngine:
@@ -80,6 +126,7 @@ class ExecutionEngine:
         kernel_id: str | None = None,
         timeout: int | None = None,
         kernel_name: str = "python3",
+        on_output: OutputCallback | None = None,
     ) -> ExecutionResult:
         """Execute code in a Jupyter kernel.
 
@@ -89,6 +136,8 @@ class ExecutionEngine:
                 (last-resort path; callers normally resolve the kernel first).
             timeout: Maximum time in seconds to wait for execution
             kernel_name: Kernel name to use when starting new kernel
+            on_output: Optional async callback fired per output as it arrives
+                (live streaming into the notebook)
 
         Returns:
             ExecutionResult with outputs and status
@@ -136,7 +185,7 @@ class ExecutionEngine:
             try:
                 client = await self._get_client(kernel, kernel_id)
                 result_dict = await execute_code_on_kernel(
-                    client, code, kernel_id, timeout
+                    client, code, kernel_id, timeout, on_output=on_output
                 )
             except Exception:
                 # Connection-level failure: drop the cached client so the
@@ -165,7 +214,10 @@ class ExecutionEngine:
         """Execute code and update cell with results in one atomic operation.
 
         This method is YDoc-aware: it updates outputs in YDoc for open notebooks,
-        or in disk file for closed notebooks.
+        or in disk file for closed notebooks.  For open notebooks (when cell_id
+        is given) outputs are additionally streamed into the cell live, one
+        iopub message at a time, so JupyterLab renders progress during
+        long-running executions instead of everything appearing at the end.
 
         Args:
             adapter: Notebook adapter (YDoc or nbformat)
@@ -195,9 +247,22 @@ class ExecutionEngine:
                 adapter.notebook_path
             )
 
+        # Live-stream outputs for open notebooks: clear stale outputs now and
+        # mirror each output into the YDoc as the kernel emits it, so
+        # JupyterLab renders progress during long-running cells.  Closed
+        # notebooks (NbformatAdapter) skip this — nobody is watching the file,
+        # and per-output disk writes would be pure overhead.
+        streamer = None
+        if cell_id and adapter.is_collaborative:
+            streamer = _CellOutputStreamer(adapter, cell_id, cell_position)
+            await streamer.clear_outputs()
+
         # Execute code
         exec_result = await self.execute_cell_code(
-            code, kernel_id=kernel_id, timeout=timeout
+            code,
+            kernel_id=kernel_id,
+            timeout=timeout,
+            on_output=streamer.on_output if streamer else None,
         )
 
         if started_new and not exec_result.started_new_kernel:
@@ -232,9 +297,17 @@ class ExecutionEngine:
         #   autosave handles disk persistence.  A direct nbformat.write() here
         #   would trigger JupyterLab's external-file-change detector and cause
         #   the notebook viewport to scroll back to the top on every execution.
-        await adapter.update_cell_outputs(
-            update_position, exec_result.execution_count, exec_result.outputs
-        )
+        if streamer is not None and streamer.streamed_ok:
+            # Outputs already live in the cell via streaming; only record the
+            # execution_count.  Skipping the clear+rewrite of identical
+            # content avoids a re-render flash of plots/images in JupyterLab.
+            await adapter.update_cell_outputs(
+                update_position, exec_result.execution_count, None
+            )
+        else:
+            await adapter.update_cell_outputs(
+                update_position, exec_result.execution_count, exec_result.outputs
+            )
 
         # Return ExecutionResult (caller can convert to dict if needed)
         return exec_result

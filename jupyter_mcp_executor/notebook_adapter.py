@@ -74,18 +74,49 @@ class NotebookAdapter(ABC):
 
     @abstractmethod
     async def update_cell_outputs(
-        self, position: int, execution_count: int | None, outputs: list[dict[str, Any]]
+        self,
+        position: int,
+        execution_count: int | None,
+        outputs: list[dict[str, Any]] | None,
     ) -> None:
         """Update cell execution results.
 
         Args:
             position: Cell index
-            execution_count: Execution count to set
-            outputs: Output list to set
+            execution_count: Execution count to set (None = leave unchanged)
+            outputs: Output list to set (None = leave unchanged)
 
         Raises:
             IndexError: If position is out of range
         """
+
+    @abstractmethod
+    async def append_cell_output(self, position: int, output: dict[str, Any]) -> None:
+        """Append a single output to a cell's existing outputs.
+
+        Used for live output streaming during execution: outputs arrive one
+        iopub message at a time and are mirrored into the notebook as they
+        come, instead of replacing the whole list at the end.
+
+        Args:
+            position: Cell index
+            output: One nbformat-style output dict (stream/display_data/
+                execute_result/error)
+
+        Raises:
+            IndexError: If position is out of range
+        """
+
+    async def clear_cell_outputs(self, position: int) -> None:
+        """Clear a cell's outputs (e.g., at execution start).
+
+        Args:
+            position: Cell index
+
+        Raises:
+            IndexError: If position is out of range
+        """
+        await self.update_cell_outputs(position, None, [])
 
     @abstractmethod
     async def get_all_cells(self) -> list[CellContent]:

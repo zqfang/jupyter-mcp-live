@@ -155,7 +155,10 @@ class NbformatAdapter(NotebookAdapter):
         await asyncio.to_thread(_sync)
 
     async def update_cell_outputs(
-        self, position: int, execution_count: int | None, outputs: list[dict[str, Any]]
+        self,
+        position: int,
+        execution_count: int | None,
+        outputs: list[dict[str, Any]] | None,
     ) -> None:
         """Update cell outputs in notebook file."""
 
@@ -172,6 +175,23 @@ class NbformatAdapter(NotebookAdapter):
                     cell.outputs = convert_outputs_to_notebook_nodes(outputs)
 
                 logger.debug(f"Updated cell {position} outputs via nbformat")
+
+        await asyncio.to_thread(_sync)
+
+    async def append_cell_output(self, position: int, output: dict[str, Any]) -> None:
+        """Append a single output to a cell in the notebook file.
+
+        Closed notebooks have no live viewer, so the engine does not stream
+        through this path; it exists for protocol completeness.
+        """
+
+        def _sync() -> None:
+            with NotebookContext(self._notebook_path) as nb:
+                _check_position(nb, position)
+
+                cell = nb.cells[position]
+                existing = list(getattr(cell, "outputs", []) or [])
+                cell.outputs = existing + convert_outputs_to_notebook_nodes([output])
 
         await asyncio.to_thread(_sync)
 

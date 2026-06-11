@@ -303,9 +303,12 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-158 tests total across:
+172 tests total across:
 
-- `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions)
+- `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
+  including live output streaming)
+- `tests/test_ydoc_adapter.py` - YDocAdapter output operations against a real
+  YNotebook (append/coalesce/clear)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
 - `tests/test_sessions.py` - Session matching tests
 - `tests/test_imports.py` - Import validation tests
@@ -407,16 +410,39 @@ two notebooks with the same name in different folders must never share a
 kernel. Non-notebook sessions (e.g., consoles) are skipped per-session, not
 allowed to abort the scan.
 
+### Live Output Streaming (open notebooks)
+
+For collaborative (YDoc) notebooks, outputs are **streamed into the cell as
+the kernel emits them**, so JupyterLab renders progress during long-running
+executions instead of everything appearing when the MCP tool call returns:
+
+- At execution start the cell's stale outputs are cleared.
+- Each iopub output fires an `on_output` callback
+  (`execution_utils.collect_outputs`) that appends it to the cell via
+  `adapter.append_cell_output()`. The cell is re-located by `cell_id` before
+  every append, so streamed output follows the cell if positions shift.
+- Consecutive `stream` outputs with the same name are coalesced by appending
+  to the previous entry's in-place pycrdt `Text` — chatty loops stay one
+  outputs entry with small CRDT deltas, not thousands of Array inserts.
+- When streaming delivered everything, the final write records only the
+  `execution_count` (no clear+rewrite flash). If streaming failed or the
+  notebook is closed (`NbformatAdapter` — nobody is watching the file), the
+  full batch write reconciles the cell exactly as before.
+- Streaming failures are logged and never abort execution; the MCP response
+  (full `ExecutionResult`) is unaffected either way.
+
 ### Execution Internals
 
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is
   dropped when the kernel disappears or a connection-level error occurs.
-- The shell-reply wait and iopub collection share one deadline, so a hung
-  kernel blocks at most `EXECUTION_CONFIG.default_timeout` (+ small grace),
-  not 2x. Channel timeouts raise `queue.Empty` in jupyter_client — both
-  `Empty` and `TimeoutError` are handled. Stale shell replies are drained.
+- The shell-reply wait and iopub collection run **concurrently** (required
+  for live output streaming — the execute_reply only arrives when execution
+  finishes) and share one deadline, so a hung kernel blocks at most
+  `EXECUTION_CONFIG.default_timeout` (+ small grace), not 2x. Channel
+  timeouts raise `queue.Empty` in jupyter_client — both `Empty` and
+  `TimeoutError` are handled. Stale shell replies are drained.
 - After execution, the target cell is re-located by `cell_id` before outputs
   are written, so outputs land in the right cell even if the user
   added/deleted cells in JupyterLab while the code ran. If the cell was

@@ -1,0 +1,137 @@
+"""Tests for YDocAdapter output operations against a real YNotebook.
+
+Covers the live-streaming primitives (append_cell_output with stream
+coalescing, clear_cell_outputs) and the execution_count-only update used
+when streaming already delivered the outputs.
+"""
+
+import pytest
+
+pytest.importorskip("jupyter_ydoc")
+
+from jupyter_ydoc import YNotebook
+
+from jupyter_mcp_executor.notebook_models import CellContent
+from jupyter_mcp_executor.ydoc_adapter import YDocAdapter
+
+
+async def make_adapter_with_code_cell() -> tuple[YDocAdapter, int]:
+    """Create an adapter over a fresh YNotebook with one empty code cell."""
+    adapter = YDocAdapter(YNotebook(), "/tmp/test_ydoc_adapter.ipynb")
+    position, _cell_id = await adapter.add_cell(
+        CellContent(source="print('x')", cell_type="code")
+    )
+    return adapter, position
+
+
+class TestAppendCellOutput:
+    """append_cell_output streams one output at a time into the YDoc."""
+
+    @pytest.mark.asyncio
+    async def test_appends_outputs_in_order(self):
+        adapter, pos = await make_adapter_with_code_cell()
+
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stdout", "text": "hi\n"}
+        )
+        await adapter.append_cell_output(
+            pos,
+            {
+                "output_type": "execute_result",
+                "data": {"text/plain": "42"},
+                "metadata": {},
+                "execution_count": 1,
+            },
+        )
+
+        cell = await adapter.read_cell(pos)
+        assert [o["output_type"] for o in cell.outputs] == [
+            "stream",
+            "execute_result",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_consecutive_same_stream_coalesces(self):
+        """stdout lines merge into one entry with in-place Text appends."""
+        adapter, pos = await make_adapter_with_code_cell()
+
+        for i in range(3):
+            await adapter.append_cell_output(
+                pos, {"output_type": "stream", "name": "stdout", "text": f"line{i}\n"}
+            )
+
+        cell = await adapter.read_cell(pos)
+        assert len(cell.outputs) == 1
+        assert cell.outputs[0]["text"] == "line0\nline1\nline2\n"
+
+    @pytest.mark.asyncio
+    async def test_different_stream_names_stay_separate(self):
+        adapter, pos = await make_adapter_with_code_cell()
+
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stdout", "text": "out\n"}
+        )
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stderr", "text": "err\n"}
+        )
+
+        cell = await adapter.read_cell(pos)
+        assert len(cell.outputs) == 2
+        assert cell.outputs[1]["name"] == "stderr"
+
+    @pytest.mark.asyncio
+    async def test_stream_after_display_data_not_coalesced(self):
+        adapter, pos = await make_adapter_with_code_cell()
+
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stdout", "text": "a\n"}
+        )
+        await adapter.append_cell_output(
+            pos, {"output_type": "display_data", "data": {}, "metadata": {}}
+        )
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stdout", "text": "b\n"}
+        )
+
+        cell = await adapter.read_cell(pos)
+        assert len(cell.outputs) == 3
+
+    @pytest.mark.asyncio
+    async def test_out_of_range_raises(self):
+        adapter, _pos = await make_adapter_with_code_cell()
+
+        with pytest.raises(IndexError):
+            await adapter.append_cell_output(
+                99, {"output_type": "stream", "name": "stdout", "text": "x"}
+            )
+
+
+class TestClearAndCountOnlyUpdate:
+    """clear_cell_outputs and execution_count-only updates."""
+
+    @pytest.mark.asyncio
+    async def test_clear_cell_outputs_empties_outputs(self):
+        adapter, pos = await make_adapter_with_code_cell()
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stdout", "text": "old\n"}
+        )
+
+        await adapter.clear_cell_outputs(pos)
+
+        cell = await adapter.read_cell(pos)
+        assert cell.outputs == []
+
+    @pytest.mark.asyncio
+    async def test_update_with_none_outputs_preserves_streamed_content(self):
+        """The post-streaming reconcile sets the count without touching outputs."""
+        adapter, pos = await make_adapter_with_code_cell()
+        await adapter.append_cell_output(
+            pos, {"output_type": "stream", "name": "stdout", "text": "kept\n"}
+        )
+
+        await adapter.update_cell_outputs(pos, 5, None)
+
+        cell = await adapter.read_cell(pos)
+        assert cell.execution_count == 5
+        assert len(cell.outputs) == 1
+        assert cell.outputs[0]["text"] == "kept\n"

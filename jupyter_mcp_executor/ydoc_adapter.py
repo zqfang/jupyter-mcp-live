@@ -183,8 +183,26 @@ class YDocAdapter(NotebookAdapter):
         self.ydoc.ycells.pop(position)
         logger.info(f"Deleted cell via YDoc at position {position}")
 
+    @staticmethod
+    def _make_output_map(output: dict[str, Any]) -> Any:
+        """Wrap one output dict as a pycrdt Map (stream text as Text).
+
+        Outputs must be stored as pycrdt Map (with stream text as Text), not
+        plain dicts — a raw dict breaks YNotebook.get_cell() → to_py() on save.
+        """
+        from pycrdt import Map, Text  # noqa: PLC0415
+
+        out = dict(output)
+        if out.get("output_type") == "stream":
+            text = out.get("text", "")
+            out["text"] = Text("".join(text) if isinstance(text, list) else text)
+        return Map(out)
+
     async def update_cell_outputs(
-        self, position: int, execution_count: int | None, outputs: list[dict[str, Any]]
+        self,
+        position: int,
+        execution_count: int | None,
+        outputs: list[dict[str, Any]] | None,
     ) -> None:
         """Update cell outputs in YDoc."""
         if position < 0 or position >= self.ydoc.cell_number:
@@ -197,19 +215,9 @@ class YDocAdapter(NotebookAdapter):
             ycell["execution_count"] = execution_count
 
         if outputs is not None:
-            # outputs must be stored as a pycrdt Array[Map], not a plain list.
-            # Assigning a raw list breaks YNotebook.get_cell() → to_py() on save.
-            from pycrdt import Array, Map, Text  # noqa: PLC0415
+            from pycrdt import Array  # noqa: PLC0415
 
-            output_maps = []
-            for output in outputs:
-                out = dict(output)
-                if out.get("output_type") == "stream":
-                    text = out.get("text", "")
-                    out["text"] = Text(
-                        "".join(text) if isinstance(text, list) else text
-                    )
-                output_maps.append(Map(out))
+            output_maps = [self._make_output_map(output) for output in outputs]
 
             youtputs = ycell.get("outputs")
             if isinstance(youtputs, Array):
@@ -222,6 +230,44 @@ class YDocAdapter(NotebookAdapter):
         logger.debug(
             f"Updated cell {position} outputs in YDoc (execution_count={execution_count})"
         )
+
+    async def append_cell_output(self, position: int, output: dict[str, Any]) -> None:
+        """Append one output to a cell in YDoc (live streaming during execution).
+
+        Consecutive stream outputs with the same name are coalesced by
+        appending to the previous entry's in-place Text — a chatty loop
+        printing thousands of lines stays one outputs entry with small CRDT
+        deltas instead of thousands of Array inserts.
+        """
+        if position < 0 or position >= self.ydoc.cell_number:
+            msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
+            raise IndexError(msg)
+
+        from pycrdt import Array, Text  # noqa: PLC0415
+
+        ycell = self.ydoc.ycells[position]
+        youtputs = ycell.get("outputs")
+        if not isinstance(youtputs, Array):
+            ycell["outputs"] = Array([])
+            youtputs = ycell["outputs"]
+
+        if output.get("output_type") == "stream" and len(youtputs) > 0:
+            text = output.get("text", "")
+            text_str = "".join(text) if isinstance(text, list) else text
+            last = youtputs[len(youtputs) - 1]
+            try:
+                ytext = (
+                    last.get("text") if last.get("output_type") == "stream" else None
+                )
+                if isinstance(ytext, Text) and last.get("name") == output.get(
+                    "name", "stdout"
+                ):
+                    ytext += text_str
+                    return
+            except Exception:
+                logger.debug("Stream coalescing failed; appending as new output")
+
+        youtputs.append(self._make_output_map(output))
 
     async def get_all_cells(self) -> list[CellContent]:
         """Get all cells from YDoc."""

@@ -29,6 +29,7 @@ from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 
 # Import from new modular structure
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
 from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.output_filter import OutputFilter
@@ -1193,6 +1194,7 @@ class TestOutputPlacement:
             """Adapter stub where the cell moved from position 1 to 2."""
 
             notebook_path = "/tmp/shifting.ipynb"
+            is_collaborative = False
 
             def __init__(self):
                 self.updated_position = None
@@ -1217,6 +1219,7 @@ class TestOutputPlacement:
 
         class DeletedAdapter:
             notebook_path = "/tmp/deleted.ipynb"
+            is_collaborative = False
 
             def __init__(self):
                 self.update_called = False
@@ -1233,6 +1236,261 @@ class TestOutputPlacement:
         )
         assert result.status == "ok"  # execution result still returned
         assert adapter.update_called is False
+
+
+class OutputtingClient:
+    """Mock kernel client that emits one stream output before going idle."""
+
+    def __init__(self):
+        self.channels_started = False
+        self._shell = []
+        self._iopub = []
+
+    def start_channels(self):
+        self.channels_started = True
+
+    def stop_channels(self):
+        self.channels_started = False
+
+    async def wait_for_ready(self, timeout=10):
+        pass
+
+    def execute(self, _code):
+        msg_id = "msg-live-1"
+        self._shell.append(
+            {
+                "header": {"msg_type": "execute_reply"},
+                "parent_header": {"msg_id": msg_id},
+                "content": {"status": "ok", "execution_count": 1},
+            }
+        )
+        self._iopub = [
+            {
+                "header": {"msg_type": "stream"},
+                "parent_header": {"msg_id": msg_id},
+                "content": {"name": "stdout", "text": "tick\n"},
+            },
+            {
+                "header": {"msg_type": "status"},
+                "parent_header": {"msg_id": msg_id},
+                "content": {"execution_state": "idle"},
+            },
+        ]
+        return msg_id
+
+    async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+        await asyncio.sleep(0.01)
+        if self._shell:
+            return self._shell.pop(0)
+        raise asyncio.TimeoutError
+
+    async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+        await asyncio.sleep(0.01)
+        if self._iopub:
+            return self._iopub.pop(0)
+        raise Empty
+
+
+class OutputtingKernel:
+    """Mock kernel handle returning an OutputtingClient."""
+
+    def __init__(self):
+        self._client = OutputtingClient()
+
+    def client(self):
+        return self._client
+
+
+class RecordingCollabAdapter:
+    """Collaborative adapter stub that records streaming calls."""
+
+    notebook_path = "/tmp/collab.ipynb"
+    is_collaborative = True
+
+    def __init__(self):
+        self.cleared = []
+        self.appended = []
+        self.updated = []
+
+    async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+        return (None, 0)
+
+    async def clear_cell_outputs(self, position):
+        self.cleared.append(position)
+
+    async def append_cell_output(self, position, output):
+        self.appended.append((position, output))
+
+    async def update_cell_outputs(self, position, execution_count, outputs):
+        self.updated.append((position, execution_count, outputs))
+
+
+class TestLiveOutputStreaming:
+    """Outputs stream into the notebook while the cell is still executing."""
+
+    @pytest.mark.asyncio
+    async def test_outputs_stream_before_execution_finishes(self):
+        """on_output fires while the kernel is still busy.
+
+        The shell reply is withheld until the callback has seen the first
+        output — this only completes if iopub is consumed concurrently with
+        the shell wait (sequential collection would time out and lose the
+        execution_count).
+        """
+        streamed = asyncio.Event()
+
+        class LiveClient:
+            def execute(self, _code):
+                return "msg-live"
+
+            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+                await asyncio.wait_for(streamed.wait(), timeout=3)
+                return {
+                    "header": {"msg_type": "execute_reply"},
+                    "parent_header": {"msg_id": "msg-live"},
+                    "content": {"status": "ok", "execution_count": 9},
+                }
+
+            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+                if not streamed.is_set():
+                    return {
+                        "header": {"msg_type": "stream"},
+                        "parent_header": {"msg_id": "msg-live"},
+                        "content": {"name": "stdout", "text": "early\n"},
+                    }
+                return {
+                    "header": {"msg_type": "status"},
+                    "parent_header": {"msg_id": "msg-live"},
+                    "content": {"execution_state": "idle"},
+                }
+
+        async def on_output(_output):
+            streamed.set()
+
+        result = await execute_code_on_kernel(
+            LiveClient(), "x", "k1", timeout=5, on_output=on_output
+        )
+        assert result["status"] == "ok"
+        assert result["execution_count"] == 9
+        assert result["outputs"] == [
+            {"output_type": "stream", "name": "stdout", "text": "early\n"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_callback_failure_does_not_abort_execution(self):
+        """A crashing callback disables streaming but execution completes."""
+        calls = []
+
+        async def bad_callback(output):
+            calls.append(output)
+            msg = "boom"
+            raise RuntimeError(msg)
+
+        result = await execute_code_on_kernel(
+            OutputtingClient(), "x", "k1", timeout=5, on_output=bad_callback
+        )
+        assert result["status"] == "ok"
+        assert len(result["outputs"]) == 1
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_collaborative_adapter_streams_and_skips_final_rewrite(
+        self, mock_serverapp
+    ):
+        """Open notebook: clear at start, append per output, no final rewrite."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+
+        adapter = RecordingCollabAdapter()
+        result = await container.execution_engine.execute_and_update_cell(
+            adapter, 0, "print('tick')", kernel_id="kernel-live", cell_id="cell-1"
+        )
+
+        assert result.status == "ok"
+        assert adapter.cleared == [0]
+        assert [out["output_type"] for _, out in adapter.appended] == ["stream"]
+        # Final write records execution_count only; streamed outputs are kept
+        assert adapter.updated == [(0, 1, None)]
+
+    @pytest.mark.asyncio
+    async def test_append_failure_falls_back_to_batch_write(self, mock_serverapp):
+        """If streaming breaks mid-run, the final batch write reconciles."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+
+        class FailingAppendAdapter(RecordingCollabAdapter):
+            async def append_cell_output(self, position, output):  # noqa: ARG002
+                msg = "append rejected"
+                raise RuntimeError(msg)
+
+        adapter = FailingAppendAdapter()
+        result = await container.execution_engine.execute_and_update_cell(
+            adapter, 0, "print('tick')", kernel_id="kernel-live", cell_id="cell-1"
+        )
+
+        assert result.status == "ok"
+        assert len(adapter.updated) == 1
+        position, execution_count, outputs = adapter.updated[0]
+        assert (position, execution_count) == (0, 1)
+        assert outputs == [
+            {"output_type": "stream", "name": "stdout", "text": "tick\n"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_cell_deleted_before_execution_skips_streaming(self, mock_serverapp):
+        """Deleted cell: streaming disabled, no output update, result intact."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+
+        class GoneAdapter(RecordingCollabAdapter):
+            async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+                return None
+
+        adapter = GoneAdapter()
+        result = await container.execution_engine.execute_and_update_cell(
+            adapter, 0, "print('tick')", kernel_id="kernel-live", cell_id="cell-gone"
+        )
+
+        assert result.status == "ok"
+        assert adapter.appended == []
+        assert adapter.updated == []
+
+    @pytest.mark.asyncio
+    async def test_noncollaborative_adapter_does_not_stream(self, mock_serverapp):
+        """Closed notebook: no streaming calls, single batch write as before."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+
+        class ClosedAdapter(RecordingCollabAdapter):
+            is_collaborative = False
+
+        adapter = ClosedAdapter()
+        result = await container.execution_engine.execute_and_update_cell(
+            adapter, 0, "print('tick')", kernel_id="kernel-live", cell_id="cell-1"
+        )
+
+        assert result.status == "ok"
+        assert adapter.cleared == []
+        assert adapter.appended == []
+        assert len(adapter.updated) == 1
+        assert adapter.updated[0][2] is not None  # full batch write
+
+    @pytest.mark.asyncio
+    async def test_nbformat_append_cell_output_persists(self, temp_notebook):
+        """NbformatAdapter.append_cell_output appends to the file on disk."""
+        await add_code_cell(temp_notebook, "x = 1", execute=False)
+
+        adapter = NbformatAdapter(normalize_path(temp_notebook))
+        await adapter.append_cell_output(
+            0, {"output_type": "stream", "name": "stdout", "text": "a\n"}
+        )
+        await adapter.append_cell_output(
+            0, {"output_type": "stream", "name": "stdout", "text": "b\n"}
+        )
+
+        nb = read_notebook(temp_notebook)
+        assert len(nb.cells[0].outputs) == 2
+        assert nb.cells[0].outputs[0]["text"] == "a\n"
 
 
 class TestOutputTruncation:
