@@ -21,12 +21,42 @@ from fastmcp.experimental.transforms.code_mode import (
     CodeMode,
     GetSchemas,
     ListTools,
+    MontySandboxProvider,
 )
 from fastmcp.utilities.cli import log_server_banner
+from pydantic_monty import ResourceLimits
 from traitlets import Int, Unicode
 from traitlets.config.configurable import LoggingConfigurable
 
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
+
 logger = logging.getLogger(__name__)
+
+# Extra wall-clock budget for the Code Mode sandbox beyond a single kernel
+# execution: the Monty time limit keeps ticking while the script awaits tool
+# calls, so the budget must cover at least one full kernel execution
+# (EXECUTION_CONFIG.default_timeout) plus orchestration overhead. Scripts that
+# run several long cells should be split by the agent rather than covered here.
+SANDBOX_TIMEOUT_HEADROOM_SECS = 300
+
+
+def build_code_mode() -> CodeMode:
+    """Build the Code Mode transform with an explicit sandbox time budget.
+
+    Without an explicit ``max_duration_secs`` some fastmcp releases default
+    the Monty script budget to 30s, which aborts any script whose tool calls
+    include a long-running cell execution.
+    """
+    return CodeMode(
+        discovery_tools=[ListTools(), GetSchemas()],
+        sandbox_provider=MontySandboxProvider(
+            limits=ResourceLimits(
+                max_duration_secs=float(
+                    EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS
+                )
+            )
+        ),
+    )
 
 
 class MCPServerPortError(RuntimeError):
@@ -264,14 +294,13 @@ class MCPServer(LoggingConfigurable):
         """
         super().__init__(**kwargs)
         ## TODO: when tools become more dynamic or we have a large number of tools, we can consider using a discovery tool like Search or GetTags instead of ListTools
-        ## TODO: sandbox configuration- https://gofastmcp.com/servers/transforms/code-mode#sandbox-configuration
         ## 3 stage
         # code_mode = CodeMode(discovery_tools=[GetTags(), Search(), GetSchemas()])
         # 2 stage, best for smaller catalogs
         ## see https://gofastmcp.com/servers/transforms/code-mode
         ## code_mode = CodeMode(discovery_tools=[Search(default_detail="detailed"), GetSchemas()])
         # for under 20 tools, ListTools let LLM see everything upfront can be faster than multiple search round-trips
-        code_mode = CodeMode(discovery_tools=[ListTools(), GetSchemas()])
+        code_mode = build_code_mode()
         # Initialize FastMCP and tools registry
         self.mcp = FastMCP(self.name, transforms=[code_mode])
         self._registered_tools = {}

@@ -4,7 +4,13 @@ import asyncio
 
 import pytest
 
-from jupyter_mcp_executor.mcp_server import MCPServer, _wrap_with_json_conversion
+from jupyter_mcp_executor.mcp_server import (
+    SANDBOX_TIMEOUT_HEADROOM_SECS,
+    MCPServer,
+    _wrap_with_json_conversion,
+    build_code_mode,
+)
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
 
 def simple_function(x: int, y: int) -> int:
@@ -184,6 +190,38 @@ class TestMCPServerDirect:
 
         assert server.name == "Custom Server"
         assert server.port == 3055
+
+
+class TestCodeModeSandboxLimits:
+    """The Code Mode sandbox budget must cover a full kernel execution.
+
+    The Monty time limit keeps ticking while the script awaits tool calls;
+    some fastmcp releases default it to 30s, which aborts any script that
+    executes a long-running cell even though the kernel side succeeds.
+    """
+
+    def test_sandbox_budget_covers_kernel_timeout(self):
+        code_mode = build_code_mode()
+
+        limits = code_mode.sandbox_provider.limits
+        assert limits is not None
+        assert limits["max_duration_secs"] == float(
+            EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS
+        )
+
+    def test_server_uses_explicit_sandbox_limits(self):
+        """MCPServer must never fall back to the fastmcp default budget."""
+        server = MCPServer()
+
+        transforms = [
+            t
+            for t in getattr(server.mcp, "transforms", [])
+            if hasattr(t, "sandbox_provider")
+        ]
+        assert transforms, "CodeMode transform not found on FastMCP instance"
+        limits = transforms[0].sandbox_provider.limits
+        assert limits is not None
+        assert limits["max_duration_secs"] > EXECUTION_CONFIG.default_timeout
 
 
 class TestMCPServerIntegration:

@@ -303,7 +303,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-176 tests total across:
+178 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
@@ -313,7 +313,8 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/test_sessions.py` - Session matching tests
 - `tests/test_imports.py` - Import validation tests
 - `tests/test_kernel_utils.py` - Kernel utilities tests
-- `tests/test_mcp_server.py` - MCP server tests
+- `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
+  limits)
 - `tests/test_extension.py` - Extension tests
 - `tests/conftest.py` - Shared fixtures and mocks (includes a `QueryService` stub
   that must be kept in sync with the real `query_service.py` routing)
@@ -433,6 +434,12 @@ executions instead of everything appearing when the MCP tool call returns:
 
 ### Execution Internals
 
+- The Code Mode sandbox (Monty) wall-clock budget is set explicitly in
+  `mcp_server.py` (`build_code_mode()`) to
+  `EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS`. The
+  Monty clock keeps ticking while a script awaits tool calls, and some
+  fastmcp releases default the budget to 30s — which aborts any script that
+  runs a long cell even though the kernel-side execution succeeds.
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is
