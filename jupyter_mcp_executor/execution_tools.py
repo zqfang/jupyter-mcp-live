@@ -62,7 +62,11 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
 async def setup_notebook(
     notebook_path: str, kernel_name: str = "python3", force_new_kernel: bool = False
 ) -> dict[str, Any]:
-    """Setup a notebook and start/reuse its kernel — CALL THIS FIRST, before any other notebook tool.
+    """Setup a notebook and start/reuse its kernel — CALL THIS FIRST, before executing code or modifying cells.
+
+    Required before execute_cell / add_code_cell / edit_code_cell and the other
+    cell-modification tools (they need a kernel). NOT required for the read-only
+    tools view_notebook / read_cell — those work without a kernel or any setup.
 
     Creates an empty notebook if it doesn't exist; add content afterwards
     with add_code_cell / add_markdown_cell.
@@ -353,6 +357,11 @@ async def delete_cell(
 async def view_notebook(notebook_path: str) -> list[dict[str, Any]]:
     """View all cells of a notebook in order (read-only).
 
+    Read-only: needs no kernel and no setup_notebook call. Prefer this over
+    reading the .ipynb file directly (cat/open/nbformat) — when the notebook is
+    open in JupyterLab it reflects the live, unsaved cell state and outputs,
+    which a file read does not.
+
     Use this to see the notebook's current structure — e.g., to find cell
     positions before editing, or after add/delete operations shifted them.
     For a single cell, use read_cell instead. Not for listing kernels/sessions
@@ -378,6 +387,10 @@ async def read_cell(
     execution_count: int | None = None,
 ) -> dict[str, Any]:
     """Read a single notebook cell - convenience function.
+
+    Read-only: needs no kernel and no setup_notebook call. Prefer this over
+    reading the .ipynb file directly — it reflects live unsaved JupyterLab
+    state when the notebook is open.
 
     Single-cell complement to view_notebook; the returned dict includes the
     cell's position.
