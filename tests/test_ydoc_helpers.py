@@ -260,6 +260,70 @@ async def test_ystore_uses_file_id_for_path():
     assert captured.get("path") == f".notebook:{file_id}.y"
 
 
+@pytest.mark.asyncio
+async def test_recreated_room_is_initialized_to_load_content():
+    """Regression: a recreated room must be initialize()'d so its YDoc loads
+    content from the ystore/disk.
+
+    start_room() only starts the broadcast loop; jupyter_server_ydoc loads the
+    document via DocumentRoom.initialize(), which it otherwise calls only from
+    its websocket handler when a browser connects.  Without this, a headless
+    (no-browser) room stays EMPTY — reads return 0 cells and a save overwrites
+    the on-disk notebook with a blank document.
+    """
+    file_id = "deadbeef"
+    fake_ynb = _FakeYNotebook()
+    ext, room, ws_server = _make_extension(room_exists=False, room_doc=fake_ynb)
+    serverapp = _make_serverapp(file_id=file_id)
+    room.ready = False
+    room.initialize = AsyncMock()
+
+    with (
+        patch("jupyter_mcp_executor.ydoc_helpers.YDOC_AVAILABLE", True),
+        patch("jupyter_mcp_executor.ydoc_helpers.YNotebook", _FakeYNotebook),
+        patch("jupyter_mcp_executor.ydoc_helpers.get_ynotebook", new=AsyncMock(return_value=None)),
+        patch("jupyter_mcp_executor.ydoc_helpers._get_ydoc_extension", return_value=ext),
+        patch(_SC, return_value=serverapp),
+        patch(_DR, MagicMock(return_value=room)),
+        patch(_EFP, return_value="encoded"),
+        patch(_RIFEP, return_value="room-1"),
+    ):
+        from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook
+        result = await ensure_ynotebook("/tmp/nb.ipynb")
+
+    assert result is fake_ynb
+    room.initialize.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_ready_room_is_not_reinitialized():
+    """An already-ready room (live browser session) must NOT be re-initialized,
+    so we never clobber in-flight collaborative edits."""
+    file_id = "deadbeef"
+    fake_ynb = _FakeYNotebook()
+    ext, room, ws_server = _make_extension(room_exists=True, room_doc=fake_ynb)
+    serverapp = _make_serverapp(file_id=file_id)
+    room.ready = True
+    room.initialize = AsyncMock()
+
+    with (
+        patch("jupyter_mcp_executor.ydoc_helpers.YDOC_AVAILABLE", True),
+        patch("jupyter_mcp_executor.ydoc_helpers.YNotebook", _FakeYNotebook),
+        patch("jupyter_mcp_executor.ydoc_helpers.get_ynotebook", new=AsyncMock(return_value=None)),
+        patch("jupyter_mcp_executor.ydoc_helpers._get_ydoc_extension", return_value=ext),
+        patch(_SC, return_value=serverapp),
+        patch(_EFP, return_value="encoded"),
+        patch(_RIFEP, return_value="room-1"),
+    ):
+        from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook
+        result = await ensure_ynotebook("/tmp/nb.ipynb")
+
+    assert result is fake_ynb
+    room.initialize.assert_not_awaited()
+    # existing room reused — not recreated
+    ws_server.start_room.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # notebook_adapter integration: ensure_ynotebook is wired in
 # ---------------------------------------------------------------------------

@@ -175,14 +175,29 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
                     save_delay=ydoc_extension.document_save_delay,
                 )
 
-                # start_room calls room.initialize() which loads from ystore first
-                # (preserving the original CRDT op history), falling back to disk
-                # only if the ystore is absent or stale.
+                # start_room() only starts the room's broadcast loop; it does
+                # NOT load the document.  jupyter_server_ydoc loads content via
+                # DocumentRoom.initialize(), which it calls solely from its
+                # websocket handler when a browser connects.
                 await ywebsocket_server.start_room(room)
                 ywebsocket_server.add_room(room_id, room)
                 logger.info(
                     f"Recreated YDoc room for {file_path} to preserve CRDT history"
                 )
+
+            # Load the document into the YDoc ourselves.  Because nothing else
+            # calls DocumentRoom.initialize() in a headless (no-browser) session,
+            # a freshly recreated — or previously recreated-but-never-opened —
+            # room would otherwise stay EMPTY: reads return 0 cells and a save
+            # would overwrite the on-disk notebook with a blank document.
+            # initialize() is idempotent (returns early once self.ready) and
+            # loads Y updates from the ystore, falling back to disk when the
+            # ystore has no history for this file, so it is safe for both the
+            # recreated room and an already-live browser room.
+            initialize = getattr(room, "initialize", None)
+            if initialize is not None and not getattr(room, "ready", False):
+                await initialize()
+                logger.debug(f"Initialized YDoc room content for {file_path}")
 
         document = room._document
         if isinstance(document, YNotebook):
