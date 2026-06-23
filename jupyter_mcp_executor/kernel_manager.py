@@ -181,6 +181,37 @@ class KernelManager:
 
             await asyncio.to_thread(write_notebook, notebook_path, nb)
 
+            # Create the notebook "through the YDoc": seed the empty file on
+            # disk above (so file_id_manager / file loaders can resolve it),
+            # then immediately bring the YDoc room online and initialize it
+            # from that baseline. Establishing ystore ownership at creation
+            # time — instead of lazily on the first cell edit — means every
+            # later edit is recorded as CRDT history in the ystore. Without
+            # this, the disk-only baseline lives outside the ystore and gets
+            # reconciled against replayed CRDT ops when the room is torn down
+            # and recreated, which materialized early cells twice (duplicated
+            # cells). If YDoc infrastructure is unavailable we keep the
+            # disk-only notebook, preserving the NbformatAdapter fallback.
+            try:
+                from jupyter_mcp_executor.ydoc_helpers import (  # noqa: PLC0415
+                    ensure_ynotebook,
+                )
+
+                ydoc = await ensure_ynotebook(notebook_path)
+                if ydoc is not None:
+                    logger.info(
+                        f"YDoc room established at creation for {notebook_path}"
+                    )
+                else:
+                    logger.info(
+                        f"YDoc unavailable; {notebook_path} created on disk only"
+                    )
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning(
+                    f"Could not establish YDoc room at creation for "
+                    f"{notebook_path}: {e}"
+                )
+
             # Start new kernel for the new notebook
             if kernel_id is None:
                 kernel_id = await self._start_kernel_for_notebook(
