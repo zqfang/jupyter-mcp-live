@@ -9,6 +9,8 @@ Usage:
 The MCP server will be available at: http://localhost:8080/mcp
 """
 
+from pathlib import Path
+
 c = get_config()  # noqa: F821
 
 # ============================================================================
@@ -127,8 +129,11 @@ c.IdentityProvider.token = 'BLOCK'
 # Enable debug logging for troubleshooting
 c.MCPExtensionApp.log_level = 'INFO'
 
-# Set Jupyter root directory to current folder
-c.ServerApp.root_dir = "~/workspace"
+# Set Jupyter root directory under the user's home (cross-platform: resolves
+# ~ on Linux/macOS/Windows). The directory is created if it doesn't exist.
+workspace_dir = Path.home() / "workspace"
+workspace_dir.mkdir(parents=True, exist_ok=True)
+c.ServerApp.root_dir = str(workspace_dir)
 
 # Enable autoreload for development
 c.ServerApp.autoreload = False  
