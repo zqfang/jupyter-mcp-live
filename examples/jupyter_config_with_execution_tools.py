@@ -128,7 +128,7 @@ c.IdentityProvider.token = 'BLOCK'
 c.MCPExtensionApp.log_level = 'INFO'
 
 # Set Jupyter root directory to current folder
-c.ServerApp.root_dir = "/home/fangzq/workspace"
+c.ServerApp.root_dir = "~/workspace"
 
 # Enable autoreload for development
 c.ServerApp.autoreload = False  
