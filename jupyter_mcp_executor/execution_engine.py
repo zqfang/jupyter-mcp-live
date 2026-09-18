@@ -8,6 +8,7 @@ from typing import Any
 from jupyter_mcp_executor.execution_utils import OutputCallback, execute_code_on_kernel
 from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_executor.kernel_utils import is_kernel_alive
 from jupyter_mcp_executor.notebook_adapter import NotebookAdapter, get_notebook_adapter
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 from jupyter_mcp_executor.notebook_models import ExecutionResult
@@ -165,10 +166,13 @@ class ExecutionEngine:
             started_new_kernel = True
             logger.info(f"Started kernel {kernel_id}")
 
-        # Get kernel handle (also validates the kernel is still alive)
-        try:
+        # Get kernel handle (also validates the kernel is still alive).
+        # is_kernel_alive, not `except KeyError`: jupyter_server raises
+        # tornado.web.HTTPError(404) for a dead kernel, which a KeyError guard
+        # lets escape to the caller as an opaque "HTTP 404: Kernel does not exist".
+        if is_kernel_alive(serverapp, kernel_id):
             kernel = kernel_manager.get_kernel(kernel_id)
-        except KeyError:
+        else:
             self._drop_client(kernel_id)
             return ExecutionResult(
                 execution_count=None,

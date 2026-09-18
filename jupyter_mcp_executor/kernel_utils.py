@@ -6,6 +6,27 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def is_kernel_alive(serverapp: Any, kernel_id: str | None) -> bool:
+    """Return True if `kernel_id` is still running on this server.
+
+    Do not inline this as `except KeyError`. jupyter_client's MultiKernelManager
+    raises KeyError for an unknown id, but jupyter_server's MappingKernelManager
+    overrides _check_kernel_id to raise ``tornado.web.HTTPError(404)`` instead
+    (kernelmanager.py: 'Kernel does not exist: %s'). A KeyError-only guard therefore
+    never fires under a real server: the 404 escapes to the MCP caller as a tool
+    error, every "kernel died -> fall back" branch becomes dead code, and the caller
+    is pushed into force_new_kernel, which is how one notebook ends up with several
+    kernels.
+    """
+    if not serverapp or not kernel_id:
+        return False
+    try:
+        serverapp.kernel_manager.get_kernel(kernel_id)
+    except Exception:  # KeyError (jupyter_client) or web.HTTPError 404 (jupyter_server)
+        return False
+    return True
+
+
 def detect_kernel_language_from_spec(kernel_spec: dict[str, Any]) -> str | None:
     """Detect programming language from kernel spec.
 
