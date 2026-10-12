@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class ExecutionConfig:
     """Configuration for code execution."""
 
-    default_timeout: int = 3600
+    default_timeout: int = 36000  # seconds (10 hours), for long-running cells
     kernel_ready_timeout: int = 1200
     iopub_msg_rate_limit: float = 0.01  # seconds between message checks
     iopub_poll_interval: float = 0.5  # seconds per iopub poll while collecting
@@ -25,6 +25,20 @@ class OutputFilterConfig:
     truncation_tail: int = 500  # chars kept from the end when truncating
 
 
+@dataclass(frozen=True)
+class ProgressConfig:
+    """Configuration for MCP progress notifications during execution."""
+
+    # Send a notification at least this often while nothing else was sent,
+    # so silent cells still report (and clients that reset their request
+    # timeout on progress keep waiting).
+    heartbeat_interval: float = 5.0
+    # Never send output-driven notifications more often than this.
+    min_interval: float = 1.0
+    message_max_chars: int = 120  # whole progress message, truncated with "…"
+
+
 # Singleton instances
 EXECUTION_CONFIG = ExecutionConfig()
 OUTPUT_FILTER_CONFIG = OutputFilterConfig()
+PROGRESS_CONFIG = ProgressConfig()

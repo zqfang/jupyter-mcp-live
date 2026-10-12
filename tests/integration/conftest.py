@@ -5,4 +5,4 @@ rather than enabled globally, so they only apply to this directory and do not
 interfere with the pytest-asyncio based unit tests elsewhere.
 """
 
-from pytest_jupyter.jupyter_server import *  # noqa: F403
+from pytest_jupyter.jupyter_server import *

@@ -3,8 +3,10 @@
 import asyncio
 import contextlib
 import logging
+from pathlib import Path
 from typing import Any
 
+from jupyter_mcp_executor.execution_progress import ExecutionProgress
 from jupyter_mcp_executor.execution_utils import OutputCallback, execute_code_on_kernel
 from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
@@ -16,6 +18,19 @@ from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
+
+
+def _combine_callbacks(*callbacks: OutputCallback | None) -> OutputCallback | None:
+    """Fan one output out to several callbacks (each handles its own errors)."""
+    active = [callback for callback in callbacks if callback is not None]
+    if len(active) <= 1:
+        return active[0] if active else None
+
+    async def combined(output: dict[str, Any]) -> None:
+        for callback in active:
+            await callback(output)
+
+    return combined
 
 
 class _CellOutputStreamer:
@@ -128,6 +143,7 @@ class ExecutionEngine:
         timeout: int | None = None,
         kernel_name: str = "python3",
         on_output: OutputCallback | None = None,
+        progress_label: str | None = None,
     ) -> ExecutionResult:
         """Execute code in a Jupyter kernel.
 
@@ -139,6 +155,9 @@ class ExecutionEngine:
             kernel_name: Kernel name to use when starting new kernel
             on_output: Optional async callback fired per output as it arrives
                 (live streaming into the notebook)
+            progress_label: Names the execution in MCP progress notifications
+                (e.g. "analysis.ipynb cell 3"); progress is sent only while
+                serving an MCP request.
 
         Returns:
             ExecutionResult with outputs and status
@@ -182,14 +201,24 @@ class ExecutionEngine:
                 error=f"Kernel {kernel_id} not found",
             )
 
+        # MCP progress notifications for the current request (None outside
+        # one). Started before taking the kernel lock so a queued execution
+        # reports "waiting for kernel" instead of going silent.
+        progress = ExecutionProgress.from_request(progress_label or "code")
+        callback = _combine_callbacks(
+            on_output, progress.on_output if progress else None
+        )
+
         # Serialize executions per kernel: the cached client's channels must
         # only be consumed by one coroutine at a time.
         lock = self._kernel_locks.setdefault(kernel_id, asyncio.Lock())
-        async with lock:
+        async with progress or contextlib.nullcontext(), lock:
+            if progress is not None:
+                progress.mark_running()
             try:
                 client = await self._get_client(kernel, kernel_id)
                 result_dict = await execute_code_on_kernel(
-                    client, code, kernel_id, timeout, on_output=on_output
+                    client, code, kernel_id, timeout, on_output=callback
                 )
             except Exception:
                 # Connection-level failure: drop the cached client so the
@@ -267,6 +296,7 @@ class ExecutionEngine:
             kernel_id=kernel_id,
             timeout=timeout,
             on_output=streamer.on_output if streamer else None,
+            progress_label=f"{Path(adapter.notebook_path).name} cell {cell_position}",
         )
 
         if started_new and not exec_result.started_new_kernel:

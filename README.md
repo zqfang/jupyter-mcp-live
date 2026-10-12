@@ -20,6 +20,7 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 - **Multi-Kernel Support**: Execute code in Python, R, Julia, and any Jupyter-supported kernel
 - **Collaborative Editing**: Full support for YDoc - works seamlessly when notebooks are open in JupyterLab
 - **Live Output Streaming**: Outputs render in JupyterLab as the kernel emits them - watch long-running cells progress in real time instead of waiting for the tool call to finish
+- **Progress Notifications**: Long-running cells send MCP progress updates to the client (elapsed time, output count, latest output line), including heartbeats for silent cells
 - **Kernel Management**: Automatic kernel reuse, smart kernel resolution, and session management
 - **Complete Notebook Control**: Create, read, update, and delete cells programmatically
 - **Output Filtering**: Intelligent filtering of large outputs to optimize token usage

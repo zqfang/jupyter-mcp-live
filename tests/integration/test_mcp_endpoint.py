@@ -7,14 +7,21 @@ streamable-HTTP transport are all exercised together.
 """
 
 import json
+import time
 
 import pytest
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from tornado.simple_httpclient import HTTPStreamClosedError
 
+from jupyter_mcp_executor.notebook_config import ProgressConfig
+
 EXTENSION = "jupyter_mcp_executor"
 TOY_TOOL = "tests.integration.toy_tools:add"
+EXECUTION_TOOLS = [
+    f"jupyter_mcp_executor.execution_tools:{name}"
+    for name in ("setup_notebook", "add_code_cell", "shutdown_notebook")
+]
 INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -212,3 +219,53 @@ class TestEndpointDisabled:
 
         assert response.code == 404
         assert mcp_extension.mcp_server_instance.embedded_app is None
+
+
+class TestProgressNotifications:
+    """A real cell reports MCP progress while it runs, through Code Mode."""
+
+    @pytest.fixture
+    def jp_server_config(self):
+        return _config(mcp_tools=[TOY_TOOL, *EXECUTION_TOOLS])
+
+    @pytest.mark.usefixtures("http_server", "mcp_extension")
+    async def test_progress_arrives_while_cell_runs(
+        self, jp_serverapp, jp_http_port, jp_base_url, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_progress.PROGRESS_CONFIG",
+            ProgressConfig(
+                heartbeat_interval=0.5, min_interval=0.2, message_max_chars=120
+            ),
+        )
+        received: list[tuple[float, float, str]] = []
+
+        async def on_progress(progress, _total, message):
+            received.append((time.monotonic(), progress, message))
+
+        script = (
+            "await call_tool('setup_notebook', {'notebook_path': 'p.ipynb'})\n"
+            "r = await call_tool('add_code_cell', {'notebook_path': 'p.ipynb', "
+            "'source': 'import time\\nfor i in range(8):\\n"
+            "    print(\\'tick\\', i, flush=True)\\n    time.sleep(0.3)'})\n"
+            "await call_tool('shutdown_notebook', {'notebook_path': 'p.ipynb'})\n"
+            "return r['status']"
+        )
+        transport = StreamableHttpTransport(
+            _mcp_url(jp_http_port, jp_base_url),
+            headers={"Authorization": f"Bearer {_token(jp_serverapp)}"},
+        )
+
+        async with Client(transport, timeout=120) as client:
+            result = await client.call_tool(
+                "execute", {"code": script}, progress_handler=on_progress
+            )
+            finished = time.monotonic()
+
+        assert result.content[0].text == "ok"  # the script returns r['status']
+        cell_messages = [m for _, _, m in received if m.startswith("p.ipynb cell 0")]
+        assert any("tick" in m for m in cell_messages), received
+        # Notifications stream in while the cell runs (~2.4s), not at the end.
+        assert finished - received[0][0] > 0.8
+        progresses = [p for _, p, _ in received]
+        assert progresses == sorted(progresses)

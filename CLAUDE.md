@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 **Project**: Jupyter MCP Executor
-**Version**: 0.4.1
+**Version**: 0.5.0
 **Python**: 3.11+
 **Status**: Production Ready
 
@@ -190,6 +190,8 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 - `kernel_utils.py` - Kernel detection and language resolution
 - `kernel_tracker.py` - Tracks kernel sessions per notebook
 - `output_filter.py` - Filter large outputs for token efficiency
+- `execution_progress.py` - MCP progress notifications during cell execution
+  (`ExecutionProgress`)
 - `output_converter.py` - Output format conversion
 - `notebook_io.py` - File I/O operations
 - `path_utils.py` - Path normalization utilities
@@ -310,8 +312,10 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-224 tests total across:
+239 tests total across:
 
+- `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
+  messages, failure handling)
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
 - `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
@@ -473,6 +477,21 @@ executions instead of everything appearing when the MCP tool call returns:
   (full `ExecutionResult`) is unaffected either way.
 
 ### Execution Internals
+
+- **Progress notifications**: while `execute_cell` / `add_code_cell` /
+  `edit_code_cell` run, `ExecutionEngine.execute_cell_code()` sends MCP
+  `notifications/progress` for the current request via `ExecutionProgress`
+  (`execution_progress.py`): on outputs (throttled to
+  `PROGRESS_CONFIG.min_interval`) and as a heartbeat every
+  `heartbeat_interval` while nothing else was sent. Message format:
+  `"<notebook> cell <n> · <elapsed>s · <k> outputs · <last line>"` (or
+  `· waiting for kernel` while another execution holds the kernel lock);
+  `progress` = elapsed seconds, `total` unknown. It uses FastMCP's request
+  context (`get_context()`), so it also works when the tool is called inside a
+  Code Mode `execute` script, and needs no tool parameter. Outside an MCP
+  request there is no reporter; a failing notification disables progress for
+  that run but never affects execution. Clients only receive progress if they
+  sent a progress token.
 
 - The Code Mode sandbox (Monty) time budget is set explicitly by
   `build_sandbox_limits()` in `mcp_server.py`, chosen from the keys the
