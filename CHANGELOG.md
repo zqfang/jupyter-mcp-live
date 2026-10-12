@@ -17,6 +17,14 @@
     no longer queues behind them;
   - when the MCP request is cancelled.
 
+### Changed
+
+- **Requires fastmcp >= 4.1** (`fastmcp[code-mode]>=4.1,<5`). Support for
+  fastmcp 3.x and 4.0.x is dropped; they still ship pydantic-monty 0.0.x. The
+  old sandbox-limit code path is removed: there is no `max_duration_secs` and
+  no `SANDBOX_TIMEOUT_HEADROOM_SECS`. CI's oldest-versions job now tests
+  fastmcp 4.1.0 with Jupyter Server 2.16.0 on Python 3.11.
+
 ### Bugs fixed
 
 - A cancelled execution left its iopub collector running until the deadline,

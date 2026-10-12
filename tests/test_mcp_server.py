@@ -9,13 +9,11 @@ from pydantic_monty import ResourceLimits
 
 from jupyter_mcp_executor.mcp_server import (
     SANDBOX_EXECUTION_BUDGET_SECS,
-    SANDBOX_TIMEOUT_HEADROOM_SECS,
     MCPServer,
     _wrap_with_json_conversion,
     build_code_mode,
     build_sandbox_limits,
 )
-from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
 
 def simple_function(x: int, y: int) -> int:
@@ -201,32 +199,14 @@ class TestCodeModeSandboxLimits:
     """The Code Mode sandbox budget must not abort long kernel executions.
 
     Tool calls such as execute_cell can run for EXECUTION_CONFIG.default_timeout.
-    Monty 0.0.x (fastmcp 3.x) times the whole script on the wall clock,
-    including time spent awaiting tool calls, so its budget must cover a full
-    kernel execution. Monty 1.x (fastmcp 4.x) pauses its clock while the
-    script waits on the host, so only sandbox execution time is budgeted.
+    Monty (fastmcp >= 4.1) pauses its clock while the script waits on the
+    host, so only the script's own execution time is budgeted.
     """
 
-    MONTY_0_KEYS = frozenset(
-        {"max_allocations", "max_duration_secs", "max_memory", "gc_interval"}
-    )
-    MONTY_1_KEYS = frozenset(
-        {"max_feed_duration_secs", "max_turn_duration_secs", "max_memory"}
-    )
-
-    def test_monty_0_budget_covers_kernel_timeout(self):
-        limits = build_sandbox_limits(self.MONTY_0_KEYS)
-
-        assert limits == {
-            "max_duration_secs": float(
-                EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS
-            )
+    def test_budgets_sandbox_execution_only(self):
+        assert build_sandbox_limits() == {
+            "max_feed_duration_secs": SANDBOX_EXECUTION_BUDGET_SECS
         }
-
-    def test_monty_1_budgets_sandbox_execution_only(self):
-        limits = build_sandbox_limits(self.MONTY_1_KEYS)
-
-        assert limits == {"max_feed_duration_secs": SANDBOX_EXECUTION_BUDGET_SECS}
 
     def test_limits_match_installed_monty(self):
         """Every key we pass must be one the installed Monty accepts."""
@@ -252,11 +232,9 @@ class TestCodeModeSandboxLimits:
     async def test_slow_tool_call_does_not_exhaust_budget(self, monkeypatch):
         """A tool call longer than the budget must not abort the script.
 
-        This is the Monty 1.x property the smaller budget relies on; on
-        Monty 0.0.x the budget instead covers the whole kernel timeout.
+        This is the Monty property the budget relies on: time spent waiting
+        on tool calls (kernel execution) does not count against it.
         """
-        if "max_feed_duration_secs" not in ResourceLimits.__annotations__:
-            pytest.skip("Monty 0.0.x counts tool-call time against the budget")
         monkeypatch.setattr(
             "jupyter_mcp_executor.mcp_server.SANDBOX_EXECUTION_BUDGET_SECS", 0.5
         )

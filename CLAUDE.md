@@ -515,16 +515,12 @@ executions instead of everything appearing when the MCP tool call returns:
   sent a progress token.
 
 - The Code Mode sandbox (Monty) time budget is set explicitly by
-  `build_sandbox_limits()` in `mcp_server.py`, chosen from the keys the
-  installed `pydantic_monty.ResourceLimits` accepts (Monty rejects unknown
-  keys):
-  - fastmcp 4.x / Monty 1.x: `max_feed_duration_secs =
-    SANDBOX_EXECUTION_BUDGET_SECS` (60s). Monty's clock pauses while a script
-    waits on tool calls, so long cell executions do not count against it.
-  - fastmcp 3.x / Monty 0.0.x: `max_duration_secs = default_timeout +
-    SANDBOX_TIMEOUT_HEADROOM_SECS`. That clock keeps ticking during tool
-    calls, so the budget must cover a whole kernel execution; fastmcp's 30s
-    default would abort scripts that run a long cell.
+  `build_sandbox_limits()` in `mcp_server.py`: `max_feed_duration_secs =
+  SANDBOX_EXECUTION_BUDGET_SECS` (60s). Monty's clock pauses while a script
+  waits on tool calls, so long cell executions do not count against it.
+  Requires fastmcp >= 4.1 (pydantic-monty 1.x). Older Monty versions used a
+  wall-clock `max_duration_secs` that kept ticking during tool calls, and
+  they reject the new key.
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is
