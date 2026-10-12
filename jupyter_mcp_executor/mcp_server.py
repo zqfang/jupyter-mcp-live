@@ -385,9 +385,11 @@ class MCPServer(LoggingConfigurable):
         Each call returns a new app with its own session manager; FastMCP's
         server lifespan is reference-counted, so the standalone (uvicorn) and
         embedded (Jupyter handler) apps can run side by side. No Host/Origin
-        guard here: Jupyter's check_host and authentication run first.
+        guard here: Jupyter's check_host and authentication run first, and
+        under JupyterHub the Host is the Hub's public name. Disabled explicitly
+        because some fastmcp releases (e.g. 3.4.3) enable the guard by default.
         """
-        return self.mcp.http_app(transport="http")
+        return self.mcp.http_app(transport="http", host_origin_protection=False)
 
     def build_standalone_app(self) -> Any:
         """Build the app for the standalone listener, with a Host/Origin guard.

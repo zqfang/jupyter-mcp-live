@@ -15,6 +15,11 @@
   back on a single-user machine. It now rejects foreign `Host` (421) and
   `Origin` (403) headers, blocking DNS-rebinding attacks from web pages.
 
+- **Dependency floors raised:** `jupyter_server>=2.16` (the first release that
+  runs extensions' async start hook; on older 2.x the MCP server never started)
+  and `fastmcp[code-mode]>=3.4.3,<4` (Host/Origin guard API; fastmcp 4 ships
+  Monty 1.x, whose sandbox limits are incompatible with `build_code_mode()`).
+
 ### Enhancements made
 
 - **JupyterHub support**: each single-user server exposes

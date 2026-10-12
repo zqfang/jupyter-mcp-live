@@ -19,8 +19,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "jupyter_server>=1.6,<3",
-    "fastmcp[code-mode]>=3.2.4",
+    # >=2.16: first release that awaits ExtensionApp start hooks
+    # (start_all_extensions -> start_extension); mcp_handler also needs
+    # JupyterHandler.prepare(_redirect_to_login=...) (>=2.13)
+    "jupyter_server>=2.16,<3",
+    # >=3.4.3: http_app(host_origin_protection=...); <4: 4.x ships Monty 1.x,
+    # whose ResourceLimits dropped max_duration_secs (see build_code_mode)
+    "fastmcp[code-mode]>=3.4.3,<4",
     "jupyter-ai-tools>=0.1.0",
     "jupyterlab_commands_toolkit",
     "jupyterlab_notebook_awareness",
