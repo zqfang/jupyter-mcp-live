@@ -130,7 +130,7 @@ class TestMCPServer:
         server = MCPServer()
 
         with pytest.raises(
-            ValueError, match="tools must be a list of functions or dict"
+            TypeError, match="tools must be a list of functions or dict"
         ):
             server.register_tools("invalid")
 

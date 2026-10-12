@@ -46,7 +46,7 @@ async def wait_for_execute_reply(
         except (Empty, TimeoutError):
             logger.error("Timeout waiting for execute_reply on shell channel")
             return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - treated like a missing reply
             logger.error(f"Error reading execute_reply from shell channel: {e}")
             return None
 

@@ -29,8 +29,8 @@ jobs:
     
     - name: Run linting
       run: |
-        # Install ruff
-        pip install ruff
+        # Same ruff version as pyproject.toml: rule sets change between releases
+        pip install "ruff==0.17.0"
         # Check linting and formatting
         ruff check jupyter_mcp_executor
         ## fix check

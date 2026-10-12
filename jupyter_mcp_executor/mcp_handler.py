@@ -100,7 +100,7 @@ class MCPHandler(JupyterHandler):
                 disconnected=self._disconnected,
             )
         except Exception as e:
-            self.log.error(f"MCP request failed: {e}", exc_info=True)
+            self.log.exception("MCP request failed")
             if not self._headers_written:
                 raise HTTPError(500, "MCP request failed") from e
             # Headers (and maybe part of an SSE stream) are already out. Drop

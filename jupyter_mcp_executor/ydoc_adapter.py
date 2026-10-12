@@ -171,8 +171,8 @@ class YDocAdapter(NotebookAdapter):
             )
             if ymeta is not None:
                 ymeta["activeCellIndex"] = position
-        except Exception:
-            pass  # Non-critical: scroll hint only
+        except Exception:  # non-critical: scroll hint only
+            logger.debug("Could not set activeCellIndex scroll hint", exc_info=True)
 
     async def delete_cell(self, position: int) -> None:
         """Delete cell from YDoc."""
@@ -264,7 +264,7 @@ class YDocAdapter(NotebookAdapter):
                 ):
                     ytext += text_str
                     return
-            except Exception:
+            except Exception:  # noqa: BLE001 - fall back to a new output entry
                 logger.debug("Stream coalescing failed; appending as new output")
 
         youtputs.append(self._make_output_map(output))
