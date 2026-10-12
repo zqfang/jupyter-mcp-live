@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 **Project**: Jupyter MCP Executor
-**Version**: 0.4.0
+**Version**: 0.4.1
 **Python**: 3.11+
 **Status**: Production Ready
 
@@ -310,7 +310,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-217 tests total across:
+224 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
@@ -474,12 +474,17 @@ executions instead of everything appearing when the MCP tool call returns:
 
 ### Execution Internals
 
-- The Code Mode sandbox (Monty) wall-clock budget is set explicitly in
-  `mcp_server.py` (`build_code_mode()`) to
-  `EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS`. The
-  Monty clock keeps ticking while a script awaits tool calls, and some
-  fastmcp releases default the budget to 30s — which aborts any script that
-  runs a long cell even though the kernel-side execution succeeds.
+- The Code Mode sandbox (Monty) time budget is set explicitly by
+  `build_sandbox_limits()` in `mcp_server.py`, chosen from the keys the
+  installed `pydantic_monty.ResourceLimits` accepts (Monty rejects unknown
+  keys):
+  - fastmcp 4.x / Monty 1.x: `max_feed_duration_secs =
+    SANDBOX_EXECUTION_BUDGET_SECS` (60s). Monty's clock pauses while a script
+    waits on tool calls, so long cell executions do not count against it.
+  - fastmcp 3.x / Monty 0.0.x: `max_duration_secs = default_timeout +
+    SANDBOX_TIMEOUT_HEADROOM_SECS`. That clock keeps ticking during tool
+    calls, so the budget must cover a whole kernel execution; fastmcp's 30s
+    default would abort scripts that run a long cell.
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is

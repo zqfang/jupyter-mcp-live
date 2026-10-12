@@ -2,13 +2,18 @@
 
 import asyncio
 
+import httpx
 import pytest
+from fastmcp import Client
+from pydantic_monty import ResourceLimits
 
 from jupyter_mcp_executor.mcp_server import (
+    SANDBOX_EXECUTION_BUDGET_SECS,
     SANDBOX_TIMEOUT_HEADROOM_SECS,
     MCPServer,
     _wrap_with_json_conversion,
     build_code_mode,
+    build_sandbox_limits,
 )
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
@@ -193,21 +198,43 @@ class TestMCPServerDirect:
 
 
 class TestCodeModeSandboxLimits:
-    """The Code Mode sandbox budget must cover a full kernel execution.
+    """The Code Mode sandbox budget must not abort long kernel executions.
 
-    The Monty time limit keeps ticking while the script awaits tool calls;
-    some fastmcp releases default it to 30s, which aborts any script that
-    executes a long-running cell even though the kernel side succeeds.
+    Tool calls such as execute_cell can run for EXECUTION_CONFIG.default_timeout.
+    Monty 0.0.x (fastmcp 3.x) times the whole script on the wall clock,
+    including time spent awaiting tool calls, so its budget must cover a full
+    kernel execution. Monty 1.x (fastmcp 4.x) pauses its clock while the
+    script waits on the host, so only sandbox execution time is budgeted.
     """
 
-    def test_sandbox_budget_covers_kernel_timeout(self):
-        code_mode = build_code_mode()
+    MONTY_0_KEYS = frozenset(
+        {"max_allocations", "max_duration_secs", "max_memory", "gc_interval"}
+    )
+    MONTY_1_KEYS = frozenset(
+        {"max_feed_duration_secs", "max_turn_duration_secs", "max_memory"}
+    )
 
-        limits = code_mode.sandbox_provider.limits
-        assert limits is not None
-        assert limits["max_duration_secs"] == float(
-            EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS
-        )
+    def test_monty_0_budget_covers_kernel_timeout(self):
+        limits = build_sandbox_limits(self.MONTY_0_KEYS)
+
+        assert limits == {
+            "max_duration_secs": float(
+                EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS
+            )
+        }
+
+    def test_monty_1_budgets_sandbox_execution_only(self):
+        limits = build_sandbox_limits(self.MONTY_1_KEYS)
+
+        assert limits == {"max_feed_duration_secs": SANDBOX_EXECUTION_BUDGET_SECS}
+
+    def test_limits_match_installed_monty(self):
+        """Every key we pass must be one the installed Monty accepts."""
+        supported = ResourceLimits.__annotations__.keys()
+        limits = build_code_mode().sandbox_provider.limits
+
+        assert limits
+        assert limits.keys() <= supported
 
     def test_server_uses_explicit_sandbox_limits(self):
         """MCPServer must never fall back to the fastmcp default budget."""
@@ -219,9 +246,34 @@ class TestCodeModeSandboxLimits:
             if hasattr(t, "sandbox_provider")
         ]
         assert transforms, "CodeMode transform not found on FastMCP instance"
-        limits = transforms[0].sandbox_provider.limits
-        assert limits is not None
-        assert limits["max_duration_secs"] > EXECUTION_CONFIG.default_timeout
+        assert transforms[0].sandbox_provider.limits == build_sandbox_limits()
+
+    @pytest.mark.asyncio
+    async def test_slow_tool_call_does_not_exhaust_budget(self, monkeypatch):
+        """A tool call longer than the budget must not abort the script.
+
+        This is the Monty 1.x property the smaller budget relies on; on
+        Monty 0.0.x the budget instead covers the whole kernel timeout.
+        """
+        if "max_feed_duration_secs" not in ResourceLimits.__annotations__:
+            pytest.skip("Monty 0.0.x counts tool-call time against the budget")
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.mcp_server.SANDBOX_EXECUTION_BUDGET_SECS", 0.5
+        )
+
+        async def slow_tool() -> str:
+            """Take longer than the sandbox budget."""
+            await asyncio.sleep(1.5)
+            return "done"
+
+        server = MCPServer(name="Budget")
+        server.register_tool(slow_tool)
+        async with Client(server.mcp) as client:
+            result = await client.call_tool(
+                "execute", {"code": "return await call_tool('slow_tool', {})"}
+            )
+
+        assert "done" in result.content[0].text
 
 
 class TestMCPServerIntegration:
@@ -519,8 +571,6 @@ class TestStandaloneHostOriginGuard:
 
     @staticmethod
     async def _post(app, host: str, origin: str | None = None) -> int:
-        import httpx
-
         headers = {
             "Host": host,
             "Content-Type": "application/json",

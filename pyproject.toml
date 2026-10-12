@@ -23,9 +23,9 @@ dependencies = [
     # (start_all_extensions -> start_extension); mcp_handler also needs
     # JupyterHandler.prepare(_redirect_to_login=...) (>=2.13)
     "jupyter_server>=2.16,<3",
-    # >=3.4.3: http_app(host_origin_protection=...); <4: 4.x ships Monty 1.x,
-    # whose ResourceLimits dropped max_duration_secs (see build_code_mode)
-    "fastmcp[code-mode]>=3.4.3,<4",
+    # >=3.4.3: http_app(host_origin_protection=...). Both 3.x (Monty 0.0.x)
+    # and 4.x (Monty 1.x) are supported; see build_sandbox_limits()
+    "fastmcp[code-mode]>=3.4.3,<5",
     "jupyter-ai-tools>=0.1.0",
     "jupyterlab_commands_toolkit",
     "jupyterlab_notebook_awareness",
