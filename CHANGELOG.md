@@ -2,6 +2,33 @@
 
 
 
+## 0.4.0 (Unreleased)
+
+### Breaking changes
+
+- **MCP is now served by Jupyter Server itself, behind Jupyter authentication.**
+  The endpoint is `{base_url}mcp` on the Jupyter port (e.g.
+  `http://localhost:8888/mcp`) and requires the Jupyter token
+  (`Authorization: Bearer <token>` or `token <token>`).
+- **The separate listener on `mcp_port` is off by default.** It has no
+  authentication. Set `c.MCPExtensionApp.mcp_standalone = True` to bring it
+  back on a single-user machine. It now rejects foreign `Host` (421) and
+  `Origin` (403) headers, blocking DNS-rebinding attacks from web pages.
+
+### Enhancements made
+
+- **JupyterHub support**: each single-user server exposes
+  `https://<hub>/user/<name>/mcp` through the Hub proxy, authenticated with a
+  Hub API token. No extra ports, no port collisions between users.
+- New traits: `mcp_jupyter_endpoint` (default True), `mcp_endpoint_path`
+  (default `"mcp"`), `mcp_standalone` (default False).
+- FastMCP still handles the full streamable-HTTP transport (sessions, SSE,
+  protocol negotiation, Code Mode); a small in-process ASGI bridge
+  (`asgi_bridge.py`) runs it inside Tornado, and `mcp_handler.py` enforces
+  Jupyter auth (`execute` permission on `kernels`).
+- First integration tests against a real Jupyter Server
+  (`tests/integration/`).
+
 ## 0.2.0 (Unreleased)
 
 ### Enhancements made

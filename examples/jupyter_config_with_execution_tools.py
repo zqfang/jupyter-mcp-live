@@ -6,7 +6,8 @@ with the new notebook execution tools for generating and running code.
 Usage:
     jupyter lab --config=examples/jupyter_config_with_execution_tools.py
 
-The MCP server will be available at: http://localhost:8080/mcp
+The MCP endpoint is served by Jupyter itself at: http://localhost:8000/mcp
+(Jupyter's port and base_url), authenticated with the Jupyter token below.
 """
 
 from pathlib import Path
@@ -20,8 +21,14 @@ c = get_config()  # noqa: F821
 # Name for the MCP server (shown to MCP clients)
 c.MCPExtensionApp.mcp_name = "Jupyter Code Execution MCP Server"
 
-# Port for the MCP server to listen on
-c.MCPExtensionApp.mcp_port = 8080
+# The MCP endpoint is served at {base_url}<mcp_endpoint_path> on the Jupyter
+# port and accepts the same token as Jupyter (c.IdentityProvider.token below).
+# c.MCPExtensionApp.mcp_endpoint_path = "mcp"
+
+# Optional: ALSO run the old separate listener on mcp_port. It has NO
+# authentication — only enable it on a single-user machine.
+# c.MCPExtensionApp.mcp_standalone = True
+# c.MCPExtensionApp.mcp_port = 8080
 
 # ============================================================================
 # Register Notebook Execution Tools
@@ -72,12 +79,14 @@ c.MCPExtensionApp.mcp_tools = [
 # "mcpServers": {
 #   "jupyter-mcp": {
 #     "type": "http",
-#     "url": "http://localhost:8080/mcp"
+#     "url": "http://localhost:8000/mcp",
+#     "headers": {"Authorization": "Bearer BLOCK"}
 #   }
 # }
 #
 # Or use the claude CLI:
-#   claude mcp add --transport http jupyter-mcp http://localhost:8080/mcp
+#   claude mcp add --transport http jupyter-mcp http://localhost:8000/mcp \
+#     --header "Authorization: Bearer BLOCK"
 
 # ============================================================================
 # Example Usage with Gemini CLI
@@ -88,7 +97,8 @@ c.MCPExtensionApp.mcp_tools = [
 # {
 #   "mcpServers": {
 #     "jupyter-mcp": {
-#       "httpUrl": "http://localhost:8080/mcp"
+#       "httpUrl": "http://localhost:8000/mcp",
+#       "headers": {"Authorization": "Bearer BLOCK"}
 #     }
 #   }
 # }
@@ -120,10 +130,12 @@ c.ServerApp.open_browser = False
 # Set a custom port for Jupyter Lab (separate from MCP port)
 c.ServerApp.port = 8000
 
-# Allow cross-origin requests (if accessing from different origins)
-c.ServerApp.allow_origin = '*'
+# Cross-origin requests: leave unset unless a browser app on another origin
+# must call the Jupyter API. '*' disables Jupyter's origin checks.
+# c.ServerApp.allow_origin = 'https://your-app.example.org'
 
-# Set a token for authentication
+# Set a token for authentication. MCP clients send the same token
+# ("Authorization: Bearer <token>"). Use your own secret, not this example.
 c.IdentityProvider.token = 'BLOCK'
 
 # Enable debug logging for troubleshooting
