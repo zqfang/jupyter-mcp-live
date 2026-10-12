@@ -9,7 +9,7 @@ import logging
 import os
 import socket
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from functools import wraps
 from inspect import iscoroutinefunction, signature
 from typing import Any, Union, get_args, get_origin
@@ -33,30 +33,55 @@ from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
 logger = logging.getLogger(__name__)
 
-# Extra wall-clock budget for the Code Mode sandbox beyond a single kernel
-# execution: the Monty time limit keeps ticking while the script awaits tool
-# calls, so the budget must cover at least one full kernel execution
-# (EXECUTION_CONFIG.default_timeout) plus orchestration overhead. Scripts that
-# run several long cells should be split by the agent rather than covered here.
+# Monty 0.0.x (fastmcp 3.x) only: extra wall-clock budget for the Code Mode
+# sandbox beyond a single kernel execution. Its time limit keeps ticking while
+# the script awaits tool calls, so the budget must cover at least one full
+# kernel execution (EXECUTION_CONFIG.default_timeout) plus orchestration
+# overhead. Scripts that run several long cells should be split by the agent
+# rather than covered here.
 SANDBOX_TIMEOUT_HEADROOM_SECS = 300
+
+# Monty 1.x (fastmcp 4.x): budget for the script's own execution time. Its
+# clock pauses while the script waits on tool calls, so kernel executions do
+# not count against it; this only bounds the orchestration code itself.
+SANDBOX_EXECUTION_BUDGET_SECS = 60.0
+
+
+def build_sandbox_limits(
+    supported_keys: Collection[str] | None = None,
+) -> ResourceLimits:
+    """Return Monty limits for the installed (or given) Monty version.
+
+    Monty renamed its time limits in 1.0 and rejects unknown keys, so the
+    limit is chosen from the keys ``ResourceLimits`` actually declares.
+
+    Args:
+        supported_keys: The ``ResourceLimits`` keys to target; defaults to
+            those of the installed ``pydantic_monty``.
+    """
+    if supported_keys is None:
+        supported_keys = ResourceLimits.__annotations__.keys()
+
+    if "max_feed_duration_secs" in supported_keys:
+        return {"max_feed_duration_secs": SANDBOX_EXECUTION_BUDGET_SECS}
+
+    return {
+        "max_duration_secs": float(
+            EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS
+        )
+    }
 
 
 def build_code_mode() -> CodeMode:
     """Build the Code Mode transform with an explicit sandbox time budget.
 
-    Without an explicit ``max_duration_secs`` some fastmcp releases default
-    the Monty script budget to 30s, which aborts any script whose tool calls
-    include a long-running cell execution.
+    Without explicit limits fastmcp applies its own default (30s), which on
+    Monty 0.0.x aborts any script whose tool calls include a long-running
+    cell execution.
     """
     return CodeMode(
         discovery_tools=[ListTools(), GetSchemas()],
-        sandbox_provider=MontySandboxProvider(
-            limits=ResourceLimits(
-                max_duration_secs=float(
-                    EXECUTION_CONFIG.default_timeout + SANDBOX_TIMEOUT_HEADROOM_SECS
-                )
-            )
-        ),
+        sandbox_provider=MontySandboxProvider(limits=build_sandbox_limits()),
     )
 
 

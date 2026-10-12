@@ -2,6 +2,19 @@
 
 
 
+## 0.4.1 (Unreleased)
+
+### Enhancements made
+
+- **fastmcp 4 support** (`fastmcp[code-mode]>=3.4.3,<5`). fastmcp 4 ships
+  pydantic-monty 1.x, which renamed the Code Mode sandbox time limits and
+  rejects the old `max_duration_secs`, so every Code Mode `execute` failed.
+  `build_sandbox_limits()` now picks the limit the installed Monty supports.
+  On Monty 1.x the clock pauses while a script waits on tool calls, so the
+  budget (60s) covers only the script itself, and long cell executions no
+  longer need the extra headroom.
+- CI also tests fastmcp 3.x on Python 3.11.
+
 ## 0.4.0 (Unreleased)
 
 ### Breaking changes
