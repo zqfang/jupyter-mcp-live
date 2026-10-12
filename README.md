@@ -20,6 +20,7 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 - **Multi-Kernel Support**: Execute code in Python, R, Julia, and any Jupyter-supported kernel
 - **Collaborative Editing**: Full support for YDoc - works seamlessly when notebooks are open in JupyterLab
 - **Live Output Streaming**: Outputs render in JupyterLab as the kernel emits them - watch long-running cells progress in real time instead of waiting for the tool call to finish
+- **Progress Notifications**: Long-running cells send MCP progress updates to the client (elapsed time, output count, latest output line), including heartbeats for silent cells
 - **Kernel Management**: Automatic kernel reuse, smart kernel resolution, and session management
 - **Complete Notebook Control**: Create, read, update, and delete cells programmatically
 - **Output Filtering**: Intelligent filtering of large outputs to optimize token usage
@@ -147,6 +148,26 @@ claude mcp add --transport http jupyter-hub https://<hub-host>/user/<username>/m
 ```
 
 Each user's MCP endpoint can only reach that user's kernels and files.
+
+### Long-running cells
+
+A cell may run for up to 10 hours (`EXECUTION_CONFIG.default_timeout`). While
+it runs, the server sends MCP progress notifications: one per output line (at
+most one per second) and a heartbeat every 30s.
+
+Your MCP client has its own limits. In Claude Code:
+
+- **Idle timeout:** a tool call that receives neither a response nor progress
+  for the idle window is aborted (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`, 5
+  minutes for HTTP servers). The 30s heartbeat keeps long, silent cells from
+  hitting it.
+- **Wall-clock timeout:** `MCP_TOOL_TIMEOUT` (milliseconds, default about 28
+  hours) or a per-server `timeout` in `.mcp.json`. Progress does not extend
+  these, so if you set one, keep it above your longest cell, e.g.
+  `MCP_TOOL_TIMEOUT=36000000` for 10 hours.
+
+See [Claude Code's MCP docs](https://code.claude.com/docs/en/mcp) and
+[environment variables](https://code.claude.com/docs/en/env-vars).
 
 ### Security notes
 

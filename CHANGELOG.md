@@ -2,6 +2,37 @@
 
 
 
+## 0.5.0 (Unreleased)
+
+### Enhancements made
+
+- **MCP progress notifications during cell execution.** `execute_cell`,
+  `add_code_cell` and `edit_code_cell` send `notifications/progress` while the
+  cell runs, e.g. `analysis.ipynb cell 3 · 12s · 5 outputs · tick 4`. They are
+  throttled to one per second on output, with a heartbeat every 30s for silent
+  cells and `waiting for kernel` while another execution holds the kernel.
+  This also works through Code Mode `execute`, and tool signatures are
+  unchanged. Clients that reset request timeouts on progress no longer treat
+  long, quiet cells as hung.
+
+### Changed
+
+- **Default execution timeout raised from 1 hour to 10 hours**
+  (`EXECUTION_CONFIG.default_timeout = 36000`), for heavy, long-running cells.
+  A hung kernel can now block a tool call for up to 10 hours before it times
+  out. On fastmcp 3.x the Code Mode sandbox budget grows with it (timeout +
+  300s), while fastmcp 4.x budgets don't count kernel time at all. Client
+  tool-call limits also apply; the README's "Long-running cells" section covers
+  Claude Code's idle timeout (which the 30s progress heartbeat keeps alive) and
+  its wall-clock timeout.
+
+### Bugs fixed
+
+- The contents-manager preflight before creating a kernel session was never
+  awaited with Jupyter Server's async contents manager, so it never checked
+  anything and emitted a `RuntimeWarning`. It is now awaited, and uses
+  `content=False` so it no longer reads the whole notebook.
+
 ## 0.4.1 (Unreleased)
 
 ### Enhancements made

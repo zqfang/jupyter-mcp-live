@@ -25,11 +25,13 @@ from jupyter_mcp_executor.execution_tools import (
     switch_notebook_kernel,
     view_notebook,
 )
+from jupyter_mcp_executor.execution_progress import ExecutionProgress
 from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 
 # Import from new modular structure
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
+from jupyter_mcp_executor.notebook_config import ProgressConfig
 from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.output_filter import OutputFilter
@@ -184,7 +186,7 @@ class MockServerApp:
 class MockContentsManager:
     """Minimal contents manager to satisfy KernelManager preflight checks."""
 
-    def get(self, path, type=None):  # noqa: ARG002
+    def get(self, path, content=True, type=None):  # noqa: ARG002
         # Return a minimal notebook model dict similar to Jupyter contents API
         return {"type": "notebook", "path": path, "name": Path(path).name}
 
@@ -1464,6 +1466,63 @@ class TestLiveOutputStreaming:
         assert result.status == "ok"
         assert adapter.appended == []
         assert adapter.updated == []
+
+    @pytest.mark.asyncio
+    async def test_outputs_reach_streamer_and_progress_reporter(
+        self, mock_serverapp, monkeypatch
+    ):
+        """Each output feeds both the live notebook and MCP progress."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+        sent = []
+        labels = []
+
+        async def record(progress, total, message):
+            sent.append((progress, total, message))
+
+        def from_request(label, **_kwargs):
+            labels.append(label)
+            # min_interval=0: notify on every output so the test sees it.
+            return ExecutionProgress(
+                record,
+                label,
+                config=ProgressConfig(
+                    heartbeat_interval=3600, min_interval=0, message_max_chars=120
+                ),
+            )
+
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_engine.ExecutionProgress.from_request",
+            from_request,
+        )
+
+        adapter = RecordingCollabAdapter()
+        result = await container.execution_engine.execute_and_update_cell(
+            adapter, 0, "print('tick')", kernel_id="kernel-live", cell_id="cell-1"
+        )
+
+        assert result.status == "ok"
+        assert [out["output_type"] for _, out in adapter.appended] == ["stream"]
+        assert labels == ["collab.ipynb cell 0"]
+        assert len(sent) == 1
+        assert sent[0][2].startswith("collab.ipynb cell 0 · ")
+        assert sent[0][2].endswith("· 1 output · tick")
+
+    @pytest.mark.asyncio
+    async def test_execution_without_request_context_has_no_reporter(
+        self, mock_serverapp
+    ):
+        """Direct calls (no MCP request) execute exactly as before."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+
+        assert ExecutionProgress.from_request("anything") is None
+        result = await container.execution_engine.execute_cell_code(
+            "print('tick')", kernel_id="kernel-live"
+        )
+
+        assert result.status == "ok"
+        assert len(result.outputs) == 1
 
     @pytest.mark.asyncio
     async def test_noncollaborative_adapter_does_not_stream(self, mock_serverapp):

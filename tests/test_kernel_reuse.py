@@ -74,7 +74,7 @@ class FakeServerApp:
         self.kernel_manager = FakeKernelManager(live_ids)
         self.kernel_spec_manager = FakeKernelSpecManager()
         self.root_dir = "/"
-        self.contents_manager = type("CM", (), {"get": lambda self, p, type=None: {}})()
+        self.contents_manager = type("CM", (), {"get": lambda self, p, content=True, type=None: {}})()
 
 
 def test_dead_kernel_reports_not_alive_instead_of_raising_404():
