@@ -15,6 +15,17 @@
   unchanged. Clients that reset request timeouts on progress no longer treat
   long, quiet cells as hung.
 
+### Changed
+
+- **Default execution timeout raised from 1 hour to 10 hours**
+  (`EXECUTION_CONFIG.default_timeout = 36000`), for heavy, long-running cells.
+  A hung kernel can now block a tool call for up to 10 hours before it times
+  out. On fastmcp 3.x the Code Mode sandbox budget grows with it (timeout +
+  300s), while fastmcp 4.x budgets don't count kernel time at all. Client
+  tool-call limits also apply; the README's "Long-running cells" section covers
+  Claude Code's idle timeout (which the 30s progress heartbeat keeps alive) and
+  its wall-clock timeout.
+
 ### Bugs fixed
 
 - The contents-manager preflight before creating a kernel session was never

@@ -511,7 +511,8 @@ executions instead of everything appearing when the MCP tool call returns:
 - The shell-reply wait and iopub collection run **concurrently** (required
   for live output streaming — the execute_reply only arrives when execution
   finishes) and share one deadline, so a hung kernel blocks at most
-  `EXECUTION_CONFIG.default_timeout` (+ small grace), not 2x. Channel
+  `EXECUTION_CONFIG.default_timeout` (+ small grace), not 2x. The default
+  is 36000s (10 hours), deliberately long for heavy cells. Channel
   timeouts raise `queue.Empty` in jupyter_client — both `Empty` and
   `TimeoutError` are handled. Stale shell replies are drained.
 - After execution, the target cell is re-located by `cell_id` before outputs
