@@ -24,6 +24,7 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 - **Complete Notebook Control**: Create, read, update, and delete cells programmatically
 - **Output Filtering**: Intelligent filtering of large outputs to optimize token usage
 - **MCP Protocol**: Standard MCP interface for AI assistant integration
+- **Authenticated by Jupyter**: The MCP endpoint lives on the Jupyter Server itself and accepts the same token as Jupyter — works on a local server and on JupyterHub
 - **Production Ready**: Comprehensive test suite, modular architecture, and detailed documentation
 
 
@@ -51,8 +52,8 @@ c = get_config()
 # Basic MCP server settings
 c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
 
-# set mcp port here
-c.MCPExtensionApp.mcp_port = 8080
+# Jupyter's token also authenticates MCP clients (pick your own secret)
+c.IdentityProvider.token = "change-me"
 
 # Register tools from existing packages
 c.MCPExtensionApp.mcp_tools = [
@@ -81,7 +82,10 @@ jupyter lab --config jupyter_config.py
 # jupyter lab --config examples/jupyter_config_with_excution_tools.py
 ```
 
-The MCP server will start automatically on `http://localhost:8080/mcp`.
+The MCP endpoint is served by Jupyter itself at `{base_url}mcp` on the Jupyter
+port, e.g. `http://localhost:8888/mcp`. Every request must carry the Jupyter
+token (`Authorization: token <TOKEN>` or `Authorization: Bearer <TOKEN>`);
+requests without it get `403`.
 
 ### 4. Connect MCP Clients
 
@@ -93,7 +97,8 @@ Set the following configuration:
 "mcpServers": {
   "jupyter-mcp": {
     "type": "http",
-    "url": "http://localhost:8080/mcp"
+    "url": "http://localhost:8888/mcp",
+    "headers": { "Authorization": "Bearer change-me" }
   }
 }
 ```
@@ -101,7 +106,8 @@ Set the following configuration:
 Or use the `claude` CLI:
 
 ```bash
-claude mcp add --transport http jupyter-mcp http://localhost:8080/mcp
+claude mcp add --transport http jupyter-mcp http://localhost:8888/mcp \
+  --header "Authorization: Bearer change-me"
 ```
 
 **Gemini CLI Configuration:**
@@ -112,11 +118,66 @@ Add the following to `.gemini/settings.json`:
 {
   "mcpServers": {
     "jupyter-mcp": {
-      "httpUrl": "http://localhost:8080/mcp"
+      "httpUrl": "http://localhost:8888/mcp",
+      "headers": { "Authorization": "Bearer change-me" }
     }
   }
 }
 ```
+
+### JupyterHub
+
+Install `jupyter-mcp-executor` in the **single-user server environment** (the
+user image). Each user's server then exposes its own endpoint through the Hub
+proxy — no extra ports or proxy configuration:
+
+```
+https://<hub-host>/user/<username>/mcp
+```
+
+Authenticate with a JupyterHub API token: create one on the Hub's
+**Token** page (`https://<hub-host>/hub/token`). A token you create for
+yourself can reach your own server by default; if you restrict its
+permissions, keep the scope `access:servers!user=<username>`. Send it as
+`Authorization: Bearer <token>`:
+
+```bash
+claude mcp add --transport http jupyter-hub https://<hub-host>/user/<username>/mcp \
+  --header "Authorization: Bearer <hub-api-token>"
+```
+
+Each user's MCP endpoint can only reach that user's kernels and files.
+
+### Security notes
+
+- MCP tools execute arbitrary code; anyone holding the token can run code as
+  the Jupyter user. Treat the token like a password.
+- If Jupyter runs **without** authentication (empty token and no password),
+  Jupyter treats every request as anonymous and requires an XSRF cookie on
+  `POST`, so MCP clients get `403`. That is deliberate — an unauthenticated
+  server is open to cross-site attacks. Set a token instead.
+- Send the token in the `Authorization` header, not as `?token=` in the URL
+  (URLs end up in logs and shell history).
+- The endpoint is meant for MCP clients (Claude Code, Gemini CLI, …), not
+  browser pages: CORS preflight requests are not answered.
+- Use `c.MCPExtensionApp.mcp_endpoint_path` to move the endpoint if another
+  extension already serves `/mcp`.
+
+### Upgrading from 0.3.x
+
+0.4.0 serves MCP on the Jupyter port by default and **no longer starts the
+separate listener on `mcp_port`**. Point clients at `http://<jupyter>/mcp` with
+the Jupyter token, as above. To keep the old unauthenticated listener on a
+single-user machine, set:
+
+```python
+c.MCPExtensionApp.mcp_standalone = True  # listens on mcp_port, NO authentication
+c.MCPExtensionApp.mcp_port = 8080
+```
+
+The standalone listener now validates the `Host` and `Origin` headers (421 /
+403 for foreign values), which blocks DNS-rebinding attacks from web pages,
+but it still has no authentication — anyone who can connect can run code.
 
 ## Architecture
 
@@ -154,7 +215,10 @@ Jupyter Server extension that manages the MCP server lifecycle:
 
 **Configuration Traits:**
 - `mcp_name` - Server name (default: "Jupyter MCP Server")
-- `mcp_port` - Server port (default: 3001)
+- `mcp_jupyter_endpoint` - Serve the authenticated endpoint on the Jupyter port (default: True)
+- `mcp_endpoint_path` - Endpoint path relative to Jupyter's base_url (default: "mcp")
+- `mcp_standalone` - Also run the separate, **unauthenticated** listener (default: False)
+- `mcp_port` - Port of the standalone listener (default: 3001; only used with `mcp_standalone`)
 - `mcp_tools` - List of tools to register (format: "module:function")
 - `use_tool_discovery` - Enable automatic tool discovery via entrypoints (default: True)
 
@@ -212,7 +276,7 @@ c.MCPExtensionApp.use_tool_discovery = False
 ### Minimal Setup
 ```python
 c = get_config()
-c.MCPExtensionApp.mcp_port = 8080
+c.IdentityProvider.token = "change-me"  # also authenticates MCP clients
 ```
 
 ### Full Configuration
@@ -221,7 +285,7 @@ c = get_config()
 
 # MCP Server Configuration
 c.MCPExtensionApp.mcp_name = "Advanced Jupyter MCP Server"
-c.MCPExtensionApp.mcp_port = 8080
+c.MCPExtensionApp.mcp_endpoint_path = "mcp"  # served at {base_url}mcp
 c.MCPExtensionApp.mcp_tools = [
     # File system operations (jupyter-ai-tools)
     "jupyter_ai_tools.toolkits.file_system:read",
@@ -277,6 +341,8 @@ jupyter_mcp_executor/
 ├── jupyter_mcp_executor/
 │   ├── __init__.py
 │   ├── mcp_server.py      # Core MCP server implementation
+│   ├── mcp_handler.py     # Authenticated {base_url}mcp endpoint
+│   ├── asgi_bridge.py     # Runs the FastMCP app inside Tornado
 │   └── extension.py       # Jupyter Server extension
 ├── tests/
 │   ├── test_mcp_server.py # MCPServer tests

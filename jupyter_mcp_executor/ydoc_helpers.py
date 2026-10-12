@@ -83,7 +83,7 @@ async def get_ynotebook(file_path: str) -> Any | None:
                 f"get_document returned unexpected type {type(ydoc)} for {file_path}"
             )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - no YDoc means use the file adapter
         logger.debug(f"Failed to get YNotebook via YDocExtension.get_document: {e}")
 
     return None
@@ -208,13 +208,11 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
         # caller can decide how to proceed.  These are expected in environments
         # without jupyter_server_ydoc.
         logger.warning(f"YDoc infrastructure unavailable for {file_path}: {e}")
-    except Exception as e:
+    except Exception:
         # Unexpected failure — log at ERROR so it is visible in production
         # rather than silently falling back to NbformatAdapter (which would
         # reintroduce the ystore/disk desync bug).
-        logger.error(
-            f"Failed to recreate YDoc room for {file_path}: {e}", exc_info=True
-        )
+        logger.exception(f"Failed to recreate YDoc room for {file_path}")
 
     return None
 
@@ -234,7 +232,7 @@ def get_cell_index_by_id_ydoc(ydoc: Any, cell_id: str) -> int | None:
             ycell = ydoc.ycells[i]
             if str(ycell.get("id", "")) == cell_id:
                 return i
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - lookup miss is reported as None
         logger.debug(f"Error finding cell by ID in YDoc: {e}")
 
     return None
@@ -254,7 +252,7 @@ def get_cell_index_by_id_nbformat(nb: Any, cell_id: str) -> int | None:
         for i, cell in enumerate(nb.cells):
             if cell.get("id") == cell_id:
                 return i
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - lookup miss is reported as None
         logger.debug(f"Error finding cell by ID in notebook: {e}")
 
     return None

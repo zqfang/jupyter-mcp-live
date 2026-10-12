@@ -101,7 +101,9 @@ c = get_config()
 
 # Basic MCP server settings
 c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
-c.MCPExtensionApp.mcp_port = 8080
+
+# Jupyter's token also authenticates MCP clients
+c.IdentityProvider.token = "change-me"
 
 # Register tools (examples)
 c.MCPExtensionApp.mcp_tools = [
@@ -119,15 +121,22 @@ c.MCPExtensionApp.mcp_tools = [
 jupyter lab --config=jupyter_config.py
 ```
 
-The MCP server will start automatically at `http://localhost:8080/mcp`.
+The MCP endpoint is served by Jupyter at `http://localhost:8888/mcp` (Jupyter's
+port and base_url), and requires the Jupyter token.
 
 ### 3. Test the MCP Server
 
-You can test if the MCP server is running:
+Send an MCP `initialize` request with the token (without it you get `403`):
 
 ```bash
-curl http://localhost:8080/mcp
+curl -X POST http://localhost:8888/mcp \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
 ```
+
+For JupyterHub deployments, see the JupyterHub section of the README.
 
 ## Installing Additional Tools
 

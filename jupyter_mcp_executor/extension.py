@@ -6,10 +6,13 @@ import importlib
 import importlib.metadata
 import inspect
 import logging
+import re
 
 from jupyter_server.extension.application import ExtensionApp
-from traitlets import Bool, Int, List, Unicode
+from jupyter_server.utils import url_path_join
+from traitlets import Bool, Int, List, TraitError, Unicode, validate
 
+from .mcp_handler import MCPHandler
 from .mcp_server import MCPServer
 
 # Import notebook execution tools for context setup
@@ -31,9 +34,38 @@ class MCPExtensionApp(ExtensionApp):
     description = "Jupyter Server extension providing MCP server for tool registration"
 
     # Configurable traits
-    mcp_port = Int(default_value=3001, help="Port for the MCP server to listen on").tag(
-        config=True
-    )
+    mcp_jupyter_endpoint = Bool(
+        default_value=True,
+        help=(
+            "Serve MCP on the Jupyter Server itself at "
+            "{base_url}<mcp_endpoint_path>, behind Jupyter authentication "
+            "(send 'Authorization: token <TOKEN>' or 'Bearer <TOKEN>'). Under "
+            "JupyterHub this is reachable at /user/<name>/<mcp_endpoint_path> "
+            "with a Hub API token."
+        ),
+    ).tag(config=True)
+
+    mcp_endpoint_path = Unicode(
+        default_value="mcp",
+        help=(
+            "Path of the authenticated MCP endpoint, relative to the Jupyter "
+            "base_url. Change it if another extension already serves /mcp."
+        ),
+    ).tag(config=True)
+
+    mcp_standalone = Bool(
+        default_value=False,
+        help=(
+            "Also run the separate MCP listener on mcp_port. WARNING: that "
+            "listener has NO authentication; anyone who can reach the port can "
+            "run code in your kernels. Only enable it on a single-user machine."
+        ),
+    ).tag(config=True)
+
+    mcp_port = Int(
+        default_value=3001,
+        help="Port for the standalone MCP listener (only used if mcp_standalone)",
+    ).tag(config=True)
 
     mcp_name = Unicode(
         default_value="Jupyter MCP Server", help="Name for the MCP server"
@@ -57,7 +89,7 @@ class MCPExtensionApp(ExtensionApp):
         ),
     ).tag(config=True)
 
-    mcp_server_instance: object | None = None
+    mcp_server_instance: MCPServer | None = None
     mcp_server_task: asyncio.Task | None = None
     mcp_shutdown_timeout = 5
 
@@ -112,7 +144,7 @@ class MCPExtensionApp(ExtensionApp):
                 function = self._load_function_from_string(tool_spec)
                 self.mcp_server_instance.register_tool(function)
                 logger.info(f"✅ Registered tool from {source}: {tool_spec}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one bad tool must not block the rest
                 logger.error(
                     f"❌ Failed to register tool '{tool_spec}' from {source}: {e}"
                 )
@@ -174,11 +206,11 @@ class MCPExtensionApp(ExtensionApp):
                         f"Discovered {len(valid_specs)} tools from entrypoint '{entry_point.name}'"
                     )
 
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - skip a broken entrypoint
                     logger.error(f"Failed to load entrypoint '{entry_point.name}': {e}")
                     continue
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - discovery is optional
             logger.error(f"Failed to discover entrypoints: {e}")
 
         if not discovered_tools:
@@ -191,9 +223,25 @@ class MCPExtensionApp(ExtensionApp):
         super().initialize()
         # serverapp will be available as self.serverapp after parent initialization
 
+    @validate("mcp_endpoint_path")
+    def _validate_endpoint_path(self, proposal):
+        path = proposal["value"].strip("/")
+        if not path:
+            msg = "mcp_endpoint_path must not be empty"
+            raise TraitError(msg)
+        return path
+
     def initialize_handlers(self):
-        """Initialize the handlers for the extension."""
-        # No HTTP handlers needed - MCP server runs on separate port
+        """Register the authenticated MCP endpoint (base_url is prepended)."""
+        if not self.mcp_jupyter_endpoint:
+            return
+        pattern = rf"{re.escape(self.mcp_endpoint_path)}/?"
+        self.handlers.append((pattern, MCPHandler, {"extension": self}))
+
+    def _endpoint_url(self) -> str:
+        """Return the URL clients use for the authenticated endpoint."""
+        base = getattr(self.serverapp, "connection_url", "") or "/"
+        return url_path_join(base, self.mcp_endpoint_path)
 
     def initialize_settings(self):
         """Initialize settings for the extension."""
@@ -239,6 +287,12 @@ class MCPExtensionApp(ExtensionApp):
         with contextlib.suppress(asyncio.CancelledError):
             await self.mcp_server_task
 
+    async def _stop_embedded(self) -> None:
+        """Stop the in-process app behind the authenticated endpoint."""
+        stop_embedded = getattr(self.mcp_server_instance, "stop_embedded", None)
+        if inspect.iscoroutinefunction(stop_embedded):
+            await stop_embedded()
+
     def _bridge_package_logging(self) -> None:
         """Make package loggers use Jupyter Server's logging handlers/level."""
         # Parent logger for the whole package
@@ -254,9 +308,7 @@ class MCPExtensionApp(ExtensionApp):
     async def start_extension(self):
         """Start the extension - called after Jupyter Server starts."""
         try:
-            self.log.info(
-                f"Starting MCP server '{self.mcp_name}' on port {self.mcp_port}"
-            )
+            self.log.info(f"Starting MCP server '{self.mcp_name}'")
             # Bridge package logging early so module-level loggers emit
             self._bridge_package_logging()
 
@@ -274,15 +326,32 @@ class MCPExtensionApp(ExtensionApp):
             self._register_tools(entrypoint_tools, source="entrypoints")
             self._register_tools(self.mcp_tools, source="configuration")
 
-            # Start the MCP server in a background task
-            self.mcp_server_task = asyncio.create_task(
-                self.mcp_server_instance.start_server()
-            )
+            if self.mcp_jupyter_endpoint:
+                await self.mcp_server_instance.start_embedded()
+                self.log.info(
+                    f"✅ MCP endpoint at {self._endpoint_url()} "
+                    "(Jupyter token required)"
+                )
 
-            await self._confirm_mcp_server_started()
+            if self.mcp_standalone:
+                # Start the standalone listener in a background task
+                self.mcp_server_task = asyncio.create_task(
+                    self.mcp_server_instance.start_server()
+                )
+                await self._confirm_mcp_server_started()
+                host = getattr(self.mcp_server_instance, "host", "localhost")
+                self.log.warning(
+                    f"MCP standalone listener started on {host}:{self.mcp_port} "
+                    "WITHOUT authentication (Host/Origin checked only)"
+                )
+
+            if not (self.mcp_jupyter_endpoint or self.mcp_standalone):
+                self.log.warning(
+                    "MCP server has no endpoint: both mcp_jupyter_endpoint and "
+                    "mcp_standalone are disabled"
+                )
 
             registered_count = len(self.mcp_server_instance._registered_tools)
-            self.log.info(f"✅ MCP server started on port {self.mcp_port}")
             self.log.info(f"Total registered tools: {registered_count}")
 
         except Exception as e:
@@ -290,9 +359,14 @@ class MCPExtensionApp(ExtensionApp):
                 self.mcp_server_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self.mcp_server_task
-
-            self.mcp_server_task = None
-            self.mcp_server_instance = None
+            try:
+                await self._stop_embedded()
+            except Exception:
+                # Keep the original startup error; just record this one.
+                self.log.exception("Failed to stop the MCP endpoint after error")
+            finally:
+                self.mcp_server_task = None
+                self.mcp_server_instance = None
             self.log.error(f"Failed to start MCP server: {e}")
             raise
 
@@ -303,7 +377,10 @@ class MCPExtensionApp(ExtensionApp):
     async def stop_extension(self):
         """Stop the extension - called when Jupyter Server shuts down."""
         try:
-            await self._stop_mcp_server_task()
+            try:
+                await self._stop_mcp_server_task()
+            finally:
+                await self._stop_embedded()
         finally:
             self.mcp_server_task = None
             self.mcp_server_instance = None

@@ -48,7 +48,7 @@ class _CellOutputStreamer:
         try:
             position = await self._locate_cell()
             await self._adapter.clear_cell_outputs(position)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - streaming must never abort execution
             logger.warning(f"Could not clear outputs before execution: {e}")
             self.streamed_ok = False
 
@@ -59,7 +59,7 @@ class _CellOutputStreamer:
         try:
             position = await self._locate_cell()
             await self._adapter.append_cell_output(position, output)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - streaming must never abort execution
             logger.warning(f"Live output streaming disabled for this run: {e}")
             self.streamed_ok = False
 

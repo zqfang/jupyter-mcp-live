@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 **Project**: Jupyter MCP Executor
-**Version**: 0.3.0
+**Version**: 0.4.0
 **Python**: 3.11+
 **Status**: Production Ready
 
@@ -71,8 +71,10 @@ ruff check --fix jupyter_mcp_executor/
 # Start Jupyter with MCP extension
 jupyter lab --config examples/jupyter_config_with_execution_tools.py
 
-# MCP server runs at http://localhost:<mcp_port>/mcp
-# Default port is 3001; the example config sets c.MCPExtensionApp.mcp_port = 8080
+# MCP endpoint is served by Jupyter itself at {base_url}mcp on the Jupyter port
+# (example config: http://localhost:8000/mcp), authenticated with the Jupyter
+# token: send "Authorization: Bearer <token>" (or "token <token>").
+# The old separate listener on mcp_port is off by default (mcp_standalone).
 ```
 
 ## Architecture Overview
@@ -81,8 +83,10 @@ jupyter lab --config examples/jupyter_config_with_execution_tools.py
 
 ```text
 MCP Client (Claude/Gemini)
-    ↓
-FastMCP Server (mcp_server.py)
+    ↓  Authorization: Bearer <Jupyter or JupyterHub token>
+Jupyter Server handler at {base_url}mcp (mcp_handler.py: Jupyter auth)
+    ↓  in-process ASGI bridge (asgi_bridge.py) — no extra port
+FastMCP Server (mcp_server.py; Code Mode, streamable HTTP)
     ↓
 MCP Tools Interface (execution_tools.py)
     ↓
@@ -158,6 +162,9 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 
 - `extension.py` - Jupyter Server extension (`MCPExtensionApp`)
 - `mcp_server.py` - FastMCP server wrapper (`MCPServer`)
+- `mcp_handler.py` - Authenticated `{base_url}mcp` Tornado handler (`MCPHandler`)
+- `asgi_bridge.py` - Runs the FastMCP Starlette app inside Tornado
+  (`run_asgi`, `EmbeddedASGIApp` lifespan owner)
 - `execution_tools.py` - Public MCP interface (13 tool functions, decorated with `@collaborative_tool`)
 
 ### Service Layer
@@ -303,7 +310,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-178 tests total across:
+217 tests total across:
 
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
@@ -315,11 +322,20 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/test_kernel_utils.py` - Kernel utilities tests
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
   limits)
-- `tests/test_extension.py` - Extension tests
+- `tests/test_extension.py` - Extension tests (endpoint traits, both serving modes)
+- `tests/test_asgi_bridge.py` - ASGI bridge (scope, streaming flushes, disconnects,
+  lifespan task)
+- `tests/integration/test_mcp_endpoint.py` - Starts a **real** Jupyter Server
+  (pytest-jupyter) and talks to `{base_url}mcp` with a real FastMCP client: auth,
+  base_url, custom path, disabled endpoint, 503. pytest-jupyter fixtures are
+  imported in `tests/integration/conftest.py` only, so its async runner does not
+  interfere with the pytest-asyncio unit tests. Note `jp_fetch` mutates the
+  `headers` dict you pass (adds auth) — always pass a fresh dict.
 - `tests/conftest.py` - Shared fixtures and mocks (includes a `QueryService` stub
   that must be kept in sync with the real `query_service.py` routing)
 
-All tests use comprehensive mocks (no actual kernels/servers started).
+Apart from `tests/integration/`, tests use mocks (no actual kernels/servers
+started).
 
 ### Common Debugging
 
@@ -356,6 +372,30 @@ print(tracker.get_all_tracked())
 ```
 
 ## Important Behaviors
+
+### MCP Endpoint and Authentication
+
+- By default the MCP app is served **in-process** by `MCPHandler` at
+  `{base_url}<mcp_endpoint_path>` (default `mcp`) on the Jupyter port. Under
+  JupyterHub that is `/user/<name>/mcp` through the Hub proxy.
+- `MCPHandler.prepare()` requires a Jupyter-authenticated user (403 otherwise,
+  never a login redirect) and `execute` permission on `kernels`. Jupyter's
+  `check_host` and XSRF rules still apply: a server with auth disabled treats
+  requests as anonymous and rejects MCP `POST`s for missing XSRF — by design.
+- FastMCP still implements the whole transport (sessions, SSE, protocol
+  negotiation, Code Mode). `asgi_bridge.run_asgi` only translates the Tornado
+  request into an ASGI scope and flushes each response chunk.
+- `EmbeddedASGIApp` keeps the Starlette lifespan (FastMCP session manager) in a
+  single background task — anyio cancel scopes must exit in the task that
+  entered them. FastMCP's server lifespan is ref-counted, so the embedded app and
+  the optional standalone uvicorn app can run together.
+- `mcp_standalone = True` restores the 0.3.x separate listener on `mcp_port`.
+  It has **no authentication**; it is off by default since 0.4.0. Its app is
+  built by `build_standalone_app()` with FastMCP's strict Host/Origin guard
+  (DNS-rebinding protection); the embedded app (`build_http_app()`) has no
+  guard because Jupyter's `check_host` runs first.
+- If FastMCP fails after response headers were sent, `MCPHandler` closes the
+  connection so clients see a truncated stream, not a clean end.
 
 ### YDoc vs Nbformat Selection
 

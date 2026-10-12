@@ -4,8 +4,10 @@ import asyncio
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from traitlets import TraitError
 
 from jupyter_mcp_executor.extension import MCPExtensionApp
+from jupyter_mcp_executor.mcp_handler import MCPHandler
 from jupyter_mcp_executor.mcp_server import MCPServer
 
 
@@ -18,8 +20,17 @@ def _mock_running_server(registered_tools=None):
     """Create an MCP server mock whose start task stays alive."""
     mock_server = Mock()
     mock_server.start_server = AsyncMock(side_effect=_run_until_cancelled)
+    mock_server.start_embedded = AsyncMock()
+    mock_server.stop_embedded = AsyncMock()
     mock_server._registered_tools = [] if registered_tools is None else registered_tools
     return mock_server
+
+
+def _standalone_extension() -> MCPExtensionApp:
+    """Extension with the (opt-in) standalone listener enabled."""
+    extension = MCPExtensionApp()
+    extension.mcp_standalone = True
+    return extension
 
 
 class TestMCPExtensionApp:
@@ -49,11 +60,47 @@ class TestMCPExtensionApp:
         extension.mcp_tools = ["os:getcwd", "math:sqrt"]
         assert extension.mcp_tools == ["os:getcwd", "math:sqrt"]
 
-    def test_initialize_handlers(self):
-        """Test handler initialization (should be no-op)."""
+    def test_endpoint_defaults(self):
+        """The authenticated endpoint is on and the standalone port off."""
         extension = MCPExtensionApp()
-        # Should not raise any errors
+
+        assert extension.mcp_jupyter_endpoint is True
+        assert extension.mcp_endpoint_path == "mcp"
+        assert extension.mcp_standalone is False
+
+    def test_initialize_handlers_registers_mcp_endpoint(self):
+        """The endpoint is registered relative to base_url (prepended later)."""
+        extension = MCPExtensionApp()
+
         extension.initialize_handlers()
+
+        assert extension.handlers == [(r"mcp/?", MCPHandler, {"extension": extension})]
+
+    def test_initialize_handlers_escapes_custom_path(self):
+        """A custom path is regex-escaped so it matches literally."""
+        extension = MCPExtensionApp()
+        extension.mcp_endpoint_path = "/agent.mcp/"
+
+        extension.initialize_handlers()
+
+        assert extension.mcp_endpoint_path == "agent.mcp"
+        assert extension.handlers[0][0] == r"agent\.mcp/?"
+
+    def test_initialize_handlers_when_endpoint_disabled(self):
+        """No handler is registered when the endpoint is disabled."""
+        extension = MCPExtensionApp()
+        extension.mcp_jupyter_endpoint = False
+
+        extension.initialize_handlers()
+
+        assert extension.handlers == []
+
+    def test_empty_endpoint_path_rejected(self):
+        """An empty path would shadow the whole server, so it is an error."""
+        extension = MCPExtensionApp()
+
+        with pytest.raises(TraitError, match="must not be empty"):
+            extension.mcp_endpoint_path = "/"
 
     def test_initialize_settings(self):
         """Test settings initialization (should be no-op)."""
@@ -68,7 +115,7 @@ class TestMCPExtensionLifecycle:
     @pytest.mark.asyncio
     async def test_start_extension_success(self):
         """Test successful extension startup."""
-        extension = MCPExtensionApp()
+        extension = _standalone_extension()
         extension.mcp_port = 3098
         extension.mcp_name = "Test Server"
 
@@ -113,19 +160,20 @@ class TestMCPExtensionLifecycle:
     @pytest.mark.asyncio
     async def test_start_extension_detects_server_task_failure(self):
         """Test startup failure from the background MCP server task."""
-        extension = MCPExtensionApp()
+        extension = _standalone_extension()
 
         with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
-            mock_server = Mock()
+            mock_server = _mock_running_server()
             mock_server.start_server = AsyncMock(
                 side_effect=RuntimeError("Port 3001 is already in use")
             )
-            mock_server._registered_tools = []
             mock_mcp_class.return_value = mock_server
 
             with pytest.raises(RuntimeError, match="Port 3001 is already in use"):
                 await extension.start_extension()
 
+            # The already-started embedded app is shut down again.
+            mock_server.stop_embedded.assert_awaited_once()
             assert extension.mcp_server_instance is None
             assert extension.mcp_server_task is None
 
@@ -210,7 +258,7 @@ class TestMCPExtensionLifecycle:
     @pytest.mark.asyncio
     async def test_full_lifecycle(self):
         """Test complete start -> stop lifecycle."""
-        extension = MCPExtensionApp()
+        extension = _standalone_extension()
         extension.mcp_port = 3099
         extension.mcp_name = "Lifecycle Test Server"
 
@@ -240,6 +288,108 @@ class TestMCPExtensionLifecycle:
             # it might finish before cancellation)
             assert original_task.cancelled() or original_task.done()
             extension._confirm_mcp_server_started.assert_awaited_once()
+
+
+class TestEmbeddedEndpointLifecycle:
+    """Default mode: only the authenticated in-server endpoint is served."""
+
+    @pytest.mark.asyncio
+    async def test_default_start_serves_embedded_app_only(self):
+        extension = MCPExtensionApp()
+
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+            mock_server = _mock_running_server()
+            mock_mcp_class.return_value = mock_server
+
+            await extension.start_extension()
+
+            mock_server.start_embedded.assert_awaited_once()
+            mock_server.start_server.assert_not_called()
+            assert extension.mcp_server_task is None
+
+            await extension.stop_extension()
+
+            mock_server.stop_embedded.assert_awaited_once()
+            assert extension.mcp_server_instance is None
+
+    @pytest.mark.asyncio
+    async def test_embedded_start_failure_cleans_up(self):
+        extension = MCPExtensionApp()
+
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+            mock_server = _mock_running_server()
+            mock_server.start_embedded = AsyncMock(
+                side_effect=RuntimeError("lifespan failed")
+            )
+            mock_mcp_class.return_value = mock_server
+
+            with pytest.raises(RuntimeError, match="lifespan failed"):
+                await extension.start_extension()
+
+            mock_server.start_server.assert_not_called()
+            assert extension.mcp_server_instance is None
+            assert extension.mcp_server_task is None
+
+    @pytest.mark.asyncio
+    async def test_both_modes_disabled_warns(self):
+        extension = MCPExtensionApp()
+        extension.mcp_jupyter_endpoint = False
+
+        with (
+            patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class,
+            patch.object(extension.log, "warning") as mock_warning,
+        ):
+            mock_server = _mock_running_server()
+            mock_mcp_class.return_value = mock_server
+
+            await extension.start_extension()
+
+            mock_server.start_embedded.assert_not_called()
+            mock_server.start_server.assert_not_called()
+            assert any(
+                "no endpoint" in call.args[0] for call in mock_warning.call_args_list
+            )
+
+            await extension.stop_extension()
+
+
+class TestShutdownRobustness:
+    """Stopping one serving mode must not prevent stopping the other."""
+
+    @pytest.mark.asyncio
+    async def test_stop_embedded_even_if_standalone_stop_fails(self):
+        extension = _standalone_extension()
+        mock_server = _mock_running_server()
+        extension.mcp_server_instance = mock_server
+        extension._stop_mcp_server_task = AsyncMock(
+            side_effect=RuntimeError("uvicorn stop failed")
+        )
+
+        with pytest.raises(RuntimeError, match="uvicorn stop failed"):
+            await extension.stop_extension()
+
+        mock_server.stop_embedded.assert_awaited_once()
+        assert extension.mcp_server_instance is None
+
+    @pytest.mark.asyncio
+    async def test_startup_error_not_masked_by_cleanup_error(self):
+        extension = _standalone_extension()
+
+        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+            mock_server = _mock_running_server()
+            mock_server.start_server = AsyncMock(
+                side_effect=RuntimeError("Port 3001 is already in use")
+            )
+            mock_server.stop_embedded = AsyncMock(
+                side_effect=RuntimeError("cleanup failed")
+            )
+            mock_mcp_class.return_value = mock_server
+
+            with pytest.raises(RuntimeError, match="already in use"):
+                await extension.start_extension()
+
+            assert extension.mcp_server_instance is None
+            assert extension.mcp_server_task is None
 
 
 class TestExtensionIntegration:
@@ -370,7 +520,7 @@ class TestExtensionWithTools:
     @pytest.mark.asyncio
     async def test_start_extension_with_tools(self):
         """Test extension startup with configured tools."""
-        extension = MCPExtensionApp()
+        extension = _standalone_extension()
         extension.mcp_port = 3089
         extension.mcp_name = "Test Server With Tools"
         extension.mcp_tools = ["os:getcwd", "math:sqrt"]
@@ -396,7 +546,7 @@ class TestExtensionWithTools:
     @pytest.mark.asyncio
     async def test_start_extension_no_tools(self):
         """Test extension startup with no configured tools."""
-        extension = MCPExtensionApp()
+        extension = _standalone_extension()
         extension.mcp_port = 3088
         extension.mcp_tools = []
 
@@ -489,7 +639,7 @@ class TestEntrypointDiscovery:
     @pytest.mark.asyncio
     async def test_start_extension_with_entrypoints_and_config(self):
         """Test extension startup with both entrypoint and configured tools."""
-        extension = MCPExtensionApp()
+        extension = _standalone_extension()
         extension.mcp_port = 3086
         extension.use_tool_discovery = True
         extension.mcp_tools = ["json:dumps"]

@@ -28,6 +28,7 @@ from pydantic_monty import ResourceLimits
 from traitlets import Int, Unicode
 from traitlets.config.configurable import LoggingConfigurable
 
+from jupyter_mcp_executor.asgi_bridge import EmbeddedASGIApp
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
 
 logger = logging.getLogger(__name__)
@@ -307,6 +308,9 @@ class MCPServer(LoggingConfigurable):
         # Set by _run_http_async_without_signals; stop_server() must not
         # AttributeError when called before the server task has started.
         self._uvicorn_server: uvicorn.Server | None = None
+        # Set by start_embedded(): the FastMCP app served in-process through
+        # the authenticated Jupyter Server handler (see mcp_handler.py).
+        self.embedded_app: EmbeddedASGIApp | None = None
         self.log.info(
             f"Initialized MCP server '{self.name}' on {self.host}:{self.port}"
         )
@@ -362,7 +366,7 @@ class MCPServer(LoggingConfigurable):
                 self.register_tool(func, name=name)
         else:
             msg = "tools must be a list of functions or dict mapping names to functions"
-            raise ValueError(msg)
+            raise TypeError(msg)
 
     def list_tools(self) -> list[dict[str, Any]]:
         """List all registered tools."""
@@ -375,10 +379,48 @@ class MCPServer(LoggingConfigurable):
         """Get information about a specific tool."""
         return self._registered_tools.get(tool_name)
 
+    def build_http_app(self) -> Any:
+        """Build FastMCP's streamable-HTTP Starlette app for the Jupyter handler.
+
+        Each call returns a new app with its own session manager; FastMCP's
+        server lifespan is reference-counted, so the standalone (uvicorn) and
+        embedded (Jupyter handler) apps can run side by side. No Host/Origin
+        guard here: Jupyter's check_host and authentication run first, and
+        under JupyterHub the Host is the Hub's public name. Disabled explicitly
+        because some fastmcp releases (e.g. 3.4.3) enable the guard by default.
+        """
+        return self.mcp.http_app(transport="http", host_origin_protection=False)
+
+    def build_standalone_app(self) -> Any:
+        """Build the app for the standalone listener, with a Host/Origin guard.
+
+        The standalone listener has no authentication, so at least reject
+        DNS-rebinding and cross-origin browser requests: Host must be a
+        loopback name or the bound address (421 otherwise), and a browser
+        Origin must match (403 otherwise).
+        """
+        return self.mcp.http_app(transport="http", host_origin_protection=True)
+
+    async def start_embedded(self) -> None:
+        """Start the app served in-process by the Jupyter Server handler."""
+        if self.embedded_app is not None:
+            return
+        embedded = EmbeddedASGIApp(self.build_http_app())
+        await embedded.start()
+        self.embedded_app = embedded
+        self.log.info(f"Registered tools: {list(self._registered_tools.keys())}")
+
+    async def stop_embedded(self) -> None:
+        """Stop the in-process app; safe to call when it is not running."""
+        embedded = self.embedded_app
+        self.embedded_app = None
+        if embedded is not None:
+            await embedded.stop()
+
     async def _run_http_async_without_signals(self, host: str, port: int) -> None:
         """Run FastMCP over HTTP without taking over process signal handlers."""
         transport = "http"
-        app = self.mcp.http_app(transport=transport)
+        app = self.build_standalone_app()
 
         log_server_banner(server=self.mcp)
 

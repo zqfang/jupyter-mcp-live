@@ -22,7 +22,8 @@ def is_kernel_alive(serverapp: Any, kernel_id: str | None) -> bool:
         return False
     try:
         serverapp.kernel_manager.get_kernel(kernel_id)
-    except Exception:  # KeyError (jupyter_client) or web.HTTPError 404 (jupyter_server)
+    # KeyError (jupyter_client) or web.HTTPError 404 (jupyter_server)
+    except Exception:  # noqa: BLE001
         return False
     return True
 

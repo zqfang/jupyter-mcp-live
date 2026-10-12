@@ -130,7 +130,7 @@ class TestMCPServer:
         server = MCPServer()
 
         with pytest.raises(
-            ValueError, match="tools must be a list of functions or dict"
+            TypeError, match="tools must be a list of functions or dict"
         ):
             server.register_tools("invalid")
 
@@ -481,3 +481,84 @@ class TestJSONSchemaModification:
         assert result["types"]["config"] == "dict"
         assert result["types"]["metadata"] == "dict"
         assert result["types"]["name"] == "str"
+
+
+class TestEmbeddedApp:
+    """The in-process app behind the authenticated Jupyter endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_start_and_stop_embedded(self):
+        server = MCPServer(name="Embedded Test")
+
+        await server.start_embedded()
+        embedded = server.embedded_app
+        try:
+            assert embedded is not None
+            assert embedded.running
+            assert embedded.app.state.path == "/mcp"
+
+            # Starting again keeps the same running app.
+            await server.start_embedded()
+            assert server.embedded_app is embedded
+        finally:
+            await server.stop_embedded()
+
+        assert server.embedded_app is None
+        assert not embedded.running
+        # Stopping again is a no-op.
+        await server.stop_embedded()
+
+    def test_build_http_app_returns_independent_apps(self):
+        server = MCPServer(name="Embedded Test")
+
+        assert server.build_http_app() is not server.build_http_app()
+
+
+class TestStandaloneHostOriginGuard:
+    """The unauthenticated standalone app rejects DNS-rebinding requests."""
+
+    @staticmethod
+    async def _post(app, host: str, origin: str | None = None) -> int:
+        import httpx
+
+        headers = {
+            "Host": host,
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        if origin:
+            headers["Origin"] = origin
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://127.0.0.1:3001"
+        ) as client:
+            response = await client.post("/mcp", headers=headers, content=b"{}")
+        return response.status_code
+
+    @pytest.mark.asyncio
+    async def test_standalone_app_rejects_foreign_host(self):
+        app = MCPServer(name="Guarded").build_standalone_app()
+
+        assert await self._post(app, "evil.example:3001") == 421
+
+    @pytest.mark.asyncio
+    async def test_standalone_app_rejects_foreign_origin(self):
+        app = MCPServer(name="Guarded").build_standalone_app()
+
+        status = await self._post(app, "localhost:3001", origin="http://evil.example")
+
+        assert status == 403
+
+    @pytest.mark.asyncio
+    async def test_embedded_app_leaves_host_checks_to_jupyter(self):
+        """Jupyter's check_host guards the embedded app; no second guard."""
+        server = MCPServer(name="Embedded")
+        await server.start_embedded()
+        try:
+            status = await self._post(server.embedded_app.app, "hub.example.org")
+        finally:
+            await server.stop_embedded()
+
+        # Reaches the MCP transport (which rejects the bad body), rather than
+        # being stopped by a Host guard with 421.
+        assert status != 421

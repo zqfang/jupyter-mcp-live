@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from functools import cached_property
-from typing import ClassVar, Protocol
+from typing import ClassVar, Protocol, Self
 
 from jupyter_mcp_executor.cell_operations import CellOperations
 from jupyter_mcp_executor.execution_engine import ExecutionEngine
@@ -67,7 +67,7 @@ class ServiceContainer:
         "cell_operations",
     ]
 
-    def __new__(cls) -> ServiceContainer:
+    def __new__(cls) -> Self:
         """Ensure only one instance exists (singleton pattern)."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)

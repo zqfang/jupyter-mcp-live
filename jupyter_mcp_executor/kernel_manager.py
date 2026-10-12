@@ -225,7 +225,7 @@ class KernelManager:
                     logger.info(
                         f"YDoc unavailable; {notebook_path} created on disk only"
                     )
-            except Exception as e:  # pragma: no cover - defensive
+            except Exception as e:  # noqa: BLE001  # pragma: no cover - defensive
                 logger.warning(
                     f"Could not establish YDoc room at creation for "
                     f"{notebook_path}: {e}"
@@ -338,7 +338,7 @@ class KernelManager:
         def _read() -> str | None:
             try:
                 nb = nbformat.read(notebook_path, as_version=4)
-            except Exception:
+            except Exception:  # noqa: BLE001 - unreadable notebook: no kernelspec hint
                 return None
             return nb.metadata.get("kernelspec", {}).get("name")
 
@@ -646,7 +646,7 @@ class KernelManager:
             root_dir = Path(serverapp.root_dir).resolve()
             try:
                 contents_manager.get(api_path, type="notebook")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - reported to the caller as None
                 logger.error(
                     f"Contents manager cannot resolve path '{api_path}' "
                     f"(root_dir='{root_dir}'). Error: {e}"
@@ -686,11 +686,8 @@ class KernelManager:
 
             return kernel_id
 
-        except Exception as e:
-            logger.error(
-                f"❌ Session/kernel creation FAILED for {notebook_path}! Error: {e}",
-                exc_info=True,
-            )
+        except Exception:
+            logger.exception(f"❌ Session/kernel creation FAILED for {notebook_path}!")
             return None
 
     async def _shutdown_kernel(self, kernel_id: str) -> None:
@@ -707,7 +704,7 @@ class KernelManager:
             kernel_manager = serverapp.kernel_manager
             await kernel_manager.shutdown_kernel(kernel_id)
             logger.info(f"Shut down kernel {kernel_id}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - best-effort shutdown
             logger.warning(f"Error shutting down kernel {kernel_id}: {e}")
 
     def _get_kernel_display_info(
@@ -771,7 +768,7 @@ class KernelManager:
             await asyncio.to_thread(_write)
             logger.info(f"Updated kernel metadata in {notebook_path}")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - metadata update is best-effort
             logger.warning(f"Could not update notebook kernel metadata: {e}")
 
     @staticmethod
@@ -793,7 +790,7 @@ class KernelManager:
                 ymeta["metadata"] = Map({"kernelspec": kernelspec})
             else:
                 metadata["kernelspec"] = kernelspec
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - caller falls back to disk write
             logger.debug(f"Could not set kernelspec via YDoc: {e}")
             return False
         return True
