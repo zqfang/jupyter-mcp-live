@@ -184,7 +184,7 @@ class MockServerApp:
 class MockContentsManager:
     """Minimal contents manager to satisfy KernelManager preflight checks."""
 
-    def get(self, path, type=None):  # noqa: ARG002
+    def get(self, path, content=True, type=None):  # noqa: ARG002
         # Return a minimal notebook model dict similar to Jupyter contents API
         return {"type": "notebook", "path": path, "name": Path(path).name}
 

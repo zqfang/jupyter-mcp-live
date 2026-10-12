@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import nbformat
+from jupyter_core.utils import ensure_async
 from nbformat.v4 import new_notebook
 
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
@@ -642,10 +643,15 @@ class KernelManager:
                 f"name='{notebook_name}', kernel_name='{kernel_name}', type='notebook'"
             )
 
-            # Preflight: ensure contents manager can see the file as a notebook
+            # Preflight: ensure contents manager can see the file as a notebook.
+            # Jupyter Server's default contents manager is async, so the call
+            # must be awaited (ensure_async also accepts sync managers);
+            # content=False checks existence without reading the notebook.
             root_dir = Path(serverapp.root_dir).resolve()
             try:
-                contents_manager.get(api_path, type="notebook")
+                await ensure_async(
+                    contents_manager.get(api_path, content=False, type="notebook")
+                )
             except Exception as e:  # noqa: BLE001 - reported to the caller as None
                 logger.error(
                     f"Contents manager cannot resolve path '{api_path}' "
