@@ -1,100 +1,75 @@
-# Installation Guide for Jupyter Server MCP
+# Installation Guide for Jupyter MCP Executor
 
-This guide covers installation of the Jupyter Server MCP extension using [uv](https://github.com/astral-sh/uv), a fast Python package installer and resolver.
+> **Not on PyPI yet.** `jupyter-mcp-executor` has not been published to PyPI,
+> so `pip install jupyter-mcp-executor` will fail. Install it from GitHub
+> (Option 1) or from a local clone (Option 2).
+
+This guide uses [uv](https://github.com/astral-sh/uv), a fast Python package
+installer and resolver; plain `pip` works too (see the end of this guide).
 
 ## Prerequisites
 
-- Python 3.10 or higher
-- Git (for development installation)
-
-## Why uv?
-
-uv is a modern, fast Python package installer that:
-- Installs dependencies 10-100x faster than pip
-- Provides better dependency resolution
-- Uses less disk space with a global cache
-- Offers a streamlined development workflow
+- Python 3.11 or higher
+- Git
 
 ## Installation Options
 
-### Option 1: Install from PyPI (Recommended for Users)
+### Option 1: Install from GitHub (for users)
 
-If the package is published to PyPI:
+Install the latest `main` into the environment that runs Jupyter:
 
 ```bash
-# Install uv
+# Install uv (skip if you already have it)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install jupyter-mcp-executor
-uv pip install jupyter-mcp-executor
+# Install jupyter-mcp-executor straight from GitHub
+uv pip install "git+https://github.com/zqfang/jupyter-mcp-executor.git"
 ```
 
-### Option 2: Development Installation
+To pin a specific version, add a tag or commit, e.g.
+`"git+https://github.com/zqfang/jupyter-mcp-executor.git@<tag-or-commit>"`.
 
-For local development with the latest code:
+The Jupyter Server extension is enabled automatically on install.
+
+### Option 2: Development installation (from a clone)
+
+For working on the code, or running the tests:
 
 ```bash
-# Install uv if not already installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
 # Clone the repository
 git clone https://github.com/zqfang/jupyter-mcp-executor.git
 cd jupyter-mcp-executor
 
-# Create a virtual environment with uv
-uv venv
+# Create .venv and install the package in editable mode with test tools
+# (pytest, pytest-jupyter, ruff)
+uv sync --extra test
 
 # Activate the virtual environment
-# On macOS/Linux:
-source .venv/bin/activate
-# On Windows:
-# .venv\Scripts\activate
-# uv sync 
-# Install the package in editable mode with all dependencies
-uv sync
-```
+source .venv/bin/activate        # macOS/Linux
+# .venv\Scripts\activate         # Windows
 
-### Option 3: Development Installation with Test Dependencies
-
-For running tests and contributing:
-
-```bash
-# After cloning and creating venv (see Option 2)
-source .venv/bin/activate
-
-# install the env
-uv sync --all-extras
-
-# Install with test dependencies
-uv pip install -e ".[test]"
-
-# Or install with dev dependencies (includes ruff linter)
-uv pip install -e ".[dev]"
-
-
-# Run jupyter
+# Run Jupyter with the example configuration
 jupyter lab --config examples/jupyter_config_with_execution_tools.py
 ```
 
 ## Verifying Installation
 
-After installation, verify that the extension is properly installed:
-
 ```bash
-# Check if the package is installed
+# Check that the package is installed
 uv pip list | grep jupyter-mcp-executor
 
-# Start Jupyter and check if the extension loads
+# Check that the Jupyter Server extension is enabled
 jupyter server extension list
 ```
 
-You should see `jupyter_mcp_executor` in the list of enabled extensions.
+You should see `jupyter_mcp_executor` listed as enabled.
 
 ## Quick Start After Installation
 
 ### 1. Create a Configuration File
 
-Create a `jupyter_config.py` file in your project directory or in `~/.jupyter/`:
+Create a `jupyter_config.py` file in your project directory or in `~/.jupyter/`
+(see `examples/jupyter_config_with_execution_tools.py` for a fuller example):
 
 ```python
 c = get_config()
@@ -105,19 +80,21 @@ c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
 # Jupyter's token also authenticates MCP clients
 c.IdentityProvider.token = "change-me"
 
-# Register tools (examples)
+# Register the notebook tools
 c.MCPExtensionApp.mcp_tools = [
-    # Standard library tools
-    "os:getcwd",
-    "json:dumps",
-    "time:time",
+    f"jupyter_mcp_executor.execution_tools:{name}"
+    for name in [
+        "list_notebook_kernels", "list_notebook_sessions", "setup_notebook",
+        "switch_notebook_kernel", "shutdown_notebook", "view_notebook",
+        "read_cell", "add_code_cell", "edit_code_cell", "add_markdown_cell",
+        "edit_markdown_cell", "execute_cell", "delete_cell",
+    ]
 ]
 ```
 
 ### 2. Start Jupyter Server
 
 ```bash
-# Start Jupyter Lab with the configuration
 jupyter lab --config=jupyter_config.py
 ```
 
@@ -136,89 +113,94 @@ curl -X POST http://localhost:8888/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
 ```
 
-For JupyterHub deployments, see the JupyterHub section of the README.
+For connecting MCP clients (Claude Code, Gemini CLI, …) and for JupyterHub
+deployments, see the README.
 
 ## Installing Additional Tools
 
-The extension can work with external tool packages. Install them as needed:
+The extension can also expose tools from other packages. Install them as needed:
 
 ```bash
-# Jupyter AI Tools (for notebook and file system operations)
+# Jupyter AI Tools (notebook and file system operations)
 uv pip install jupyter-ai-tools
 
 # JupyterLab Commands Toolkit
 uv pip install jupyterlab-commands-toolkit
 ```
 
-Then configure them in your `jupyter_config.py`:
+Then add them to `mcp_tools` in your `jupyter_config.py`:
 
 ```python
 c.MCPExtensionApp.mcp_tools = [
-    # Jupyter AI Tools - Notebook operations
-    "jupyter_ai_tools.toolkits.notebook:read_notebook",
-    "jupyter_ai_tools.toolkits.notebook:edit_cell",
-
-    # File system operations
+    # ... the notebook tools above, plus:
     "jupyter_ai_tools.toolkits.file_system:read",
     "jupyter_ai_tools.toolkits.file_system:write",
-
-    # JupyterLab Commands
     "jupyterlab_commands_toolkit.tools:list_all_commands",
 ]
 ```
 
 ## Running Tests
 
-If you installed with test dependencies:
+From a development installation (Option 2):
 
 ```bash
 # Run all tests
 pytest tests/ -v
 
-# Run with coverage
-pytest --cov=jupyter_mcp_executor tests/
-
-# Run specific test file
+# Run a specific test file
 pytest tests/test_mcp_server.py -v
+
+# Lint (the version CI uses is pinned in pyproject.toml)
+ruff check jupyter_mcp_executor
+ruff format --check jupyter_mcp_executor
 ```
 
-## Updating the Package
+For coverage, install `pytest-cov` first (`uv pip install pytest-cov`), then
+run `pytest --cov=jupyter_mcp_executor tests/`.
 
-### For PyPI Installation
+## Updating
+
+### Installed from GitHub (Option 1)
 
 ```bash
-uv pip install --upgrade jupyter-mcp-executor
+uv pip install --reinstall "git+https://github.com/zqfang/jupyter-mcp-executor.git"
 ```
 
-### For Development Installation
+### Development installation (Option 2)
 
 ```bash
 cd jupyter-mcp-executor
 git pull origin main
-uv pip install -e ".[test,dev]"
+uv sync --extra test
 ```
 
 ## Troubleshooting
 
 ### Extension Not Loading
 
-If the extension doesn't appear in `jupyter server extension list`:
+If `jupyter_mcp_executor` doesn't appear in `jupyter server extension list`,
+make sure the package is installed in the same environment that runs Jupyter:
 
 ```bash
-# Reinstall in editable mode
-uv pip install -e .
+# Which Jupyter / Python is in use?
+which jupyter python
 
-# Check Jupyter configuration
+# Check Jupyter configuration paths
 jupyter --paths
 ```
 
 ### Port Already in Use
 
-If port 8080 is already in use, change it in your configuration:
+MCP is served on Jupyter's own port. If that port is taken, start Jupyter on
+another one and point your MCP client at it:
 
-```python
-c.MCPExtensionApp.mcp_port = 8081  # Use a different port
+```bash
+jupyter lab --config=jupyter_config.py --ServerApp.port=8890
+# MCP endpoint: http://localhost:8890/mcp
 ```
+
+(`c.MCPExtensionApp.mcp_port` only applies to the optional, unauthenticated
+standalone listener, which is off by default; see the README.)
 
 ### Import Errors
 
@@ -231,12 +213,12 @@ uv pip install jupyter-ai-tools jupyterlab-commands-toolkit
 
 ### uv Command Not Found
 
-If `uv` command is not recognized after installation:
+If `uv` is not recognized after installation, add its install directory to
+your PATH (the installer usually does this automatically):
 
 ```bash
-# Add uv to your PATH (the installer usually does this automatically)
 # For bash/zsh, add to ~/.bashrc or ~/.zshrc:
-export PATH="$HOME/.cargo/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 # Reload your shell
 source ~/.bashrc  # or source ~/.zshrc
@@ -248,25 +230,21 @@ source ~/.bashrc  # or source ~/.zshrc
 uv pip uninstall jupyter-mcp-executor
 ```
 
+## Alternative: Using pip
+
+```bash
+# Install from GitHub
+pip install "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+
+# Development installation
+git clone https://github.com/zqfang/jupyter-mcp-executor.git
+cd jupyter-mcp-executor
+pip install -e ".[test]"
+```
+
 ## Additional Resources
 
 - [uv Documentation](https://github.com/astral-sh/uv)
 - [Jupyter Server Extension Guide](https://jupyter-server.readthedocs.io/en/latest/developers/extensions.html)
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/)
-- [FastMCP Documentation](https://github.com/jlowin/fastmcp)
-
-## Alternative: Using pip
-
-If you prefer to use pip instead of uv:
-
-```bash
-# PyPI installation
-pip install jupyter-mcp-executor
-
-# Development installation
-git clone https://github.com/yourusername/jupyter-mcp-executor.git
-cd jupyter-mcp-executor
-pip install -e ".[test,dev]"
-```
-
-However, uv is recommended for its speed and improved dependency resolution.
+- [FastMCP Documentation](https://gofastmcp.com/)
