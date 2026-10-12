@@ -610,7 +610,14 @@ class TestSetupNotebook:
 
     @pytest.mark.asyncio
     async def test_setup_notebook_force_new_kernel(self, temp_notebook, mock_serverapp):
-        """Test force_new_kernel parameter creates a new kernel even when one exists."""
+        """force_new_kernel REPLACES the notebook's kernel; it does not add a second.
+
+        This assertion used to require 2 kernels afterwards, i.e. it encoded the leak:
+        SessionManager.create_session does not dedupe by path, so each forced call left
+        the previous session and kernel running. One notebook then had several kernels,
+        this client and JupyterLab could attach to different ones, and the abandoned
+        kernels held their memory until the server stopped.
+        """
         set_server_context(mock_serverapp)
 
         # Simulate a notebook already open with a kernel
@@ -628,8 +635,11 @@ class TestSetupNotebook:
         assert result["exists"] is True
         assert result["kernel_name"] == "python3"
 
-        # Verify a new kernel was created (should now have 2 kernels)
-        assert len(mock_serverapp.kernel_manager.kernels) == 2
+        # The old kernel is gone, not left behind: exactly one kernel, one session.
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+        assert existing_kernel_id not in mock_serverapp.kernel_manager.kernels
+        sessions = await mock_serverapp.session_manager.list_sessions()
+        assert len([s for s in sessions if s["path"] == normalized_path]) == 1
 
     @pytest.mark.asyncio
     async def test_setup_notebook_handles_dead_kernel(self, temp_notebook, mock_serverapp):

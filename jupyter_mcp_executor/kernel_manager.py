@@ -9,7 +9,11 @@ import nbformat
 from nbformat.v4 import new_notebook
 
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
-from jupyter_mcp_executor.kernel_utils import get_kernel_info, resolve_kernel_name
+from jupyter_mcp_executor.kernel_utils import (
+    get_kernel_info,
+    is_kernel_alive,
+    resolve_kernel_name,
+)
 from jupyter_mcp_executor.notebook_io import write_notebook
 from jupyter_mcp_executor.notebook_models import (
     KernelSwitchResult,
@@ -97,6 +101,26 @@ class KernelManager:
         kernel_id = None
         reused_kernel = False
 
+        if force_new_kernel:
+            # "Force new" means REPLACE, not ADD. jupyter_server's
+            # SessionManager.create_session does not deduplicate by path -- it just
+            # mints a new session id -- so starting a kernel without tearing the old
+            # session down leaves N sessions and N kernels on one notebook. The agent
+            # and JupyterLab then pick different ones (see _find_session_for_notebook),
+            # which breaks the guarantee that both drive the same kernel, and every
+            # abandoned kernel keeps its memory (GPU included) until the server stops.
+            stale_id = self.kernel_tracker.get(notebook_path)
+            stale_session = await self._find_session_for_notebook(notebook_path)
+            if stale_session and not stale_id:
+                stale_id = stale_session.get("kernel", {}).get("id")
+            await self._delete_session_for_notebook(notebook_path)
+            if stale_id:
+                await self._shutdown_kernel(stale_id)
+                self.kernel_tracker.untrack(notebook_path)
+                logger.info(
+                    f"force_new_kernel: replaced kernel {stale_id} for {notebook_path}"
+                )
+
         if not force_new_kernel:
             serverapp = get_server_context()
             existing_session = await self._find_session_for_notebook(notebook_path)
@@ -107,42 +131,37 @@ class KernelManager:
                 existing_kernel_name = kernel_info.get("name", kernel_name)
 
                 # Verify kernel is still alive
-                if serverapp and kernel_id:
-                    try:
-                        # Verify kernel exists and is accessible
-                        serverapp.kernel_manager.get_kernel(kernel_id)
-                        # Track existing kernel
-                        self.kernel_tracker.track(notebook_path, kernel_id)
-                        reused_kernel = True
-                        kernel_name = existing_kernel_name
-                        logger.info(
-                            f"Reusing existing kernel {kernel_id} ({kernel_name}) "
-                            f"for {notebook_path}"
-                        )
-                    except KeyError:
-                        # Kernel died, reset to start new one
-                        logger.info(
-                            f"Existing kernel {kernel_id} not found, will start new kernel"
-                        )
-                        kernel_id = None
+                if is_kernel_alive(serverapp, kernel_id):
+                    self.kernel_tracker.track(notebook_path, kernel_id)
+                    reused_kernel = True
+                    kernel_name = existing_kernel_name
+                    logger.info(
+                        f"Reusing existing kernel {kernel_id} ({kernel_name}) "
+                        f"for {notebook_path}"
+                    )
+                elif serverapp and kernel_id:
+                    # Kernel died, reset to start new one
+                    logger.info(
+                        f"Existing kernel {kernel_id} not found, will start new kernel"
+                    )
+                    kernel_id = None
 
             if not reused_kernel and serverapp:
                 # Fallback: a kernel may be tracked without a Jupyter session
                 # (e.g., auto-started by an execute call). Reuse it instead of
                 # starting a new kernel and losing its state.
                 tracked_id = self.kernel_tracker.get(notebook_path)
-                if tracked_id:
-                    try:
-                        kernel = serverapp.kernel_manager.get_kernel(tracked_id)
-                        kernel_id = tracked_id
-                        kernel_name = getattr(kernel, "kernel_name", kernel_name)
-                        reused_kernel = True
-                        logger.info(
-                            f"Reusing tracked kernel {kernel_id} ({kernel_name}) "
-                            f"for {notebook_path} (no session found)"
-                        )
-                    except KeyError:
-                        self.kernel_tracker.untrack(notebook_path)
+                if tracked_id and is_kernel_alive(serverapp, tracked_id):
+                    kernel = serverapp.kernel_manager.get_kernel(tracked_id)
+                    kernel_id = tracked_id
+                    kernel_name = getattr(kernel, "kernel_name", kernel_name)
+                    reused_kernel = True
+                    logger.info(
+                        f"Reusing tracked kernel {kernel_id} ({kernel_name}) "
+                        f"for {notebook_path} (no session found)"
+                    )
+                elif tracked_id:
+                    self.kernel_tracker.untrack(notebook_path)
 
         if not reused_kernel:
             # Resolve the requested kernel name strictly only when a kernel
@@ -274,36 +293,29 @@ class KernelManager:
         # 1. Tracked kernel, verified alive
         tracked_id = self.kernel_tracker.get(notebook_path)
         if tracked_id:
-            try:
-                serverapp.kernel_manager.get_kernel(tracked_id)
-            except KeyError:
-                logger.info(
-                    f"Tracked kernel {tracked_id} for {notebook_path} is gone; "
-                    f"untracking"
-                )
-                self.kernel_tracker.untrack(notebook_path)
-            else:
+            if is_kernel_alive(serverapp, tracked_id):
                 return tracked_id, False
+            logger.info(
+                f"Tracked kernel {tracked_id} for {notebook_path} is gone; untracking"
+            )
+            self.kernel_tracker.untrack(notebook_path)
 
         # 2. Existing Jupyter session
         session = await self._find_session_for_notebook(notebook_path)
         if session:
             session_kernel_id = session.get("kernel", {}).get("id")
             if session_kernel_id:
-                try:
-                    serverapp.kernel_manager.get_kernel(session_kernel_id)
-                except KeyError:
-                    logger.info(
-                        f"Session kernel {session_kernel_id} for {notebook_path} "
-                        f"is gone; starting a new kernel"
-                    )
-                else:
+                if is_kernel_alive(serverapp, session_kernel_id):
                     self.kernel_tracker.track(notebook_path, session_kernel_id)
                     logger.info(
                         f"Attached to existing session kernel {session_kernel_id} "
                         f"for {notebook_path}"
                     )
                     return session_kernel_id, False
+                logger.info(
+                    f"Session kernel {session_kernel_id} for {notebook_path} "
+                    f"is gone; starting a new kernel"
+                )
 
         # 3. Start a new session-backed kernel.  The name comes from notebook
         # metadata here (not an explicit user request), so resolution stays
@@ -476,6 +488,8 @@ class KernelManager:
             logger.debug(f"Checking for existing session for: {notebook_path}")
             logger.debug(f"Found {len(sessions)} active sessions")
 
+            matches: list[dict[str, Any]] = []
+
             # Find matching notebook session
             for session in sessions:
                 session_path = session.get("path", "")
@@ -535,11 +549,24 @@ class KernelManager:
                         pass
 
                 if path_match and kernel_id:
-                    logger.info(
-                        f"Found existing session for {notebook_path} "
-                        f"with kernel {kernel_id} (matched on: {session_path})"
+                    matches.append(session)
+
+            if matches:
+                best = self._pick_session(notebook_path, matches)
+                if len(matches) > 1:
+                    logger.warning(
+                        f"{len(matches)} sessions exist for {notebook_path} "
+                        f"({[m.get('kernel', {}).get('id') for m in matches]}); "
+                        f"using {best.get('kernel', {}).get('id')}. Duplicate sessions "
+                        f"mean a kernel was started without tearing down the previous "
+                        f"one -- the agent and JupyterLab can end up on different kernels."
                     )
-                    return session
+                else:
+                    logger.info(
+                        f"Found existing session for {notebook_path} with kernel "
+                        f"{best.get('kernel', {}).get('id')}"
+                    )
+                return best
 
             logger.debug(
                 f"No existing session found for {notebook_path} "
@@ -550,6 +577,33 @@ class KernelManager:
             logger.warning(f"Error checking for existing session: {e}", exc_info=True)
 
         return None
+
+    def _pick_session(
+        self, notebook_path: str, matches: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Choose which session to attach to when several match one notebook.
+
+        Returning "whichever came first out of list_sessions()" is not good enough:
+        with duplicates present, this client and JupyterLab can settle on different
+        kernels for the same notebook, so the user edits state the agent cannot see
+        and vice versa. Preference order:
+
+        1. the kernel already tracked for this notebook (keeps this client stable),
+        2. the session with the most websocket connections -- that is the one a
+           JupyterLab tab is actually looking at, so the human wins the tie,
+        3. the most recently active session.
+        """
+        tracked_id = self.kernel_tracker.get(notebook_path)
+
+        def rank(session: dict[str, Any]) -> tuple[int, int, str]:
+            kernel = session.get("kernel", {}) or {}
+            return (
+                1 if kernel.get("id") == tracked_id else 0,
+                kernel.get("connections") or 0,
+                str(kernel.get("last_activity") or ""),
+            )
+
+        return max(matches, key=rank)
 
     async def _start_kernel_for_notebook(
         self, notebook_path: str, kernel_name: str
