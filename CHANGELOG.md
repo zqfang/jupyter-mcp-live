@@ -9,7 +9,7 @@
 - **MCP progress notifications during cell execution.** `execute_cell`,
   `add_code_cell` and `edit_code_cell` send `notifications/progress` while the
   cell runs, e.g. `analysis.ipynb cell 3 · 12s · 5 outputs · tick 4`. They are
-  throttled to one per second on output, with a heartbeat every 5s for silent
+  throttled to one per second on output, with a heartbeat every 30s for silent
   cells and `waiting for kernel` while another execution holds the kernel.
   This also works through Code Mode `execute`, and tool signatures are
   unchanged. Clients that reset request timeouts on progress no longer treat

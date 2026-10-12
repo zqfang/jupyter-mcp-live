@@ -30,9 +30,10 @@ class ProgressConfig:
     """Configuration for MCP progress notifications during execution."""
 
     # Send a notification at least this often while nothing else was sent,
-    # so silent cells still report (and clients that reset their request
-    # timeout on progress keep waiting).
-    heartbeat_interval: float = 5.0
+    # so silent cells still report. Must stay well below 60s: clients that
+    # reset their request timeout on progress (e.g. the MCP TS SDK, default
+    # timeout 60s) would otherwise give up on a long, silent cell.
+    heartbeat_interval: float = 30.0
     # Never send output-driven notifications more often than this.
     min_interval: float = 1.0
     message_max_chars: int = 120  # whole progress message, truncated with "…"
