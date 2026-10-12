@@ -41,6 +41,8 @@ c.MCPExtensionApp.mcp_tools = [
     "jupyter_mcp_executor.execution_tools:setup_notebook",
     "jupyter_mcp_executor.execution_tools:switch_notebook_kernel",
     "jupyter_mcp_executor.execution_tools:shutdown_notebook",
+    "jupyter_mcp_executor.execution_tools:interrupt_notebook_kernel",
+    "jupyter_mcp_executor.execution_tools:restart_notebook_kernel",
     "jupyter_mcp_executor.execution_tools:view_notebook",
     "jupyter_mcp_executor.execution_tools:add_code_cell",
     "jupyter_mcp_executor.execution_tools:edit_code_cell",

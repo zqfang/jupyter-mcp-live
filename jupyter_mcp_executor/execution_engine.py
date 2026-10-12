@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from jupyter_core.utils import ensure_async
+
 from jupyter_mcp_executor.execution_progress import ExecutionProgress
 from jupyter_mcp_executor.execution_utils import OutputCallback, execute_code_on_kernel
 from jupyter_mcp_executor.kernel_manager import KernelManager
@@ -106,6 +108,13 @@ class ExecutionEngine:
         self.kernel_service = kernel_service or KernelManager()
         self._clients: dict[str, Any] = {}
         self._kernel_locks: dict[str, asyncio.Lock] = {}
+
+    def forget_kernel_client(self, kernel_id: str) -> None:
+        """Drop the cached client so the next execution reconnects.
+
+        Call after the kernel was restarted outside this engine.
+        """
+        self._drop_client(kernel_id)
 
     def _drop_client(self, kernel_id: str) -> None:
         """Discard the cached client for a kernel (e.g., kernel died)."""
@@ -218,7 +227,14 @@ class ExecutionEngine:
             try:
                 client = await self._get_client(kernel, kernel_id)
                 result_dict = await execute_code_on_kernel(
-                    client, code, kernel_id, timeout, on_output=callback
+                    client,
+                    code,
+                    kernel_id,
+                    timeout,
+                    on_output=callback,
+                    interrupt=lambda: ensure_async(
+                        kernel_manager.interrupt_kernel(kernel_id)
+                    ),
                 )
             except Exception:
                 # Connection-level failure: drop the cached client so the

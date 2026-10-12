@@ -2,6 +2,27 @@
 
 
 
+## 0.6.0 (Unreleased)
+
+### Enhancements made
+
+- **New tools `interrupt_notebook_kernel` and `restart_notebook_kernel`.**
+  Interrupt stops the running cell with KeyboardInterrupt and keeps the
+  variables. Restart keeps the same kernel (and JupyterLab session) but clears
+  all state. Both work on cells started from JupyterLab too, and neither ever
+  starts a kernel.
+- **Runaway cells are interrupted automatically:**
+  - when they hit the execution timeout, the kernel is interrupted and drained
+    to idle (bounded by `interrupt_grace_secs`, 10s), so the next execution
+    no longer queues behind them;
+  - when the MCP request is cancelled.
+
+### Bugs fixed
+
+- A cancelled execution left its iopub collector running until the deadline,
+  up to 10 hours, reading the shared kernel client's channel. Both inner tasks
+  are now always finished.
+
 ## 0.5.0 (Unreleased)
 
 ### Enhancements made

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 **Project**: Jupyter MCP Executor
-**Version**: 0.5.0
+**Version**: 0.6.0
 **Python**: 3.11+
 **Status**: Production Ready
 
@@ -165,7 +165,7 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 - `mcp_handler.py` - Authenticated `{base_url}mcp` Tornado handler (`MCPHandler`)
 - `asgi_bridge.py` - Runs the FastMCP Starlette app inside Tornado
   (`run_asgi`, `EmbeddedASGIApp` lifespan owner)
-- `execution_tools.py` - Public MCP interface (13 tool functions, decorated with `@collaborative_tool`)
+- `execution_tools.py` - Public MCP interface (15 tool functions, decorated with `@collaborative_tool`)
 
 ### Service Layer
 
@@ -200,7 +200,7 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 
 ## MCP Functions (Public API)
 
-All functions in `execution_tools.py` (13 tools):
+All functions in `execution_tools.py` (15 tools):
 
 **Kernel/session management:**
 
@@ -209,20 +209,22 @@ All functions in `execution_tools.py` (13 tools):
 3. **setup_notebook(path, kernel_name, force_new_kernel)** - Create notebook and start/reuse kernel
 4. **switch_notebook_kernel(path, kernel_name)** - Switch to different kernel
 5. **shutdown_notebook(path, shutdown_kernel)** - Shutdown kernel session
+6. **interrupt_notebook_kernel(path)** - Stop the running cell (KeyboardInterrupt); variables kept
+7. **restart_notebook_kernel(path)** - Restart the same kernel; all state cleared
 
 **Cell operations (fine-grained, one tool per operation):**
 
-6. **add_code_cell(path, source, position_index, execute)** - Add code cell (executes by default)
-7. **edit_code_cell(path, position_index, source, execute)** - Edit code cell (re-executes by default)
-8. **add_markdown_cell(path, source, position_index)** - Add markdown cell
-9. **edit_markdown_cell(path, position_index, source)** - Edit markdown cell
-10. **delete_cell(path, position_index)** - Delete cell (later cells shift down)
-11. **execute_cell(path, position_index)** - Execute an existing code cell
+8. **add_code_cell(path, source, position_index, execute)** - Add code cell (executes by default)
+9. **edit_code_cell(path, position_index, source, execute)** - Edit code cell (re-executes by default)
+10. **add_markdown_cell(path, source, position_index)** - Add markdown cell
+11. **edit_markdown_cell(path, position_index, source)** - Edit markdown cell
+12. **delete_cell(path, position_index)** - Delete cell (later cells shift down)
+13. **execute_cell(path, position_index)** - Execute an existing code cell
 
 **Read-only queries:**
 
-12. **view_notebook(path)** - All cells in order (list index == position_index)
-13. **read_cell(path, position_index/cell_id/execution_count)** - One cell;
+14. **view_notebook(path)** - All cells in order (list index == position_index)
+15. **read_cell(path, position_index/cell_id/execution_count)** - One cell;
     the returned dict includes `position`
 
 **Tool design rules** (the primary client path is FastMCP Code Mode):
@@ -312,10 +314,12 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-239 tests total across:
+258 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
+- `tests/test_kernel_control.py` - Interrupt/restart tools and the lookup-only
+  `find_kernel_for_notebook`
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
 - `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
@@ -477,6 +481,23 @@ executions instead of everything appearing when the MCP tool call returns:
   (full `ExecutionResult`) is unaffected either way.
 
 ### Execution Internals
+
+- **Stopping runaway cells**: `execute_code_on_kernel()` takes an `interrupt`
+  callback (the engine passes `kernel_manager.interrupt_kernel`).
+  - **On timeout**, it interrupts the kernel and drains output until idle,
+    bounded by `EXECUTION_CONFIG.interrupt_grace_secs` (10s), so the next
+    execution doesn't queue behind the runaway cell. The result is
+    `status="error"`: "…; the kernel was interrupted", or "…still busy; use
+    restart_notebook_kernel" if it ignores SIGINT.
+  - **On cancellation** of the MCP request (fastmcp 4 propagates it into tools
+    called from Code Mode), it interrupts the kernel, then re-raises.
+  - **Either way**, both inner tasks (shell wait and iopub collector) are always
+    finished, so no orphaned collector keeps reading the shared client.
+  - `interrupt_notebook_kernel` and `restart_notebook_kernel` resolve the
+    kernel with `KernelManager.find_kernel_for_notebook()` (tracked kernel,
+    then Jupyter session; never starts one). Restart keeps the kernel id, and
+    the tool drops the engine's cached client (`forget_kernel_client`) so the
+    next execution reconnects.
 
 - **Progress notifications**: while `execute_cell` / `add_code_cell` /
   `edit_code_cell` run, `ExecutionEngine.execute_cell_code()` sends MCP

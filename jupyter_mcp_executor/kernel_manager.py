@@ -17,6 +17,7 @@ from jupyter_mcp_executor.kernel_utils import (
 )
 from jupyter_mcp_executor.notebook_io import write_notebook
 from jupyter_mcp_executor.notebook_models import (
+    KernelActionResult,
     KernelSwitchResult,
     NotebookSetupResult,
     ShutdownResult,
@@ -291,11 +292,49 @@ class KernelManager:
         if not serverapp:
             return self.kernel_tracker.get(notebook_path), False
 
+        # 1-2. Reuse the tracked kernel or an existing session's kernel
+        existing_id = await self.find_kernel_for_notebook(notebook_path)
+        if existing_id:
+            return existing_id, False
+
+        # 3. Start a new session-backed kernel.  The name comes from notebook
+        # metadata here (not an explicit user request), so resolution stays
+        # lenient: an alien kernelspec name falls back to python3 with a
+        # warning instead of making every execution fail.
+        if kernel_name is None:
+            kernel_name = (
+                await self._read_notebook_kernel_name(notebook_path) or "python3"
+            )
+        available_kernels = await self.list_notebook_kernels()
+        kernel_name = resolve_kernel_name(
+            kernel_name, available_kernels.get("kernelspecs", {}), fallback="python3"
+        )
+        kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
+        return kernel_id, kernel_id is not None
+
+    async def find_kernel_for_notebook(self, notebook_path: str) -> str | None:
+        """Return the notebook's running kernel without ever starting one.
+
+        Lookup order: the tracked kernel (if still alive), then the kernel of
+        an existing Jupyter session (e.g. the notebook is open in JupyterLab),
+        which then becomes the tracked kernel.
+
+        Args:
+            notebook_path: Path to notebook
+
+        Returns:
+            The kernel ID, or None if the notebook has no running kernel.
+        """
+        notebook_path = normalize_path(notebook_path)
+        serverapp = get_server_context()
+        if not serverapp:
+            return self.kernel_tracker.get(notebook_path)
+
         # 1. Tracked kernel, verified alive
         tracked_id = self.kernel_tracker.get(notebook_path)
         if tracked_id:
             if is_kernel_alive(serverapp, tracked_id):
-                return tracked_id, False
+                return tracked_id
             logger.info(
                 f"Tracked kernel {tracked_id} for {notebook_path} is gone; untracking"
             )
@@ -312,26 +351,73 @@ class KernelManager:
                         f"Attached to existing session kernel {session_kernel_id} "
                         f"for {notebook_path}"
                     )
-                    return session_kernel_id, False
+                    return session_kernel_id
                 logger.info(
-                    f"Session kernel {session_kernel_id} for {notebook_path} "
-                    f"is gone; starting a new kernel"
+                    f"Session kernel {session_kernel_id} for {notebook_path} is gone"
                 )
 
-        # 3. Start a new session-backed kernel.  The name comes from notebook
-        # metadata here (not an explicit user request), so resolution stays
-        # lenient: an alien kernelspec name falls back to python3 with a
-        # warning instead of making every execution fail.
-        if kernel_name is None:
-            kernel_name = (
-                await self._read_notebook_kernel_name(notebook_path) or "python3"
+        return None
+
+    async def _require_running_kernel(self, notebook_path: str) -> str:
+        """Return the notebook's running kernel or raise with a recovery hint."""
+        kernel_id = await self.find_kernel_for_notebook(notebook_path)
+        if kernel_id is None:
+            msg = (
+                f"No running kernel for {notebook_path}; call setup_notebook "
+                "first (or execute a cell, which starts one)"
             )
-        available_kernels = await self.list_notebook_kernels()
-        kernel_name = resolve_kernel_name(
-            kernel_name, available_kernels.get("kernelspecs", {}), fallback="python3"
+            raise ValueError(msg)
+        return kernel_id
+
+    async def interrupt_notebook_kernel(self, notebook_path: str) -> KernelActionResult:
+        """Interrupt the notebook's running cell; kernel state is kept.
+
+        Args:
+            notebook_path: Path to notebook
+
+        Returns:
+            KernelActionResult with the kernel ID
+
+        Raises:
+            ValueError: If the notebook has no running kernel
+        """
+        notebook_path = normalize_path(notebook_path)
+        kernel_id = await self._require_running_kernel(notebook_path)
+        serverapp = require_server_context()
+        await ensure_async(serverapp.kernel_manager.interrupt_kernel(kernel_id))
+        logger.info(f"Interrupted kernel {kernel_id} for {notebook_path}")
+        return KernelActionResult(
+            kernel_id=kernel_id,
+            message=(
+                "Interrupt sent: the running cell stops with KeyboardInterrupt; "
+                "variables are kept"
+            ),
         )
-        kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
-        return kernel_id, kernel_id is not None
+
+    async def restart_notebook_kernel(self, notebook_path: str) -> KernelActionResult:
+        """Restart the notebook's kernel (same kernel ID, all state cleared).
+
+        Args:
+            notebook_path: Path to notebook
+
+        Returns:
+            KernelActionResult with the kernel ID
+
+        Raises:
+            ValueError: If the notebook has no running kernel
+        """
+        notebook_path = normalize_path(notebook_path)
+        kernel_id = await self._require_running_kernel(notebook_path)
+        serverapp = require_server_context()
+        await ensure_async(serverapp.kernel_manager.restart_kernel(kernel_id))
+        logger.info(f"Restarted kernel {kernel_id} for {notebook_path}")
+        return KernelActionResult(
+            kernel_id=kernel_id,
+            message=(
+                "Kernel restarted: all variables and imports were cleared; "
+                "re-run setup cells before continuing"
+            ),
+        )
 
     async def _read_notebook_kernel_name(self, notebook_path: str) -> str | None:
         """Read the kernelspec name from notebook metadata, if present."""

@@ -12,6 +12,14 @@ logger = logging.getLogger(__name__)
 
 # Async callback fired once per collected output (live streaming hook)
 OutputCallback = Callable[[dict[str, Any]], Awaitable[None]]
+# Best-effort kernel interrupt (SIGINT to the running cell)
+InterruptFn = Callable[[], Awaitable[None]]
+
+# Error text collect_outputs reports when its deadline passes before idle
+COLLECT_TIMEOUT_MSG = "Execution timed out while collecting outputs"
+# Extra time the iopub collector gets past the execution deadline, so output
+# the kernel already sent is still drained when the shell wait times out.
+IOPUB_DRAIN_GRACE_SECS = 5
 
 
 async def wait_for_execute_reply(
@@ -71,7 +79,7 @@ async def collect_outputs(
     client: Any,
     msg_id: str,
     execution_count: int | None,
-    deadline: float,
+    deadline: float | Callable[[], float],
     on_output: OutputCallback | None = None,
 ) -> tuple[list[dict], str, str | None]:
     """Collect outputs from iopub channel until the kernel reports idle.
@@ -82,7 +90,9 @@ async def collect_outputs(
         execution_count: Execution count from shell reply (for validation),
             or None when collecting concurrently with the shell wait —
             execute_result outputs then carry their own iopub-reported count
-        deadline: Absolute event-loop time after which collection times out
+        deadline: Absolute event-loop time after which collection times out,
+            or a function returning it (re-read every poll, so a caller can
+            extend it, e.g. to drain output after interrupting the kernel)
         on_output: Optional async callback fired once per collected output as
             it arrives (live streaming). Callback errors are logged and
             disable further callbacks; they never abort execution.
@@ -96,10 +106,11 @@ async def collect_outputs(
 
     loop = asyncio.get_running_loop()
     while True:
-        remaining = deadline - loop.time()
+        current_deadline = deadline() if callable(deadline) else deadline
+        remaining = current_deadline - loop.time()
         if remaining <= 0:
             status = "error"
-            error_msg = "Execution timed out while collecting outputs"
+            error_msg = COLLECT_TIMEOUT_MSG
             break
 
         try:
@@ -199,13 +210,26 @@ async def execute_code_on_kernel(
     client: Any,
     code: str,
     kernel_id: str,
-    timeout: int,
+    timeout: float,
     on_output: OutputCallback | None = None,
+    interrupt: InterruptFn | None = None,
+    interrupt_grace: float | None = None,
 ) -> dict[str, Any]:
     """Execute code on kernel and collect results.
 
     The shell-reply wait and iopub output collection share a single deadline,
     so a hung kernel blocks for at most `timeout` seconds total (not 2x).
+
+    When ``interrupt`` is given, the kernel is interrupted instead of being
+    left busy:
+
+    - on timeout, then output is drained until the kernel reports idle
+      (bounded by ``interrupt_grace``), so the next execution doesn't queue
+      behind a runaway cell;
+    - when this coroutine is cancelled (e.g. the MCP request was cancelled).
+
+    Either way both inner tasks are always finished, so no collector keeps
+    reading the shared client's iopub channel after this returns.
 
     Args:
         client: Kernel client with started channels
@@ -214,6 +238,9 @@ async def execute_code_on_kernel(
         timeout: Execution timeout in seconds (total budget)
         on_output: Optional async callback fired per collected output
             (live streaming); see collect_outputs
+        interrupt: Optional best-effort kernel interrupt
+        interrupt_grace: Seconds to wait for idle after a timeout interrupt;
+            defaults to ``EXECUTION_CONFIG.interrupt_grace_secs``
 
     Returns:
         dict with execution_count, outputs, status, and optional error
@@ -224,6 +251,12 @@ async def execute_code_on_kernel(
 
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
+    iopub_deadline = deadline + IOPUB_DRAIN_GRACE_SECS
+    grace = (
+        EXECUTION_CONFIG.interrupt_grace_secs
+        if interrupt_grace is None
+        else interrupt_grace
+    )
 
     # Wait for the execute_reply (shell) and collect outputs (iopub)
     # CONCURRENTLY.  The execute_reply only arrives when execution finishes,
@@ -231,13 +264,47 @@ async def execute_code_on_kernel(
     # outputs must be consumed while the code is still running for the
     # on_output streaming callback to deliver live updates.  The iopub task
     # gets a small grace past the shared deadline so already-buffered output
-    # is still drained when the kernel hits the timeout.
+    # is still drained when the kernel hits the timeout; its deadline is
+    # re-read every poll so a timeout interrupt can extend it.
     shell_task = asyncio.create_task(wait_for_execute_reply(client, msg_id, deadline))
     iopub_task = asyncio.create_task(
-        collect_outputs(client, msg_id, None, deadline + 5, on_output=on_output)
+        collect_outputs(
+            client, msg_id, None, lambda: iopub_deadline, on_output=on_output
+        )
     )
-    execution_count = await shell_task
-    outputs, status, error_msg = await iopub_task
+    interrupted = False
+    try:
+        execution_count = await shell_task
+        if execution_count is None and interrupt and loop.time() >= deadline:
+            logger.warning(
+                f"Execution on kernel {kernel_id} timed out after {timeout}s; "
+                "interrupting the kernel"
+            )
+            await _interrupt_kernel(interrupt, kernel_id)
+            interrupted = True
+            # From here only the interrupt grace bounds the drain.
+            iopub_deadline = loop.time() + grace
+        outputs, status, error_msg = await iopub_task
+    except asyncio.CancelledError:
+        if interrupt is not None:
+            logger.info(f"Execution on kernel {kernel_id} cancelled; interrupting")
+            await asyncio.shield(_interrupt_kernel(interrupt, kernel_id))
+        raise
+    finally:
+        await _finish_tasks(shell_task, iopub_task)
+
+    if interrupted:
+        status = "error"
+        if error_msg == COLLECT_TIMEOUT_MSG:
+            error_msg = (
+                f"Execution timed out after {timeout}s; the interrupt did not "
+                f"stop it within {grace}s — the kernel is still busy; use "
+                "restart_notebook_kernel"
+            )
+        else:
+            error_msg = (
+                f"Execution timed out after {timeout}s; the kernel was interrupted"
+            )
 
     # execute_result messages were collected before the shell reply supplied
     # the authoritative execution_count; reconcile them now (the kernel
@@ -262,3 +329,22 @@ async def execute_code_on_kernel(
         result["error"] = error_msg
 
     return result
+
+
+async def _interrupt_kernel(interrupt: InterruptFn, kernel_id: str) -> bool:
+    """Interrupt the kernel; log and swallow failures."""
+    try:
+        await interrupt()
+    except Exception:  # best-effort; the caller reports the outcome
+        logger.warning(f"Could not interrupt kernel {kernel_id}", exc_info=True)
+        return False
+    return True
+
+
+async def _finish_tasks(*tasks: asyncio.Task[Any]) -> None:
+    """Cancel tasks that are still running and wait until they have ended."""
+    pending = [task for task in tasks if not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)

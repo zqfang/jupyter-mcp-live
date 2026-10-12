@@ -1094,6 +1094,164 @@ class TestExecutionMessageHandling:
         assert result["execution_count"] == 4
 
 
+class HangingKernelClient:
+    """Fake client whose cell never finishes on its own.
+
+    An interrupt makes it behave like a real kernel: an error output
+    (KeyboardInterrupt) then idle. With stops_on_interrupt=False it ignores
+    the interrupt (e.g. stuck in C code).
+    """
+
+    def __init__(self, stops_on_interrupt: bool = True):
+        self.stops_on_interrupt = stops_on_interrupt
+        self.interrupt_calls = 0
+        self.iopub_calls = 0
+        self.iopub_active = 0
+        self._pending: list[dict] = [
+            {
+                "header": {"msg_type": "stream"},
+                "parent_header": {"msg_id": "msg-hang"},
+                "content": {"name": "stdout", "text": "started\n"},
+            }
+        ]
+
+    def execute(self, _code):
+        return "msg-hang"
+
+    async def interrupt(self):
+        self.interrupt_calls += 1
+        if self.stops_on_interrupt:
+            self._pending += [
+                {
+                    "header": {"msg_type": "error"},
+                    "parent_header": {"msg_id": "msg-hang"},
+                    "content": {
+                        "ename": "KeyboardInterrupt",
+                        "evalue": "",
+                        "traceback": ["KeyboardInterrupt"],
+                    },
+                },
+                {
+                    "header": {"msg_type": "status"},
+                    "parent_header": {"msg_id": "msg-hang"},
+                    "content": {"execution_state": "idle"},
+                },
+            ]
+
+    async def get_shell_msg(self, timeout=None):
+        await asyncio.sleep(timeout or 0)
+        raise Empty
+
+    async def get_iopub_msg(self, timeout=None):
+        self.iopub_calls += 1
+        self.iopub_active += 1
+        try:
+            if self._pending:
+                return self._pending.pop(0)
+            await asyncio.sleep(min(timeout or 0, 0.02))
+            raise Empty
+        finally:
+            self.iopub_active -= 1
+
+
+class TestTimeoutInterruptAndCancel:
+    """Timeouts and cancellation stop the kernel instead of leaving it busy."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_interrupts_kernel_and_drains_to_idle(self):
+        client = HangingKernelClient()
+
+        result = await execute_code_on_kernel(
+            client,
+            "while True: pass",
+            "k1",
+            timeout=0.2,
+            interrupt=client.interrupt,
+            interrupt_grace=2,
+        )
+
+        assert client.interrupt_calls == 1
+        assert result["status"] == "error"
+        assert "timed out after 0.2s; the kernel was interrupted" in result["error"]
+        output_types = [o["output_type"] for o in result["outputs"]]
+        assert output_types == ["stream", "error"]
+
+    @pytest.mark.asyncio
+    async def test_interrupt_that_does_not_stop_kernel_reports_still_busy(self):
+        client = HangingKernelClient(stops_on_interrupt=False)
+
+        result = await execute_code_on_kernel(
+            client,
+            "stuck_in_c()",
+            "k1",
+            timeout=0.2,
+            interrupt=client.interrupt,
+            interrupt_grace=0.3,
+        )
+
+        assert client.interrupt_calls == 1
+        assert result["status"] == "error"
+        assert "still busy" in result["error"]
+        assert "restart_notebook_kernel" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_timeout_without_interrupt_keeps_previous_behavior(
+        self, monkeypatch
+    ):
+        # Shorten the existing post-deadline drain window to keep this fast.
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_utils.IOPUB_DRAIN_GRACE_SECS", 0.2
+        )
+        client = HangingKernelClient()
+
+        result = await execute_code_on_kernel(client, "x", "k1", timeout=0.2)
+
+        assert client.interrupt_calls == 0
+        assert result["status"] == "error"
+        assert "timed out" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_cancel_interrupts_kernel_and_stops_collector(self):
+        client = HangingKernelClient()
+        task = asyncio.create_task(
+            execute_code_on_kernel(
+                client, "x", "k1", timeout=60, interrupt=client.interrupt
+            )
+        )
+        await asyncio.sleep(0.1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert client.interrupt_calls == 1
+        # No orphaned iopub collector keeps reading the shared client.
+        calls = client.iopub_calls
+        await asyncio.sleep(0.1)
+        assert client.iopub_active == 0
+        assert client.iopub_calls == calls
+
+    @pytest.mark.asyncio
+    async def test_failing_interrupt_is_logged_not_raised(self):
+        client = HangingKernelClient()
+
+        async def broken_interrupt():
+            msg = "kernel gone"
+            raise RuntimeError(msg)
+
+        result = await execute_code_on_kernel(
+            client,
+            "x",
+            "k1",
+            timeout=0.2,
+            interrupt=broken_interrupt,
+            interrupt_grace=0.3,
+        )
+
+        assert result["status"] == "error"
+        assert "still busy" in result["error"]
+
+
 class TestSessionMatching:
     """Regression tests for session-to-notebook matching."""
 

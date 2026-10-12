@@ -157,6 +157,54 @@ async def shutdown_notebook(
 
 # Apply collaborative awareness
 @collaborative_tool(user=user_info)
+async def interrupt_notebook_kernel(notebook_path: str) -> dict[str, Any]:
+    """Interrupt the cell currently running in a notebook's kernel.
+
+    Like JupyterLab's stop button: the running cell ends with
+    KeyboardInterrupt and all variables are KEPT. Use it when a cell hangs or
+    runs much longer than intended (including cells started from JupyterLab).
+    If the kernel is still busy afterwards (e.g. stuck in C code), use
+    restart_notebook_kernel.
+
+    Args:
+        notebook_path: Path to the notebook file (relative or absolute)
+
+    Returns:
+        dict with kernel_id and message
+
+    Raises:
+        ValueError: If the notebook has no running kernel
+    """
+    result = await container.kernel_manager.interrupt_notebook_kernel(notebook_path)
+    return result.model_dump()
+
+
+# Apply collaborative awareness
+@collaborative_tool(user=user_info)
+async def restart_notebook_kernel(notebook_path: str) -> dict[str, Any]:
+    """Restart a notebook's kernel, clearing ALL variables and imports.
+
+    Keeps the same kernel (and its JupyterLab session), but its state is
+    gone: re-run setup/import cells before continuing. Use it when
+    interrupt_notebook_kernel did not stop a cell or the kernel is wedged.
+
+    Args:
+        notebook_path: Path to the notebook file (relative or absolute)
+
+    Returns:
+        dict with kernel_id and message
+
+    Raises:
+        ValueError: If the notebook has no running kernel
+    """
+    result = await container.kernel_manager.restart_notebook_kernel(notebook_path)
+    # The restarted kernel needs fresh channels; drop the cached client.
+    container.execution_engine.forget_kernel_client(result.kernel_id)
+    return result.model_dump()
+
+
+# Apply collaborative awareness
+@collaborative_tool(user=user_info)
 async def execute_cell(
     notebook_path: str,
     position_index: int,
@@ -435,9 +483,11 @@ __all__ = [
     "edit_markdown_cell",
     "execute_cell",
     "get_server_context",
+    "interrupt_notebook_kernel",
     "list_notebook_kernels",
     "list_notebook_sessions",
     "read_cell",
+    "restart_notebook_kernel",
     "set_server_context",
     "setup_notebook",
     "shutdown_notebook",
