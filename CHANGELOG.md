@@ -16,6 +16,12 @@
     to idle (bounded by `interrupt_grace_secs`, 10s), so the next execution
     no longer queues behind them;
   - when the MCP request is cancelled.
+- **New tool `view_cell_image`** shows the model a cell's plots as real
+  images (PNG/JPEG/GIF/WEBP, at most 4 per call) instead of the
+  `[Filtered image/png ...]` placeholder. It also works from Code Mode
+  scripts: the `CodeModeImageForwarder` middleware moves image blocks out of
+  nested `call_tool()` results (the script gets the JSON summary, never
+  base64) and attaches them to the `execute` response (at most 8).
 
 ### Changed
 

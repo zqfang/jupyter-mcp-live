@@ -29,6 +29,7 @@ from traitlets import Int, Unicode
 from traitlets.config.configurable import LoggingConfigurable
 
 from jupyter_mcp_executor.asgi_bridge import EmbeddedASGIApp
+from jupyter_mcp_executor.code_mode_images import CodeModeImageForwarder
 
 logger = logging.getLogger(__name__)
 
@@ -297,8 +298,13 @@ class MCPServer(LoggingConfigurable):
         ## code_mode = CodeMode(discovery_tools=[Search(default_detail="detailed"), GetSchemas()])
         # for under 20 tools, ListTools let LLM see everything upfront can be faster than multiple search round-trips
         code_mode = build_code_mode()
-        # Initialize FastMCP and tools registry
-        self.mcp = FastMCP(self.name, transforms=[code_mode])
+        # Initialize FastMCP and tools registry. The forwarder lets images from
+        # tools called inside Code Mode scripts (view_cell_image) reach the model.
+        self.mcp = FastMCP(
+            self.name,
+            transforms=[code_mode],
+            middleware=[CodeModeImageForwarder(code_mode.execute_tool_name)],
+        )
         self._registered_tools = {}
         # Set by _run_http_async_without_signals; stop_server() must not
         # AttributeError when called before the server task has started.

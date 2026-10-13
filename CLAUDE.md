@@ -150,6 +150,17 @@ filter never mutates the original dicts):
   results over `OUTPUT_FILTER_CONFIG.max_text_length` (4000 chars) — is
   truncated head+tail with an omission marker.
 
+**Images for the model** (`view_cell_image`): returns a `ToolResult` whose
+`structured_content` is a JSON summary and whose `content` carries the cell's
+raster images as `ImageContent` (`IMAGE_CONFIG`: PNG/JPEG/GIF/WEBP, 4 per
+call, 5MB each; SVG is skipped with a hint). Code Mode would drop those
+blocks — `call_tool()` hands the sandbox only structured content or text — so
+`CodeModeImageForwarder` (`code_mode_images.py`, installed by `MCPServer`)
+intercepts nested calls (they run through the middleware chain), moves their
+images into a context-var sink, and appends them to the `execute` response
+(at most `max_images_per_response`, 8). Direct, non-Code-Mode calls pass
+through unchanged.
+
 **Kernel name resolution is strict for explicit requests**:
 `resolve_kernel_name()` raises `ValueError` (listing available kernels) when
 an explicitly requested kernel can't be resolved — it no longer silently
@@ -162,10 +173,12 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 
 - `extension.py` - Jupyter Server extension (`MCPExtensionApp`)
 - `mcp_server.py` - FastMCP server wrapper (`MCPServer`)
+- `code_mode_images.py` - `CodeModeImageForwarder` middleware: images from
+  tools called in Code Mode scripts reach the `execute` response
 - `mcp_handler.py` - Authenticated `{base_url}mcp` Tornado handler (`MCPHandler`)
 - `asgi_bridge.py` - Runs the FastMCP Starlette app inside Tornado
   (`run_asgi`, `EmbeddedASGIApp` lifespan owner)
-- `execution_tools.py` - Public MCP interface (15 tool functions, decorated with `@collaborative_tool`)
+- `execution_tools.py` - Public MCP interface (16 tool functions, decorated with `@collaborative_tool`)
 
 ### Service Layer
 
@@ -186,10 +199,11 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 ### Foundation/Utilities
 
 - `notebook_models.py` - Dataclasses (CellIdentifier, ExecutionResult, etc.)
-- `notebook_config.py` - Configuration constants (EXECUTION_CONFIG, OUTPUT_FILTER_CONFIG)
+- `notebook_config.py` - Configuration constants (EXECUTION_CONFIG, OUTPUT_FILTER_CONFIG, IMAGE_CONFIG)
 - `kernel_utils.py` - Kernel detection and language resolution
 - `kernel_tracker.py` - Tracks kernel sessions per notebook
 - `output_filter.py` - Filter large outputs for token efficiency
+- `cell_images.py` - Extract viewable images from cell outputs (`CellImages`)
 - `execution_progress.py` - MCP progress notifications during cell execution
   (`ExecutionProgress`)
 - `output_converter.py` - Output format conversion
@@ -200,7 +214,7 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 
 ## MCP Functions (Public API)
 
-All functions in `execution_tools.py` (15 tools):
+All functions in `execution_tools.py` (16 tools):
 
 **Kernel/session management:**
 
@@ -226,6 +240,8 @@ All functions in `execution_tools.py` (15 tools):
 14. **view_notebook(path)** - All cells in order (list index == position_index)
 15. **read_cell(path, position_index/cell_id/execution_count)** - One cell;
     the returned dict includes `position`
+16. **view_cell_image(path, position_index/cell_id/execution_count)** - The
+    cell's plots as MCP image content (works inside Code Mode scripts)
 
 **Tool design rules** (the primary client path is FastMCP Code Mode):
 
@@ -314,7 +330,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-269 tests total across:
+294 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -331,6 +347,9 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
   limits)
 - `tests/test_extension.py` - Extension tests (endpoint traits, both serving modes)
+- `tests/test_cell_images.py` - Image extraction and the `view_cell_image` tool
+- `tests/test_code_mode_images.py` - Image forwarding through Code Mode
+  `execute` (real FastMCP client)
 - `tests/test_asgi_bridge.py` - ASGI bridge (scope, streaming flushes, disconnects,
   lifespan task)
 - `tests/integration/test_mcp_endpoint.py` - Starts a **real** Jupyter Server

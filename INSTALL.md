@@ -88,7 +88,7 @@ c.MCPExtensionApp.mcp_tools = [
         "switch_notebook_kernel", "shutdown_notebook",
         "interrupt_notebook_kernel", "restart_notebook_kernel", "view_notebook",
         "read_cell", "add_code_cell", "edit_code_cell", "add_markdown_cell",
-        "edit_markdown_cell", "execute_cell", "delete_cell",
+        "edit_markdown_cell", "execute_cell", "delete_cell", "view_cell_image",
     ]
 ]
 ```
