@@ -9,6 +9,7 @@ import nbformat
 import pytest
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
+from jupyter_mcp_executor.execution_progress import ExecutionProgress
 from jupyter_mcp_executor.execution_tools import (
     add_code_cell,
     add_markdown_cell,
@@ -25,7 +26,6 @@ from jupyter_mcp_executor.execution_tools import (
     switch_notebook_kernel,
     view_notebook,
 )
-from jupyter_mcp_executor.execution_progress import ExecutionProgress
 from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 
 # Import from new modular structure
@@ -104,7 +104,7 @@ class MockKernelClient:
         """Mock stop channels."""
         self.channels_started = False
 
-    async def wait_for_ready(self, timeout=10):  # noqa: ARG002
+    async def wait_for_ready(self, timeout=10):
         """Mock wait for ready."""
         await asyncio.sleep(0.01)
 
@@ -114,22 +114,21 @@ class MockKernelClient:
         self._current_msg_id = msg_id
 
         # Queue the execute_reply for shell channel
-        self._shell_messages.append({
-            "header": {
-                "msg_type": "execute_reply",
-                "msg_id": f"reply-{self.execution_count}"
-            },
-            "parent_header": {"msg_id": msg_id},
-            "content": {
-                "status": "ok",
-                "execution_count": self.execution_count
+        self._shell_messages.append(
+            {
+                "header": {
+                    "msg_type": "execute_reply",
+                    "msg_id": f"reply-{self.execution_count}",
+                },
+                "parent_header": {"msg_id": msg_id},
+                "content": {"status": "ok", "execution_count": self.execution_count},
             }
-        })
+        )
 
         self.execution_count += 1
         return msg_id
 
-    async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+    async def get_shell_msg(self, timeout=None):
         """Mock get shell message - returns execute_reply."""
         await asyncio.sleep(0.01)
 
@@ -139,7 +138,7 @@ class MockKernelClient:
         msg = "No shell messages available"
         raise asyncio.TimeoutError(msg)
 
-    async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+    async def get_iopub_msg(self, timeout=None):
         """Mock get iopub message."""
         await asyncio.sleep(0.01)
 
@@ -157,18 +156,8 @@ class MockKernelSpecManager:
     def get_all_specs(self):
         """Return mock kernel specs."""
         return {
-            "python3": {
-                "spec": {
-                    "display_name": "Python 3",
-                    "language": "python"
-                }
-            },
-            "ir": {
-                "spec": {
-                    "display_name": "R",
-                    "language": "R"
-                }
-            }
+            "python3": {"spec": {"display_name": "Python 3", "language": "python"}},
+            "ir": {"spec": {"display_name": "R", "language": "R"}},
         }
 
 
@@ -186,7 +175,7 @@ class MockServerApp:
 class MockContentsManager:
     """Minimal contents manager to satisfy KernelManager preflight checks."""
 
-    def get(self, path, content=True, type=None):  # noqa: ARG002
+    def get(self, path, content=True, type=None):
         # Return a minimal notebook model dict similar to Jupyter contents API
         return {"type": "notebook", "path": path, "name": Path(path).name}
 
@@ -236,8 +225,8 @@ class MockSessionManager:
                 "name": kernel_name or "python3",
                 "last_activity": datetime.now().isoformat(),
                 "execution_state": "idle",
-                "connections": 1
-            }
+                "connections": 1,
+            },
         }
         self.sessions.append(session)
         return session
@@ -262,8 +251,8 @@ class MockSessionManager:
                 "name": kernel_name,
                 "last_activity": datetime.now().isoformat(),
                 "execution_state": "idle",
-                "connections": 1
-            }
+                "connections": 1,
+            },
         }
         self.sessions.append(session)
         return session
@@ -413,7 +402,6 @@ class TestServerContext:
 class TestListFunctions:
     """Test list functions."""
 
-
     @pytest.mark.asyncio
     async def test_list_notebook_kernels(self, mock_serverapp):
         """Test listing available kernel specs."""
@@ -436,10 +424,7 @@ class TestExecuteCell:
         write_notebook(temp_notebook, nb)
 
         # ExecutionEngine checks server context and returns error dict
-        result = await execute_cell(
-            temp_notebook,
-            position_index=0
-        )
+        result = await execute_cell(temp_notebook, position_index=0)
         assert result["status"] == "error"
         assert "error" in result
 
@@ -453,10 +438,7 @@ class TestExecuteCell:
         nb.cells.append(new_code_cell("print('hello')"))
         write_notebook(temp_notebook, nb)
 
-        result = await execute_cell(
-            temp_notebook,
-            position_index=0
-        )
+        result = await execute_cell(temp_notebook, position_index=0)
 
         assert result["status"] == "ok"
         assert "execution_count" in result
@@ -569,7 +551,9 @@ class TestSetupNotebook:
         assert result["kernel_name"] == "ir"
 
     @pytest.mark.asyncio
-    async def test_setup_notebook_reuses_existing_kernel(self, temp_notebook, mock_serverapp):
+    async def test_setup_notebook_reuses_existing_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
         """Test that setup_notebook reuses an existing kernel from a session."""
         set_server_context(mock_serverapp)
 
@@ -595,7 +579,9 @@ class TestSetupNotebook:
         assert len(mock_serverapp.kernel_manager.kernels) == 1
 
     @pytest.mark.asyncio
-    async def test_setup_notebook_starts_new_when_no_session(self, temp_notebook, mock_serverapp):
+    async def test_setup_notebook_starts_new_when_no_session(
+        self, temp_notebook, mock_serverapp
+    ):
         """Test that setup_notebook starts a new kernel when no session exists."""
         set_server_context(mock_serverapp)
 
@@ -630,7 +616,9 @@ class TestSetupNotebook:
         )
 
         # Call setup_notebook with force_new_kernel=True
-        result = await setup_notebook(temp_notebook, kernel_name="python3", force_new_kernel=True)
+        result = await setup_notebook(
+            temp_notebook, kernel_name="python3", force_new_kernel=True
+        )
 
         # Verify a NEW kernel was started (not the existing one)
         assert result["kernel_id"] != existing_kernel_id
@@ -644,7 +632,9 @@ class TestSetupNotebook:
         assert len([s for s in sessions if s["path"] == normalized_path]) == 1
 
     @pytest.mark.asyncio
-    async def test_setup_notebook_handles_dead_kernel(self, temp_notebook, mock_serverapp):
+    async def test_setup_notebook_handles_dead_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
         """Test that setup_notebook handles a dead kernel gracefully."""
         set_server_context(mock_serverapp)
 
@@ -936,25 +926,19 @@ async def test_output_filtering():
     """Test that OutputFilter properly filters large outputs."""
     # Create mock outputs with large image data
     outputs = [
-        {
-            "output_type": "stream",
-            "name": "stdout",
-            "text": "Hello World\n"
-        },
+        {"output_type": "stream", "name": "stdout", "text": "Hello World\n"},
         {
             "output_type": "display_data",
             "data": {
                 "text/plain": "Plot",
-                "image/png": "iVBORw0KGgoAAAANS..." * 1000  # Large base64 data
-            }
+                "image/png": "iVBORw0KGgoAAAANS..." * 1000,  # Large base64 data
+            },
         },
         {
             "output_type": "execute_result",
-            "data": {
-                "text/html": "<div>Large HTML content...</div>" * 100
-            },
-            "execution_count": 1
-        }
+            "data": {"text/html": "<div>Large HTML content...</div>" * 100},
+            "execution_count": 1,
+        },
     ]
 
     # Filter the outputs
@@ -1035,14 +1019,14 @@ class TestExecutionMessageHandling:
             def execute(self, _code):
                 return "msg-1"
 
-            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+            async def get_shell_msg(self, timeout=None):
                 return {
                     "header": {"msg_type": "execute_reply"},
                     "parent_header": {"msg_id": "msg-1"},
                     "content": {"status": "ok", "execution_count": 7},
                 }
 
-            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+            async def get_iopub_msg(self, timeout=None):
                 self.iopub_calls += 1
                 if self.iopub_calls == 1:
                     raise Empty
@@ -1078,10 +1062,10 @@ class TestExecutionMessageHandling:
             def execute(self, _code):
                 return "msg-2"
 
-            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+            async def get_shell_msg(self, timeout=None):
                 return self.shell_msgs.pop(0)
 
-            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+            async def get_iopub_msg(self, timeout=None):
                 return {
                     "header": {"msg_type": "status"},
                     "parent_header": {"msg_id": "msg-2"},
@@ -1223,7 +1207,7 @@ class TestTimeoutInterruptAndCancel:
                 await asyncio.sleep(timeout or 0)  # the reply never comes
                 raise Empty
 
-            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+            async def get_iopub_msg(self, timeout=None):
                 return {
                     "header": {"msg_type": "status"},
                     "parent_header": {"msg_id": "msg-nr"},
@@ -1258,9 +1242,7 @@ class TestTimeoutInterruptAndCancel:
         assert "restart_notebook_kernel" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_timeout_without_interrupt_keeps_previous_behavior(
-        self, monkeypatch
-    ):
+    async def test_timeout_without_interrupt_keeps_previous_behavior(self, monkeypatch):
         # Shorten the existing post-deadline drain window to keep this fast.
         monkeypatch.setattr(
             "jupyter_mcp_executor.execution_utils.IOPUB_DRAIN_GRACE_SECS", 0.2
@@ -1412,14 +1394,14 @@ class TestTimeoutInterruptAndCancel:
             def execute(self, _code):
                 return "msg-ab"
 
-            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+            async def get_shell_msg(self, timeout=None):
                 return {
                     "header": {"msg_type": "execute_reply"},
                     "parent_header": {"msg_id": "msg-ab"},
                     "content": {"status": "aborted", "execution_count": None},
                 }
 
-            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+            async def get_iopub_msg(self, timeout=None):
                 return {
                     "header": {"msg_type": "status"},
                     "parent_header": {"msg_id": "msg-ab"},
@@ -1493,7 +1475,9 @@ class TestSessionMatching:
         set_server_context(mock_serverapp)
 
         # Console-style session whose path normalize_path would reject
-        mock_serverapp.session_manager.add_session("console-1", "kernel-console", "python3")
+        mock_serverapp.session_manager.add_session(
+            "console-1", "kernel-console", "python3"
+        )
 
         # Valid session for our notebook, listed after the console session
         kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
@@ -1570,7 +1554,7 @@ class TestOutputPlacement:
             def __init__(self):
                 self.updated_position = None
 
-            async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+            async def find_cell_by_id(self, cell_id):
                 return (None, 2)  # cell is now at position 2
 
             async def update_cell_outputs(self, position, _count, _outputs):
@@ -1595,7 +1579,7 @@ class TestOutputPlacement:
             def __init__(self):
                 self.update_called = False
 
-            async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+            async def find_cell_by_id(self, cell_id):
                 return None  # cell no longer exists
 
             async def update_cell_outputs(self, *_args):
@@ -1649,13 +1633,13 @@ class OutputtingClient:
         ]
         return msg_id
 
-    async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+    async def get_shell_msg(self, timeout=None):
         await asyncio.sleep(0.01)
         if self._shell:
             return self._shell.pop(0)
         raise asyncio.TimeoutError
 
-    async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+    async def get_iopub_msg(self, timeout=None):
         await asyncio.sleep(0.01)
         if self._iopub:
             return self._iopub.pop(0)
@@ -1683,7 +1667,7 @@ class RecordingCollabAdapter:
         self.appended = []
         self.updated = []
 
-    async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+    async def find_cell_by_id(self, cell_id):
         return (None, 0)
 
     async def clear_cell_outputs(self, position):
@@ -1714,7 +1698,7 @@ class TestLiveOutputStreaming:
             def execute(self, _code):
                 return "msg-live"
 
-            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+            async def get_shell_msg(self, timeout=None):
                 await asyncio.wait_for(streamed.wait(), timeout=3)
                 return {
                     "header": {"msg_type": "execute_reply"},
@@ -1722,7 +1706,7 @@ class TestLiveOutputStreaming:
                     "content": {"status": "ok", "execution_count": 9},
                 }
 
-            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+            async def get_iopub_msg(self, timeout=None):
                 if not streamed.is_set():
                     return {
                         "header": {"msg_type": "stream"},
@@ -1790,7 +1774,7 @@ class TestLiveOutputStreaming:
         mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
 
         class FailingAppendAdapter(RecordingCollabAdapter):
-            async def append_cell_output(self, position, output):  # noqa: ARG002
+            async def append_cell_output(self, position, output):
                 msg = "append rejected"
                 raise RuntimeError(msg)
 
@@ -1814,7 +1798,7 @@ class TestLiveOutputStreaming:
         mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
 
         class GoneAdapter(RecordingCollabAdapter):
-            async def find_cell_by_id(self, cell_id):  # noqa: ARG002
+            async def find_cell_by_id(self, cell_id):
                 return None
 
         adapter = GoneAdapter()

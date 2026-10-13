@@ -110,4 +110,5 @@ ignore = [
 docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["T20"]
+# Fakes mirror the real signatures, so unused arguments are expected there
+"tests/**" = ["T20", "ARG"]

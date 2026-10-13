@@ -15,5 +15,5 @@ except ImportError:  # pragma: no cover - jupyter_server is a dependency
 class DenyKernelExecuteAuthorizer(Authorizer):
     """Authorizer that forbids executing code in kernels, allows the rest."""
 
-    def is_authorized(self, handler, user, action, resource) -> bool:  # noqa: ARG002
+    def is_authorized(self, handler, user, action, resource) -> bool:
         return not (action == "execute" and resource == "kernels")

@@ -30,7 +30,7 @@ class FakeKernelManager:
         if kernel_id not in self.live:
             # This is the real behaviour: jupyter_server's MappingKernelManager
             # overrides _check_kernel_id to raise a 404, NOT a KeyError.
-            raise web.HTTPError(404, "Kernel does not exist: %s" % kernel_id)
+            raise web.HTTPError(404, f"Kernel does not exist: {kernel_id}")
         return type("K", (), {"kernel_name": "python3"})()
 
     async def shutdown_kernel(self, kernel_id):
@@ -54,7 +54,11 @@ class FakeSessionManager:
             "id": f"session-{self._n}",
             "path": path,
             "name": name,
-            "kernel": {"id": f"kernel-{self._n}", "name": kernel_name, "connections": 0},
+            "kernel": {
+                "id": f"kernel-{self._n}",
+                "name": kernel_name,
+                "connections": 0,
+            },
         }
         self.sessions.append(session)
         return session
@@ -74,14 +78,16 @@ class FakeServerApp:
         self.kernel_manager = FakeKernelManager(live_ids)
         self.kernel_spec_manager = FakeKernelSpecManager()
         self.root_dir = "/"
-        self.contents_manager = type("CM", (), {"get": lambda self, p, content=True, type=None: {}})()
+        self.contents_manager = type(
+            "CM", (), {"get": lambda self, p, content=True, type=None: {}}
+        )()
 
 
 def test_dead_kernel_reports_not_alive_instead_of_raising_404():
     """Defect A: the liveness check must swallow jupyter_server's 404."""
     app = FakeServerApp(live_ids={"live-kernel"})
     assert is_kernel_alive(app, "live-kernel") is True
-    assert is_kernel_alive(app, "dead-kernel") is False       # raised HTTPError before
+    assert is_kernel_alive(app, "dead-kernel") is False  # raised HTTPError before
     assert is_kernel_alive(app, None) is False
     assert is_kernel_alive(None, "live-kernel") is False
 
@@ -93,14 +99,22 @@ async def test_dead_tracked_kernel_falls_back_to_the_live_session(tmp_path):
     nb.write_text("{}")
     path = str(nb)
     app = FakeServerApp(
-        sessions=[{"id": "s1", "path": path, "name": "nb.ipynb",
-                   "kernel": {"id": "live-kernel", "name": "python3", "connections": 1}}],
+        sessions=[
+            {
+                "id": "s1",
+                "path": path,
+                "name": "nb.ipynb",
+                "kernel": {"id": "live-kernel", "name": "python3", "connections": 1},
+            }
+        ],
         live_ids={"live-kernel"},
     )
     mgr = KernelManager()
     mgr.kernel_tracker.track(path, "dead-kernel")
 
-    with patch("jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app):
+    with patch(
+        "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
+    ):
         kernel_id, started_new = await mgr.get_kernel_for_notebook(path)
 
     assert kernel_id == "live-kernel"
@@ -114,16 +128,31 @@ async def test_force_new_kernel_replaces_the_session_instead_of_adding_one(tmp_p
     nb.write_text("{}")
     path = str(nb)
     app = FakeServerApp(
-        sessions=[{"id": "s1", "path": path, "name": "nb.ipynb",
-                   "kernel": {"id": "old-kernel", "name": "python3", "connections": 0}}],
+        sessions=[
+            {
+                "id": "s1",
+                "path": path,
+                "name": "nb.ipynb",
+                "kernel": {"id": "old-kernel", "name": "python3", "connections": 0},
+            }
+        ],
         live_ids={"old-kernel"},
     )
     mgr = KernelManager()
     mgr.kernel_tracker.track(path, "old-kernel")
 
-    with patch("jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app), \
-         patch("jupyter_mcp_executor.kernel_manager.require_server_context", return_value=app), \
-         patch("jupyter_mcp_executor.kernel_manager.to_api_path", return_value="nb.ipynb"):
+    with (
+        patch(
+            "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
+        ),
+        patch(
+            "jupyter_mcp_executor.kernel_manager.require_server_context",
+            return_value=app,
+        ),
+        patch(
+            "jupyter_mcp_executor.kernel_manager.to_api_path", return_value="nb.ipynb"
+        ),
+    ):
         await mgr.setup_notebook(path, kernel_name="python3", force_new_kernel=True)
 
     sessions = await app.session_manager.list_sessions()
@@ -139,23 +168,43 @@ async def test_duplicate_sessions_resolve_to_the_one_a_jupyterlab_tab_is_on(tmp_
     path = str(nb)
     app = FakeServerApp(
         sessions=[
-            {"id": "s1", "path": path, "name": "nb.ipynb",
-             "kernel": {"id": "orphan", "name": "python3", "connections": 0,
-                        "last_activity": "2026-01-01T00:00:00Z"}},
-            {"id": "s2", "path": path, "name": "nb.ipynb",
-             "kernel": {"id": "jupyterlab-tab", "name": "python3", "connections": 1,
-                        "last_activity": "2026-01-01T00:00:00Z"}},
+            {
+                "id": "s1",
+                "path": path,
+                "name": "nb.ipynb",
+                "kernel": {
+                    "id": "orphan",
+                    "name": "python3",
+                    "connections": 0,
+                    "last_activity": "2026-01-01T00:00:00Z",
+                },
+            },
+            {
+                "id": "s2",
+                "path": path,
+                "name": "nb.ipynb",
+                "kernel": {
+                    "id": "jupyterlab-tab",
+                    "name": "python3",
+                    "connections": 1,
+                    "last_activity": "2026-01-01T00:00:00Z",
+                },
+            },
         ],
         live_ids={"orphan", "jupyterlab-tab"},
     )
     mgr = KernelManager()
 
-    with patch("jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app):
+    with patch(
+        "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
+    ):
         session = await mgr._find_session_for_notebook(path)
-    assert session["kernel"]["id"] == "jupyterlab-tab"      # was "orphan" (list order)
+    assert session["kernel"]["id"] == "jupyterlab-tab"  # was "orphan" (list order)
 
     # ...unless this client already has a kernel for the notebook, which stays stable.
     mgr.kernel_tracker.track(path, "orphan")
-    with patch("jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app):
+    with patch(
+        "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
+    ):
         session = await mgr._find_session_for_notebook(path)
     assert session["kernel"]["id"] == "orphan"

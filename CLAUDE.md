@@ -339,7 +339,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-314 tests total across:
+315 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -351,8 +351,12 @@ position_index), and include a recovery hint for the common failure mode.
   real YNotebook (edit_cell, append/coalesce/clear)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
 - `tests/integration/test_ydoc_rooms.py` - `ensure_ynotebook` against a real
-  jupyter_server_ydoc (headless room load and reuse)
-- `tests/test_sessions.py` - Session matching tests
+  jupyter_server_ydoc (headless room load and reuse, unopened rooms, the
+  configured ystore). Its server config puts the ystore and file ID
+  databases under `tmp_path`; by default they land in the process CWD and in
+  the user's real Jupyter data dir
+- `tests/test_kernel_reuse.py` - Kernel reuse and session matching against fakes
+  that reproduce jupyter_server's 404-for-dead-kernel contract
 - `tests/test_imports.py` - Import validation tests
 - `tests/test_kernel_utils.py` - Kernel utilities tests
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
@@ -369,8 +373,12 @@ position_index), and include a recovery hint for the common failure mode.
   imported in `tests/integration/conftest.py` only, so its async runner does not
   interfere with the pytest-asyncio unit tests. Note `jp_fetch` mutates the
   `headers` dict you pass (adds auth) — always pass a fresh dict.
-- `tests/conftest.py` - Shared fixtures and mocks (includes a `QueryService` stub
-  that must be kept in sync with the real `query_service.py` routing)
+- `tests/conftest.py` - Only enables pytest-asyncio; fixtures live with their
+  tests
+- `tests/integration/conftest.py` - Marks every test in the directory
+  `integration` (CI runs `-m "not integration"` and `-m integration` as
+  separate steps) and, after each test, closes the execution engine's cached
+  kernel clients and clears the process-wide singletons
 
 Apart from `tests/integration/`, tests use mocks (no actual kernels/servers
 started).

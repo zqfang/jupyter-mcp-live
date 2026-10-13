@@ -338,7 +338,9 @@ class TestInterruptAndRestart:
     ):
         short = dataclasses.replace(EXECUTION_CONFIG, default_timeout=2)
         for module in ("cell_operations", "execution_engine", "execution_utils"):
-            monkeypatch.setattr(f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short)
+            monkeypatch.setattr(
+                f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short
+            )
 
         args = _execute_args(
             "t.ipynb",
@@ -408,9 +410,7 @@ class TestInterruptAndRestart:
     @pytest.mark.usefixtures("http_server", "mcp_extension")
     async def test_cancelled_request_interrupts_kernel(self, client_factory):
         setup = _execute_args("c.ipynb", "out = 'ready'")
-        long_cell = _execute_args(
-            "c.ipynb", "out = " + _cell("c.ipynb", LONG_CELL)
-        )
+        long_cell = _execute_args("c.ipynb", "out = " + _cell("c.ipynb", LONG_CELL))
         quick_cell = _execute_args(
             "c.ipynb", "out = (" + _cell("c.ipynb", "1 + 1") + ")['outputs']"
         )

@@ -257,7 +257,6 @@ class TestCodeModeSandboxLimits:
 class TestMCPServerIntegration:
     """Integration tests for MCP server."""
 
-    @pytest.mark.integration
     def test_server_with_multiple_tools(self):
         """Test server with multiple different types of tools."""
         server = MCPServer(name="Integration Test Server")
