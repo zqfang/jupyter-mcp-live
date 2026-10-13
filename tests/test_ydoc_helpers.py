@@ -354,7 +354,7 @@ async def test_get_notebook_adapter_calls_ensure_ynotebook():
 
 
 @pytest.mark.asyncio
-async def test_websocket_server_not_started_falls_back_quietly(caplog):
+async def test_websocket_server_not_started_falls_back_quietly():
     """No browser has connected yet: use the file, no ERROR traceback.
 
     jupyter_server_ydoc starts its websocket server when the first browser
@@ -365,8 +365,10 @@ async def test_websocket_server_not_started_falls_back_quietly(caplog):
     ws_server.started.is_set.return_value = False
     serverapp = _make_serverapp()
 
+    # A mock logger, not caplog: other tests disable propagation for the
+    # package logger (extension startup), which makes caplog order-dependent.
     with (
-        caplog.at_level("DEBUG", logger="jupyter_mcp_executor.ydoc_helpers"),
+        patch("jupyter_mcp_executor.ydoc_helpers.logger") as log,
         patch("jupyter_mcp_executor.ydoc_helpers.YDOC_AVAILABLE", True),
         patch("jupyter_mcp_executor.ydoc_helpers.get_ynotebook", new=AsyncMock(return_value=None)),
         patch("jupyter_mcp_executor.ydoc_helpers._get_ydoc_extension", return_value=ext),
@@ -380,5 +382,9 @@ async def test_websocket_server_not_started_falls_back_quietly(caplog):
     assert result is None
     ws_server.start_room.assert_not_called()
     ws_server.add_room.assert_not_called()
-    assert not [r for r in caplog.records if r.levelname in ("ERROR", "WARNING")]
-    assert any("no browser has connected" in r.getMessage() for r in caplog.records)
+    log.exception.assert_not_called()
+    log.error.assert_not_called()
+    log.warning.assert_not_called()
+    assert any(
+        "no browser has connected" in call.args[0] for call in log.debug.call_args_list
+    )
