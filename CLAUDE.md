@@ -153,7 +153,13 @@ filter never mutates the original dicts):
 **Images for the model** (`view_cell_image`): returns a `ToolResult` whose
 `structured_content` is a JSON summary and whose `content` carries the cell's
 raster images as `ImageContent` (`IMAGE_CONFIG`: PNG/JPEG/GIF/WEBP, 4 per
-call, 5MB each; SVG is skipped with a hint). Code Mode would drop those
+call, 5MB each; SVG is skipped with a hint). `CellImages.from_cell()` picks
+the source by cell type: code → image outputs; markdown → `attachment:`
+references (looked up in `CellContent.attachments`, which both adapters
+fill) and `data:` URIs, from `![](...)` and `<img src>`. Remote URLs and
+local image files are reported in `skipped` (local files: not yet supported;
+remote: never fetched, SSRF). Every summary entry has a `source` field
+(`output`/`attachment`/`data_uri`/`url`/`file`). Code Mode would drop those
 blocks — `call_tool()` hands the sandbox only structured content or text — so
 `CodeModeImageForwarder` (`code_mode_images.py`, installed by `MCPServer`)
 intercepts nested calls (they run through the middleware chain), moves their
@@ -203,7 +209,8 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 - `kernel_utils.py` - Kernel detection and language resolution
 - `kernel_tracker.py` - Tracks kernel sessions per notebook
 - `output_filter.py` - Filter large outputs for token efficiency
-- `cell_images.py` - Extract viewable images from cell outputs (`CellImages`)
+- `cell_images.py` - Extract viewable images from code outputs and markdown
+  embeds (`CellImages`)
 - `execution_progress.py` - MCP progress notifications during cell execution
   (`ExecutionProgress`)
 - `output_converter.py` - Output format conversion
@@ -241,7 +248,8 @@ All functions in `execution_tools.py` (16 tools):
 15. **read_cell(path, position_index/cell_id/execution_count)** - One cell;
     the returned dict includes `position`
 16. **view_cell_image(path, position_index/cell_id/execution_count)** - The
-    cell's plots as MCP image content (works inside Code Mode scripts)
+    cell's plots, or a markdown cell's embedded images, as MCP image content
+    (works inside Code Mode scripts)
 
 **Tool design rules** (the primary client path is FastMCP Code Mode):
 
@@ -330,7 +338,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-294 tests total across:
+307 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)

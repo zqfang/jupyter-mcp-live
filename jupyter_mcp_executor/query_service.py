@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from jupyter_mcp_executor.cell_images import CellImages, extract_cell_images
+from jupyter_mcp_executor.cell_images import CellImages
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 from jupyter_mcp_executor.notebook_models import CellIdentifier, CellInfo
 from jupyter_mcp_executor.output_filter import OutputFilter
@@ -108,7 +108,7 @@ class QueryService:
     async def view_cell_images(
         self, notebook_path: str, identifier: CellIdentifier
     ) -> CellImages:
-        """Get the viewable image outputs of one cell, unfiltered.
+        """Get the viewable images of one cell (outputs or markdown embeds).
 
         Args:
             notebook_path: Path to notebook
@@ -121,16 +121,7 @@ class QueryService:
         adapter = await get_notebook_adapter(notebook_path)
         position = await _resolve_position(adapter, identifier)
         cell = await adapter.read_cell(position)
-
-        outputs = cell.outputs if cell.cell_type == "code" else []
-        images, attached, skipped = extract_cell_images(outputs)
-        return CellImages(
-            position=position,
-            cell_id=cell.cell_id or "",
-            images=tuple(images),
-            attached=tuple(attached),
-            skipped=tuple(skipped),
-        )
+        return CellImages.from_cell(cell, position)
 
 
 async def _resolve_position(adapter: Any, identifier: CellIdentifier) -> int:

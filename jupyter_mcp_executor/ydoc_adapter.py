@@ -65,6 +65,7 @@ class YDocAdapter(NotebookAdapter):
             execution_count=ycell_py.get("execution_count"),
             outputs=list(ycell_py.get("outputs", [])),
             cell_id=str(ycell_py.get("id", "")),
+            attachments=dict(ycell_py.get("attachments") or {}),
         )
 
     async def add_cell(

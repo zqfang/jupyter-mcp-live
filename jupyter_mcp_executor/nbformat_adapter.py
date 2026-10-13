@@ -24,6 +24,7 @@ def _cell_to_content(cell: Any) -> CellContent:
         execution_count=getattr(cell, "execution_count", None),
         outputs=list(getattr(cell, "outputs", [])),
         cell_id=cell.get("id"),
+        attachments=dict(cell.get("attachments") or {}),
     )
 
 
