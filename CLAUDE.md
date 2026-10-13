@@ -201,7 +201,7 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 - `nbformat_adapter.py` - File-based (disk persistence)
 - `ydoc_helpers.py` - YDoc utilities, including `ensure_ynotebook()` which
   recreates cleaned-up YDoc rooms (via `get_document(create=True)`) to
-  preserve CRDT history
+  preserve CRDT history, and initializes rooms the browser has not loaded yet
 
 ### Foundation/Utilities
 
@@ -339,7 +339,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-307 tests total across:
+314 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -462,6 +462,17 @@ duplicate rooms. Until the first browser connects (websocket server not
 started) `ensure_ynotebook()` returns None and the file adapter is used: no
 client holds CRDT state yet, and rooms with no websocket are never cleaned
 up.
+
+**Existing rooms are initialized too.** `get_document()` initializes only
+rooms it creates; for an existing room it returns `room._document` as is. The
+browser handler registers a room in `prepare()` but loads it only in
+`open()`, so in between that document is **empty** — and edits to it are
+autosaved over the .ipynb (`DocumentRoom` autosaves whether or not it is
+ready). Both `get_ynotebook()` and `ensure_ynotebook()` therefore look the
+room up (`ywebsocket_server.rooms`) and, if it is not `ready`, call
+`room.initialize()` under `YDocExtension._room_locks[room_id]` — the lock the
+handler's `open()` takes, so the two never load concurrently (initialize()
+is a no-op once ready). This is the one private attribute we still rely on.
 
 ### Persistence Strategy
 

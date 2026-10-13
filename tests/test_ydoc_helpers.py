@@ -4,13 +4,18 @@ Room recreation goes through jupyter_server_ydoc's official
 ``YDocExtension.get_document(..., copy=False, create=True)``: it builds the
 room from the same ystore (same file_id), initializes its content, and holds
 the extension's per-room lock — the one the browser websocket handler uses.
+get_document() initializes only the rooms it creates, so we also initialize
+an existing room the browser handler registered but has not opened yet.
 These tests pin the arguments we pass and the fallbacks around that call.
 """
 
+import asyncio
+from collections import defaultdict
 from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_path
 
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
@@ -26,11 +31,34 @@ class _FakeOtherDoc:
     """A non-YNotebook document type (should cause None return)."""
 
 
-def _make_extension(*, document=None, started: bool = True):
-    """A YDocExtension mock whose get_document returns ``document``."""
+_ROOM_ID = room_id_from_encoded_path(encode_file_path("json", "notebook", "fid"))
+
+
+def _make_room(*, ready: bool = True):
+    """A DocumentRoom mock; initialize() marks it ready."""
+    room = MagicMock()
+    room.ready = ready
+
+    async def initialize():
+        room.ready = True
+
+    room.initialize = AsyncMock(side_effect=initialize)
+    return room
+
+
+def _make_extension(*, document=None, started: bool = True, room=None):
+    """A YDocExtension mock whose get_document returns ``document``.
+
+    ``room`` is registered under the notebook's room id (file id "fid"); by
+    default an already-initialized one.
+    """
     ext = MagicMock()
     ext.get_document = AsyncMock(return_value=document)
     ext.ywebsocket_server.started.is_set.return_value = started
+    ext.serverapp.web_app.settings = {"file_id_manager": MagicMock()}
+    ext.serverapp.web_app.settings["file_id_manager"].index.return_value = "fid"
+    ext.ywebsocket_server.rooms = {_ROOM_ID: room if room is not None else _make_room()}
+    ext._room_locks = defaultdict(asyncio.Lock)
     return ext
 
 
@@ -159,6 +187,59 @@ async def test_websocket_server_not_started_falls_back_quietly():
     )
 
 
+@pytest.mark.asyncio
+async def test_ready_room_is_not_reinitialized():
+    room = _make_room(ready=True)
+    ext = _make_extension(document=_FakeYNotebook(), room=room)
+
+    assert await _ensure(ext) is not None
+    room.initialize.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unopened_room_is_initialized_under_the_handler_lock():
+    """get_document() returns an existing room's document even before the
+    browser handler's open() initialized it: an empty notebook whose edits get
+    autosaved over the file. We initialize it first, holding the per-room lock
+    the handler's open() takes, so the two never initialize concurrently."""
+    fake_ynb = _FakeYNotebook()
+    room = _make_room(ready=False)
+    ext = _make_extension(document=fake_ynb, room=room)
+    held = []
+
+    async def initialize():
+        held.append(ext._room_locks[_ROOM_ID].locked())
+        room.ready = True
+
+    room.initialize.side_effect = initialize
+
+    assert await _ensure(ext) is fake_ynb
+    room.initialize.assert_awaited_once()
+    assert held == [True]
+
+
+@pytest.mark.asyncio
+async def test_room_initialization_failure_is_logged_and_returns_none():
+    """Never hand out the empty document of a room that failed to load."""
+    room = _make_room(ready=False)
+    room.initialize.side_effect = RuntimeError("cannot load")
+    ext = _make_extension(document=_FakeYNotebook(), room=room)
+    log = MagicMock()
+
+    assert await _ensure(ext, logger=log) is None
+    log.exception.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_room_removed_after_lookup_returns_none():
+    """The room was cleaned up right after get_document(): its document is
+    detached from any room, so do not return it."""
+    ext = _make_extension(document=_FakeYNotebook())
+    ext.ywebsocket_server.rooms = {}
+
+    assert await _ensure(ext) is None
+
+
 # ---------------------------------------------------------------------------
 # get_ynotebook
 # ---------------------------------------------------------------------------
@@ -176,6 +257,18 @@ async def test_get_ynotebook_never_creates_a_room():
     assert result is fake_ynb
     assert ext.get_document.await_args.kwargs["create"] is False
     assert ext.get_document.await_args.kwargs["copy"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_ynotebook_initializes_unopened_room():
+    room = _make_room(ready=False)
+    ext = _make_extension(document=_FakeYNotebook(), room=room)
+    with ExitStack() as stack:
+        for p in _patches(ext):
+            stack.enter_context(p)
+        assert await get_ynotebook("/tmp/nb.ipynb") is not None
+
+    room.initialize.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

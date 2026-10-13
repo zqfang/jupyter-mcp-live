@@ -36,12 +36,13 @@ def _get_ydoc_extension() -> Any | None:
 async def _get_live_document(
     ydoc_extension: Any, file_path: str, *, create: bool
 ) -> Any | None:
-    """Return the room's live YNotebook via YDocExtension.get_document().
+    """Return the room's live, initialized YNotebook via get_document().
 
     copy=False returns the room's own document — the one browsers sync with —
     so changes to it propagate in real time. With create=True a missing room
     is created from the ystore under the extension's per-room lock (shared
     with the browser websocket handler) and initialized before it is returned.
+    An existing room is returned as is, so it is initialized here if needed.
     """
     ydoc = await ydoc_extension.get_document(
         path=file_path,
@@ -57,7 +58,43 @@ async def _get_live_document(
             f"get_document returned unexpected type {type(ydoc)} for {file_path}"
         )
         return None
+    if not await _ensure_room_initialized(ydoc_extension, file_path):
+        return None
     return ydoc
+
+
+async def _ensure_room_initialized(ydoc_extension: Any, file_path: str) -> bool:
+    """Load the notebook into its room if the browser handler has not yet.
+
+    The websocket handler registers a room in prepare() but initializes it
+    only in open(), and get_document() returns an existing room's document
+    without checking. Until then the document is empty: reads see no cells,
+    and edits to it are autosaved over the notebook on disk. initialize()
+    runs under the per-room lock the handler's open() takes, so the two
+    never load the room concurrently; it is a no-op once the room is ready.
+
+    Returns:
+        False if the room was removed after get_document() returned (its
+        document is detached), True otherwise.
+    """
+    from jupyter_server_ydoc.utils import (  # noqa: PLC0415
+        encode_file_path,
+        room_id_from_encoded_path,
+    )
+
+    file_id_manager = ydoc_extension.serverapp.web_app.settings["file_id_manager"]
+    file_id = file_id_manager.index(file_path)
+    room_id = room_id_from_encoded_path(encode_file_path("json", "notebook", file_id))
+
+    room = ydoc_extension.ywebsocket_server.rooms.get(room_id)
+    if room is None:
+        logger.debug(f"YDoc room for {file_path} was removed during lookup")
+        return False
+    if not room.ready:
+        async with ydoc_extension._room_locks[room_id]:
+            await room.initialize()
+        logger.debug(f"Initialized YDoc room the browser had not opened: {file_path}")
+    return True
 
 
 async def get_ynotebook(file_path: str) -> Any | None:
