@@ -85,7 +85,8 @@ c.MCPExtensionApp.mcp_tools = [
     f"jupyter_mcp_executor.execution_tools:{name}"
     for name in [
         "list_notebook_kernels", "list_notebook_sessions", "setup_notebook",
-        "switch_notebook_kernel", "shutdown_notebook", "view_notebook",
+        "switch_notebook_kernel", "shutdown_notebook",
+        "interrupt_notebook_kernel", "restart_notebook_kernel", "view_notebook",
         "read_cell", "add_code_cell", "edit_code_cell", "add_markdown_cell",
         "edit_markdown_cell", "execute_cell", "delete_cell",
     ]
