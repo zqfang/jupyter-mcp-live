@@ -2,7 +2,6 @@
 
 A powerful MCP (Model Context Protocol) server for executing code in Jupyter notebooks. This extension enables AI assistants and other MCP clients to programmatically create, modify, and execute code across multiple kernel types (Python, R, Julia, and more) through a running Jupyter Server.
 
-
 ## Overview
 
 Jupyter MCP Executor provides a comprehensive toolkit for AI-assisted coding workflows. It enables AI assistants to:
@@ -29,10 +28,7 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 - **Authenticated by Jupyter**: The MCP endpoint lives on the Jupyter Server itself and accepts the same token as Jupyter — works on a local server and on JupyterHub
 - **Production Ready**: Comprehensive test suite, modular architecture, and detailed documentation
 
-
-
 ## Quick Start
-
 
 ### 1. Installation
 
@@ -112,7 +108,7 @@ Set the following configuration:
   "jupyter-mcp": {
     "type": "http",
     "url": "http://localhost:8888/mcp",
-    "headers": { "Authorization": "Bearer change-me" }
+    "headers": { "Authorization": "Bearer <your Jupyter token>" }
   }
 }
 ```
@@ -121,7 +117,7 @@ Or use the `claude` CLI:
 
 ```bash
 claude mcp add --transport http jupyter-mcp http://localhost:8888/mcp \
-  --header "Authorization: Bearer change-me"
+  --header "Authorization: Bearer <your Jupyter token>"
 ```
 
 **Gemini CLI Configuration:**
@@ -133,7 +129,7 @@ Add the following to `.gemini/settings.json`:
   "mcpServers": {
     "jupyter-mcp": {
       "httpUrl": "http://localhost:8888/mcp",
-      "headers": { "Authorization": "Bearer change-me" }
+      "headers": { "Authorization": "Bearer <your Jupyter token>" }
     }
   }
 }
@@ -191,7 +187,7 @@ single long call into C code (e.g. `time.sleep(600)` or one huge native
 operation) finishes before it stops. JupyterLab's stop button behaves the
 same. Use `restart_notebook_kernel` if a cell must stop immediately.
 
-See [Claude Code's MCP docs](https://code.claude.com/docs/en/mcp) and
+See [Claude Code&#39;s MCP docs](https://code.claude.com/docs/en/mcp) and
 [environment variables](https://code.claude.com/docs/en/env-vars).
 
 ### Security notes
@@ -250,6 +246,7 @@ await server.start_server()
 ```
 
 **Key Methods:**
+
 - `register_tool(func, name=None, description=None)` - Register a Python function
 - `register_tools(tools)` - Register multiple functions (list or dict)
 - `list_tools()` - Get list of registered tools
@@ -260,6 +257,7 @@ await server.start_server()
 Jupyter Server extension that manages the MCP server lifecycle:
 
 **Configuration Traits:**
+
 - `mcp_name` - Server name (default: "Jupyter MCP Server")
 - `mcp_jupyter_endpoint` - Serve the authenticated endpoint on the Jupyter port (default: True)
 - `mcp_endpoint_path` - Endpoint path relative to Jupyter's base_url (default: "mcp")
@@ -320,12 +318,14 @@ c.MCPExtensionApp.use_tool_discovery = False
 ## Configuration Examples
 
 ### Minimal Setup
+
 ```python
 c = get_config()
 c.IdentityProvider.token = "change-me"  # also authenticates MCP clients
 ```
 
 ### Full Configuration
+
 ```python
 c = get_config()
 
@@ -339,26 +339,26 @@ c.MCPExtensionApp.mcp_tools = [
     "jupyter_ai_tools.toolkits.file_system:edit",
     "jupyter_ai_tools.toolkits.file_system:ls",
     "jupyter_ai_tools.toolkits.file_system:glob",
-    
+  
     # Notebook operations (jupyter-ai-tools)
     "jupyter_ai_tools.toolkits.notebook:read_notebook",
     "jupyter_ai_tools.toolkits.notebook:edit_cell",
     "jupyter_ai_tools.toolkits.notebook:add_cell", 
     "jupyter_ai_tools.toolkits.notebook:delete_cell",
     "jupyter_ai_tools.toolkits.notebook:create_notebook",
-    
+  
     # Git operations (jupyter-ai-tools)
     "jupyter_ai_tools.toolkits.git:git_status",
     "jupyter_ai_tools.toolkits.git:git_add",
     "jupyter_ai_tools.toolkits.git:git_commit",
     "jupyter_ai_tools.toolkits.git:git_push",
-    
+  
     # JupyterLab operations (jupyterlab-commands-toolkit)
     "jupyterlab_commands_toolkit.tools:clear_all_outputs_in_notebook",
     "jupyterlab_commands_toolkit.tools:open_document",
     "jupyterlab_commands_toolkit.tools:open_markdown_file_in_preview_mode",
     "jupyterlab_commands_toolkit.tools:show_diff_of_current_notebook",
-    
+  
     # Utility functions  
     "os:getcwd",
     "json:dumps",
@@ -403,6 +403,6 @@ jupyter_mcp_executor/
 
 1. Fork the repository
 2. Create a feature branch
-3. Add tests for new functionality  
+3. Add tests for new functionality
 4. Ensure all tests pass: `pytest tests/`
 5. Submit a pull request
