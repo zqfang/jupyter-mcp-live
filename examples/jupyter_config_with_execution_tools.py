@@ -49,6 +49,7 @@ c.MCPExtensionApp.mcp_tools = [
     "jupyter_mcp_executor.execution_tools:add_markdown_cell",
     "jupyter_mcp_executor.execution_tools:edit_markdown_cell",
     "jupyter_mcp_executor.execution_tools:read_cell",
+    "jupyter_mcp_executor.execution_tools:view_cell_image",
     "jupyter_mcp_executor.execution_tools:execute_cell",
     "jupyter_mcp_executor.execution_tools:delete_cell",
 

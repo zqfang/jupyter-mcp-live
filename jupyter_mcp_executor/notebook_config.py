@@ -28,6 +28,24 @@ class OutputFilterConfig:
 
 
 @dataclass(frozen=True)
+class ImageConfig:
+    """Configuration for showing cell image outputs to the model."""
+
+    # Raster formats vision models accept, in order of preference when one
+    # output carries several (e.g. matplotlib emitting both png and jpeg).
+    viewable_mime_types: tuple[str, ...] = (
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+    )
+    max_images_per_call: int = 4  # view_cell_image, per cell
+    # One Code Mode execute response may gather images from several calls.
+    max_images_per_response: int = 8
+    max_image_bytes: int = 5 * 1024 * 1024  # decoded size; Claude API limit
+
+
+@dataclass(frozen=True)
 class ProgressConfig:
     """Configuration for MCP progress notifications during execution."""
 
@@ -44,4 +62,5 @@ class ProgressConfig:
 # Singleton instances
 EXECUTION_CONFIG = ExecutionConfig()
 OUTPUT_FILTER_CONFIG = OutputFilterConfig()
+IMAGE_CONFIG = ImageConfig()
 PROGRESS_CONFIG = ProgressConfig()

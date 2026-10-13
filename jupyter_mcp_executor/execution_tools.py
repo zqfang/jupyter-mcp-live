@@ -7,9 +7,12 @@ All implementation details are in submodules. This file only contains
 the MCP-exported function interfaces that are registered as MCP tools.
 """
 
+import json
 from typing import Any
 
+from fastmcp.tools.base import ToolResult
 from jupyter_ai_tools.utils import collaborative_tool
+from mcp.types import TextContent
 
 from jupyter_mcp_executor.notebook_models import CellIdentifier
 from jupyter_mcp_executor.path_utils import normalize_path
@@ -474,6 +477,55 @@ async def read_cell(
     return result.model_dump(exclude_none=True)
 
 
+# Apply collaborative awareness
+@collaborative_tool(user=user_info)
+async def view_cell_image(
+    notebook_path: str,
+    position_index: int | None = None,
+    cell_id: str | None = None,
+    execution_count: int | None = None,
+) -> ToolResult:
+    """Look at a code cell's image outputs (plots, figures) as real images.
+
+    Other tools show image outputs only as "[Filtered image/png ...]"
+    placeholders; call this when you need to see one, e.g. to check a plot.
+    Read-only: needs no kernel and no setup_notebook call.
+
+    The images are attached to the tool response for you to view — also when
+    called inside an execute script, so the script need not return them.
+    PNG/JPEG/GIF/WEBP only, at most 4 per call; SVG cannot be viewed (re-plot
+    as PNG).
+
+    Args:
+        notebook_path: Path to the notebook file (relative or absolute)
+        position_index: Positional index of cell (0-indexed)
+        cell_id: Cell UUID
+        execution_count: The cell's [n] execution label (not its position)
+
+    Returns:
+        dict: position, cell_id, images (output_index, mime_type, bytes of
+            each attached image) and skipped (output_index, mime_type, reason
+            for image outputs not attached). Empty images: the cell has none.
+
+    Note: Provide exactly ONE identifier (position_index, cell_id, or execution_count)
+    """
+    identifier = CellIdentifier(
+        execution_count=execution_count, position_index=position_index, cell_id=cell_id
+    )
+
+    cell_images = await container.query_service.view_cell_images(
+        notebook_path, identifier
+    )
+    summary = cell_images.summary()
+    text = json.dumps(summary)
+    if not cell_images.images:
+        text = f"Cell {cell_images.position} has no image outputs to view. {text}"
+    return ToolResult(
+        content=[TextContent(type="text", text=text), *cell_images.images],
+        structured_content=summary,
+    )
+
+
 # Export context management functions (used by extension.py)
 __all__ = [
     "add_code_cell",
@@ -492,5 +544,6 @@ __all__ = [
     "setup_notebook",
     "shutdown_notebook",
     "switch_notebook_kernel",
+    "view_cell_image",
     "view_notebook",
 ]

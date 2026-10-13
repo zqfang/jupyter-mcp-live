@@ -29,6 +29,7 @@ if "jupyter_mcp_executor.query_service" not in sys.modules:
     stub = types.ModuleType("jupyter_mcp_executor.query_service")
 
     # Safe imports (do not import KernelManager)
+    from jupyter_mcp_executor.cell_images import CellImages, extract_cell_images
     from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
     from jupyter_mcp_executor.notebook_models import CellIdentifier
     from jupyter_mcp_executor.output_filter import OutputFilter
@@ -56,27 +57,45 @@ if "jupyter_mcp_executor.query_service" not in sys.modules:
                 ]
             )
 
-        async def read_cell(self, notebook_path: str, identifier: CellIdentifier):
-            notebook_path = normalize_path(notebook_path)
-            adapter = await get_notebook_adapter(notebook_path)
-
+        @staticmethod
+        async def _resolve_position(adapter, identifier: CellIdentifier) -> int:
             if identifier.position_index is not None:
-                position = identifier.position_index
-            elif identifier.cell_id is not None:
+                return identifier.position_index
+            if identifier.cell_id is not None:
                 result = await adapter.find_cell_by_id(identifier.cell_id)
                 if result is None:
                     raise ValueError(f"Cell with ID {identifier.cell_id} not found")
-                _, position = result
-            else:
-                result = await adapter.find_cell_by_execution_count(
-                    identifier.execution_count
+                return result[1]
+            result = await adapter.find_cell_by_execution_count(
+                identifier.execution_count
+            )
+            if result is None:
+                raise ValueError(
+                    f"Cell with execution_count={identifier.execution_count} not found"
                 )
-                if result is None:
-                    raise ValueError(
-                        f"Cell with execution_count={identifier.execution_count} not found"
-                    )
-                _, position = result
+            return result[1]
 
+        async def view_cell_images(
+            self, notebook_path: str, identifier: CellIdentifier
+        ) -> CellImages:
+            notebook_path = normalize_path(notebook_path)
+            adapter = await get_notebook_adapter(notebook_path)
+            position = await self._resolve_position(adapter, identifier)
+            cell = await adapter.read_cell(position)
+            outputs = cell.outputs if cell.cell_type == "code" else []
+            images, attached, skipped = extract_cell_images(outputs)
+            return CellImages(
+                position=position,
+                cell_id=cell.cell_id or "",
+                images=tuple(images),
+                attached=tuple(attached),
+                skipped=tuple(skipped),
+            )
+
+        async def read_cell(self, notebook_path: str, identifier: CellIdentifier):
+            notebook_path = normalize_path(notebook_path)
+            adapter = await get_notebook_adapter(notebook_path)
+            position = await self._resolve_position(adapter, identifier)
             cell = await adapter.read_cell(position)
             cell_dict = {
                 "cell_type": cell.cell_type,

@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from jupyter_mcp_executor.cell_images import CellImages, extract_cell_images
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
 from jupyter_mcp_executor.notebook_models import CellIdentifier, CellInfo
 from jupyter_mcp_executor.output_filter import OutputFilter
@@ -19,6 +20,7 @@ class QueryService:
     - Viewing all notebook cells
     - Listing sessions
     - Reading single cells by various identifiers
+    - Reading a cell's image outputs
     """
 
     async def view_notebook(self, notebook_path: str) -> list[dict[str, Any]]:
@@ -77,28 +79,7 @@ class QueryService:
         """
         notebook_path = normalize_path(notebook_path)
         adapter = await get_notebook_adapter(notebook_path)
-
-        # Get position from identifier
-        if identifier.position_index is not None:
-            position = identifier.position_index
-        elif identifier.cell_id is not None:
-            result = await adapter.find_cell_by_id(identifier.cell_id)
-            if result is None:
-                msg = f"Cell with ID {identifier.cell_id} not found"
-                raise ValueError(msg)
-            _, position = result
-        else:  # execution_count
-            result = await adapter.find_cell_by_execution_count(
-                identifier.execution_count
-            )
-            if result is None:
-                msg = (
-                    f"Cell with execution_count={identifier.execution_count} not found"
-                )
-                raise ValueError(msg)
-            _, position = result
-
-        # Read cell
+        position = await _resolve_position(adapter, identifier)
         cell = await adapter.read_cell(position)
 
         # Get source as string
@@ -123,3 +104,51 @@ class QueryService:
             outputs=filtered_outputs,
             id=cell.cell_id or "",
         )
+
+    async def view_cell_images(
+        self, notebook_path: str, identifier: CellIdentifier
+    ) -> CellImages:
+        """Get the viewable image outputs of one cell, unfiltered.
+
+        Args:
+            notebook_path: Path to notebook
+            identifier: Cell identifier
+
+        Returns:
+            CellImages with image content blocks and a summary
+        """
+        notebook_path = normalize_path(notebook_path)
+        adapter = await get_notebook_adapter(notebook_path)
+        position = await _resolve_position(adapter, identifier)
+        cell = await adapter.read_cell(position)
+
+        outputs = cell.outputs if cell.cell_type == "code" else []
+        images, attached, skipped = extract_cell_images(outputs)
+        return CellImages(
+            position=position,
+            cell_id=cell.cell_id or "",
+            images=tuple(images),
+            attached=tuple(attached),
+            skipped=tuple(skipped),
+        )
+
+
+async def _resolve_position(adapter: Any, identifier: CellIdentifier) -> int:
+    """Return the cell position named by an identifier.
+
+    Raises:
+        ValueError: If no cell has the given cell_id or execution_count
+    """
+    if identifier.position_index is not None:
+        return identifier.position_index
+    if identifier.cell_id is not None:
+        result = await adapter.find_cell_by_id(identifier.cell_id)
+        if result is None:
+            msg = f"Cell with ID {identifier.cell_id} not found"
+            raise ValueError(msg)
+        return result[1]
+    result = await adapter.find_cell_by_execution_count(identifier.execution_count)
+    if result is None:
+        msg = f"Cell with execution_count={identifier.execution_count} not found"
+        raise ValueError(msg)
+    return result[1]
