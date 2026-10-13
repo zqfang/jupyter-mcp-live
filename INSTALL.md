@@ -108,14 +108,24 @@ Send an MCP `initialize` request with the token (without it you get `403`):
 
 ```bash
 curl -X POST http://localhost:8888/mcp \
-  -H "Authorization: Bearer change-me" \
+  -H "Authorization: Bearer <your Jupyter token>" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
 ```
 
-For connecting MCP clients (Claude Code, Gemini CLI, …), see the README.
-For JupyterHub deployments, see [JUPYTERHUB.md](JUPYTERHUB.md).
+### 4. Connect an MCP Client
+
+For Claude Code:
+
+```bash
+claude mcp add --transport http jupyter-mcp http://localhost:8888/mcp \
+  --header "Authorization: Bearer <your Jupyter token>"
+```
+
+For other clients (Gemini CLI, JSON `mcpServers` config), see
+[Connect MCP Clients](README.md#4-connect-mcp-clients) in the README. For
+JupyterHub deployments, see [JUPYTERHUB.md](JUPYTERHUB.md).
 
 ## Installing Additional Tools
 
