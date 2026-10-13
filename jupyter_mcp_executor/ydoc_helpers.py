@@ -146,6 +146,17 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
 
         ywebsocket_server = ydoc_extension.ywebsocket_server
 
+        # jupyter_server_ydoc starts its websocket server when the first
+        # browser connects.  Until then no client holds CRDT state for any
+        # document, so the file adapter is safe — and start_room() would only
+        # fail with "The WebsocketServer is not running".
+        if not ywebsocket_server.started.is_set():
+            logger.debug(
+                f"YDoc websocket server not started (no browser has connected "
+                f"yet); using the file for {file_path}"
+            )
+            return None
+
         # Acquire a per-room_id lock to prevent TOCTOU races: two concurrent
         # callers that both observe room_exists()==False would otherwise each
         # create a DocumentRoom and call add_room(), resulting in duplicate

@@ -351,3 +351,34 @@ async def test_get_notebook_adapter_calls_ensure_ynotebook():
 
     mock_ensure.assert_awaited_once()
     mock_ydoc_cls.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_websocket_server_not_started_falls_back_quietly(caplog):
+    """No browser has connected yet: use the file, no ERROR traceback.
+
+    jupyter_server_ydoc starts its websocket server when the first browser
+    connects. Before that there is no CRDT history to protect, so returning
+    None (file adapter) is correct and must not be logged as a failure.
+    """
+    ext, _room, ws_server = _make_extension(room_exists=False)
+    ws_server.started.is_set.return_value = False
+    serverapp = _make_serverapp()
+
+    with (
+        caplog.at_level("DEBUG", logger="jupyter_mcp_executor.ydoc_helpers"),
+        patch("jupyter_mcp_executor.ydoc_helpers.YDOC_AVAILABLE", True),
+        patch("jupyter_mcp_executor.ydoc_helpers.get_ynotebook", new=AsyncMock(return_value=None)),
+        patch("jupyter_mcp_executor.ydoc_helpers._get_ydoc_extension", return_value=ext),
+        patch(_SC, return_value=serverapp),
+        patch(_EFP, return_value="enc"),
+        patch(_RIFEP, return_value="r1"),
+    ):
+        from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook
+        result = await ensure_ynotebook("/tmp/nb.ipynb")
+
+    assert result is None
+    ws_server.start_room.assert_not_called()
+    ws_server.add_room.assert_not_called()
+    assert not [r for r in caplog.records if r.levelname in ("ERROR", "WARNING")]
+    assert any("no browser has connected" in r.getMessage() for r in caplog.records)
