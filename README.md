@@ -33,12 +33,21 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 ## Quick Start
 
 
-### 1. Intallation
+### 1. Installation
+
+Not published to PyPI yet. Install from GitHub into the environment that runs
+Jupyter:
+
+```bash
+uv pip install "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+```
+
+Or, for development, from a clone:
 
 ```bash
 git clone https://github.com/zqfang/jupyter-mcp-executor
 cd jupyter-mcp-executor
-uv sync 
+uv sync --extra test
 ```
 
 See [INSTALL.md](INSTALL.md) for detailed instructions.
