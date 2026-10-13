@@ -1177,6 +1177,69 @@ class TestTimeoutInterruptAndCancel:
         assert output_types == ["stream", "error"]
 
     @pytest.mark.asyncio
+    async def test_timeout_interrupts_even_if_shell_poll_returns_early(self):
+        """jupyter_client may raise Empty a few ms before the requested timeout.
+
+        The timeout must still be detected (and the kernel interrupted)
+        instead of falling through to the slower "timed out while collecting
+        outputs" path with the cell left running.
+        """
+
+        class EarlyEmptyClient(HangingKernelClient):
+            async def get_shell_msg(self, timeout=None):
+                await asyncio.sleep((timeout or 0) * 0.9)  # gives up early
+                raise Empty
+
+        client = EarlyEmptyClient()
+
+        result = await execute_code_on_kernel(
+            client,
+            "while True: pass",
+            "k1",
+            timeout=0.3,
+            interrupt=client.interrupt,
+            interrupt_grace=2,
+        )
+
+        assert client.interrupt_calls == 1
+        assert "the kernel was interrupted" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_missing_shell_reply_does_not_block_after_idle(self, monkeypatch):
+        """If iopub says the kernel is idle, don't wait the full timeout.
+
+        A lost execute_reply must not hold the call (and the kernel lock)
+        until the deadline, which can be hours away.
+        """
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_utils.SHELL_REPLY_GRACE_SECS", 0.2
+        )
+
+        class NoReplyClient:
+            def execute(self, _code):
+                return "msg-nr"
+
+            async def get_shell_msg(self, timeout=None):
+                await asyncio.sleep(timeout or 0)  # the reply never comes
+                raise Empty
+
+            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+                return {
+                    "header": {"msg_type": "status"},
+                    "parent_header": {"msg_id": "msg-nr"},
+                    "content": {"execution_state": "idle"},
+                }
+
+        start = asyncio.get_running_loop().time()
+        result = await execute_code_on_kernel(
+            NoReplyClient(), "x = 1", "k1", timeout=3600, interrupt=None
+        )
+
+        assert asyncio.get_running_loop().time() - start < 2
+        assert result["status"] == "ok"
+        assert result["execution_count"] is None
+
+    @pytest.mark.asyncio
     async def test_interrupt_that_does_not_stop_kernel_reports_still_busy(self):
         client = HangingKernelClient(stops_on_interrupt=False)
 

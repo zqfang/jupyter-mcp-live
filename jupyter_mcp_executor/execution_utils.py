@@ -20,6 +20,10 @@ COLLECT_TIMEOUT_MSG = "Execution timed out while collecting outputs"
 # Extra time the iopub collector gets past the execution deadline, so output
 # the kernel already sent is still drained when the shell wait times out.
 IOPUB_DRAIN_GRACE_SECS = 5
+# Once iopub reports the kernel idle, wait at most this long for the
+# execute_reply before returning without it (a lost reply must not hold the
+# call until the deadline, which can be hours away).
+SHELL_REPLY_GRACE_SECS = 2
 
 # Strong references to cleanup tasks started on cancellation, so they are not
 # garbage-collected before they finish.
@@ -57,8 +61,10 @@ async def wait_for_execute_reply(
             # out; asyncio.TimeoutError covers wrappers/mocks that use it.
             shell_reply = await client.get_shell_msg(timeout=remaining)
         except (Empty, TimeoutError):
-            logger.error("Timeout waiting for execute_reply on shell channel")
-            return None
+            # The poll can give up a few ms before ``remaining`` elapsed; loop
+            # back so None is only returned once the deadline really passed
+            # (callers treat that as a timeout and interrupt the kernel).
+            continue
         except Exception as e:  # noqa: BLE001 - treated like a missing reply
             logger.error(f"Error reading execute_reply from shell channel: {e}")
             return None
@@ -305,7 +311,7 @@ async def execute_code_on_kernel(
             await _finish_tasks(shell_task, iopub_task)
 
     try:
-        reply = await shell_task
+        reply = await _await_shell_reply(shell_task, iopub_task, kernel_id)
         execution_count = reply.get("execution_count") if reply else None
         if reply is None and interrupt and loop.time() >= deadline:
             logger.warning(
@@ -395,3 +401,29 @@ async def _finish_tasks(*tasks: asyncio.Task[Any]) -> None:
         task.cancel()
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _await_shell_reply(
+    shell_task: asyncio.Task[dict[str, Any] | None],
+    iopub_task: asyncio.Task[tuple[list[dict], str, str | None]],
+    kernel_id: str,
+) -> dict[str, Any] | None:
+    """Return the execute_reply, without waiting long once the kernel is idle.
+
+    Normally the shell reply arrives around the same time iopub reports idle.
+    If iopub finishes first and reached idle (not its own deadline), the
+    reply gets SHELL_REPLY_GRACE_SECS before we continue without it.
+    """
+    await asyncio.wait({shell_task, iopub_task}, return_when=asyncio.FIRST_COMPLETED)
+    if not shell_task.done():
+        _, _, iopub_error = iopub_task.result()
+        if iopub_error != COLLECT_TIMEOUT_MSG:
+            await asyncio.wait({shell_task}, timeout=SHELL_REPLY_GRACE_SECS)
+            if not shell_task.done():
+                logger.warning(
+                    f"Kernel {kernel_id} went idle but sent no execute_reply "
+                    f"within {SHELL_REPLY_GRACE_SECS}s; continuing without it"
+                )
+                shell_task.cancel()
+                return None
+    return await shell_task
