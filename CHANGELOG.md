@@ -36,6 +36,13 @@
   old sandbox-limit code path is removed: there is no `max_duration_secs` and
   no `SANDBOX_TIMEOUT_HEADROOM_SECS`. CI's oldest-versions job now tests
   fastmcp 4.1.0 with Jupyter Server 2.16.0 on Python 3.11.
+- **Requires jupyter-collaboration >= 4.4** (jupyter-server-ydoc >= 2.4).
+  `ensure_ynotebook()` now recreates a cleaned-up YDoc room with the official
+  `YDocExtension.get_document(copy=False, create=True)` instead of building a
+  `DocumentRoom` and ystore by hand from private APIs. Behavior is unchanged
+  (same ystore, content loaded, file adapter until the first browser
+  connects), and room creation now shares jupyter_server_ydoc's per-room
+  lock with the browser websocket handler instead of a private one.
 
 ### Bugs fixed
 
