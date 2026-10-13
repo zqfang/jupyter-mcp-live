@@ -29,7 +29,7 @@ if "jupyter_mcp_executor.query_service" not in sys.modules:
     stub = types.ModuleType("jupyter_mcp_executor.query_service")
 
     # Safe imports (do not import KernelManager)
-    from jupyter_mcp_executor.cell_images import CellImages, extract_cell_images
+    from jupyter_mcp_executor.cell_images import CellImages
     from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
     from jupyter_mcp_executor.notebook_models import CellIdentifier
     from jupyter_mcp_executor.output_filter import OutputFilter
@@ -82,15 +82,7 @@ if "jupyter_mcp_executor.query_service" not in sys.modules:
             adapter = await get_notebook_adapter(notebook_path)
             position = await self._resolve_position(adapter, identifier)
             cell = await adapter.read_cell(position)
-            outputs = cell.outputs if cell.cell_type == "code" else []
-            images, attached, skipped = extract_cell_images(outputs)
-            return CellImages(
-                position=position,
-                cell_id=cell.cell_id or "",
-                images=tuple(images),
-                attached=tuple(attached),
-                skipped=tuple(skipped),
-            )
+            return CellImages.from_cell(cell, position)
 
         async def read_cell(self, notebook_path: str, identifier: CellIdentifier):
             notebook_path = normalize_path(notebook_path)

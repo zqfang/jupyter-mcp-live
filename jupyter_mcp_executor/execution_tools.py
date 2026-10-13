@@ -485,10 +485,12 @@ async def view_cell_image(
     cell_id: str | None = None,
     execution_count: int | None = None,
 ) -> ToolResult:
-    """Look at a code cell's image outputs (plots, figures) as real images.
+    """Look at a cell's images as real images: plots or embedded pictures.
 
-    Other tools show image outputs only as "[Filtered image/png ...]"
-    placeholders; call this when you need to see one, e.g. to check a plot.
+    Code cell: its image outputs, which other tools show only as
+    "[Filtered image/png ...]" placeholders — call this to check a plot.
+    Markdown cell: images it embeds (pasted attachments, data: URIs); remote
+    URLs and local image files are listed in skipped, not shown.
     Read-only: needs no kernel and no setup_notebook call.
 
     The images are attached to the tool response for you to view — also when
@@ -503,9 +505,10 @@ async def view_cell_image(
         execution_count: The cell's [n] execution label (not its position)
 
     Returns:
-        dict: position, cell_id, images (output_index, mime_type, bytes of
-            each attached image) and skipped (output_index, mime_type, reason
-            for image outputs not attached). Empty images: the cell has none.
+        dict: position, cell_id, cell_type, images (one entry per attached
+            image: source "output"/"attachment"/"data_uri", mime_type, bytes)
+            and skipped (images not attached, with reason). Empty images: the
+            cell has none to view.
 
     Note: Provide exactly ONE identifier (position_index, cell_id, or execution_count)
     """
@@ -519,7 +522,7 @@ async def view_cell_image(
     summary = cell_images.summary()
     text = json.dumps(summary)
     if not cell_images.images:
-        text = f"Cell {cell_images.position} has no image outputs to view. {text}"
+        text = f"Cell {cell_images.position} has no viewable images. {text}"
     return ToolResult(
         content=[TextContent(type="text", text=text), *cell_images.images],
         structured_content=summary,

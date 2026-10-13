@@ -185,3 +185,33 @@ class TestClearAndCountOnlyUpdate:
         assert cell.execution_count == 5
         assert len(cell.outputs) == 1
         assert cell.outputs[0]["text"] == "kept\n"
+
+
+class TestReadCellAttachments:
+    """read_cell exposes markdown attachments (pasted images) from the YDoc."""
+
+    @pytest.mark.asyncio
+    async def test_markdown_attachments_are_read(self):
+        adapter = YDocAdapter(YNotebook(), "/tmp/test_ydoc_adapter.ipynb")
+        attachments = {"image.png": {"image/png": "iVBORw0KGgo="}}
+        adapter.ydoc.append_cell(
+            {
+                "cell_type": "markdown",
+                "source": "![image.png](attachment:image.png)",
+                "metadata": {},
+                "attachments": attachments,
+                "id": "md-1",
+            }
+        )
+
+        cell = await adapter.read_cell(0)
+
+        assert cell.attachments == attachments
+
+    @pytest.mark.asyncio
+    async def test_cell_without_attachments_reads_empty(self):
+        adapter, pos = await make_adapter_with_code_cell()
+
+        cell = await adapter.read_cell(pos)
+
+        assert cell.attachments == {}

@@ -7,7 +7,10 @@ import pytest
 from mcp.types import ImageContent, TextContent
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook, new_output
 
-from jupyter_mcp_executor.cell_images import extract_cell_images
+from jupyter_mcp_executor.cell_images import (
+    extract_cell_images,
+    extract_markdown_images,
+)
 from jupyter_mcp_executor.execution_tools import view_cell_image
 from jupyter_mcp_executor.notebook_config import IMAGE_CONFIG
 
@@ -34,7 +37,12 @@ class TestExtractCellImages:
         assert images[0].mime_type == "image/png"
         assert images[0].data == PNG_B64
         assert attached == [
-            {"output_index": 1, "mime_type": "image/png", "bytes": len(PNG_BYTES)}
+            {
+                "source": "output",
+                "output_index": 1,
+                "mime_type": "image/png",
+                "bytes": len(PNG_BYTES),
+            }
         ]
         assert skipped == []
 
@@ -152,8 +160,14 @@ class TestViewCellImageTool:
         summary = result.structured_content
         assert summary["position"] == 0
         assert summary["cell_id"] == cell_id
+        assert summary["cell_type"] == "code"
         assert summary["images"] == [
-            {"output_index": 0, "mime_type": "image/png", "bytes": len(PNG_BYTES)}
+            {
+                "source": "output",
+                "output_index": 0,
+                "mime_type": "image/png",
+                "bytes": len(PNG_BYTES),
+            }
         ]
         assert summary["skipped"] == []
 
@@ -180,14 +194,15 @@ class TestViewCellImageTool:
 
         assert result.structured_content["images"] == []
         assert len(result.content) == 1
-        assert "no image outputs" in result.content[0].text
+        assert "no viewable images" in result.content[0].text
 
     @pytest.mark.asyncio
-    async def test_markdown_cell_has_no_images(self, image_notebook):
+    async def test_markdown_cell_without_images(self, image_notebook):
         path, _ = image_notebook
 
         result = await view_cell_image(path, position_index=1)
 
+        assert result.structured_content["cell_type"] == "markdown"
         assert result.structured_content["images"] == []
 
     @pytest.mark.asyncio
@@ -219,3 +234,134 @@ class TestViewCellImageTool:
         images = [c for c in result.content if isinstance(c, ImageContent)]
         assert len(images) == IMAGE_CONFIG.max_images_per_call
         assert len(result.structured_content["skipped"]) == 1
+
+
+class TestExtractMarkdownImages:
+    def test_attachment_reference(self):
+        source = "Intro\n\n![chart](attachment:chart.png)"
+        attachments = {"chart.png": {"image/png": PNG_B64}}
+
+        images, attached, skipped = extract_markdown_images(source, attachments)
+
+        assert [i.data for i in images] == [PNG_B64]
+        assert attached == [
+            {
+                "source": "attachment",
+                "ref_index": 0,
+                "name": "chart.png",
+                "mime_type": "image/png",
+                "bytes": len(PNG_BYTES),
+            }
+        ]
+        assert skipped == []
+
+    def test_html_img_with_data_uri(self):
+        source = f'<img src="data:image/jpeg;base64,{JPEG_B64}" width="200">'
+
+        images, attached, _ = extract_markdown_images(source, {})
+
+        assert [i.mime_type for i in images] == ["image/jpeg"]
+        assert attached[0]["source"] == "data_uri"
+        assert attached[0]["ref_index"] == 0
+
+    def test_markdown_data_uri(self):
+        source = f"![x](data:image/png;base64,{PNG_B64})"
+
+        images, attached, _ = extract_markdown_images(source, {})
+
+        assert [i.data for i in images] == [PNG_B64]
+        assert attached[0]["source"] == "data_uri"
+
+    def test_mixed_references_keep_source_order(self):
+        source = (
+            "![a](attachment:a.png)\n"
+            "![remote](https://example.com/r.png)\n"
+            f'<img src="data:image/png;base64,{PNG_B64}">\n'
+            "![local](figs/plot.png)"
+        )
+        attachments = {"a.png": {"image/png": PNG_B64}}
+
+        _, attached, skipped = extract_markdown_images(source, attachments)
+
+        assert [(a["source"], a["ref_index"]) for a in attached] == [
+            ("attachment", 0),
+            ("data_uri", 2),
+        ]
+        assert [(s["source"], s["ref_index"], s["target"]) for s in skipped] == [
+            ("url", 1, "https://example.com/r.png"),
+            ("file", 3, "figs/plot.png"),
+        ]
+        assert "not fetched" in skipped[0]["reason"]
+        assert "not supported" in skipped[1]["reason"]
+
+    def test_missing_attachment_is_skipped(self):
+        images, _, skipped = extract_markdown_images("![x](attachment:gone.png)", {})
+
+        assert images == []
+        assert skipped[0]["source"] == "attachment"
+        assert skipped[0]["name"] == "gone.png"
+        assert "not found" in skipped[0]["reason"]
+
+    def test_svg_attachment_is_skipped(self):
+        attachments = {"d.svg": {"image/svg+xml": "<svg></svg>"}}
+
+        images, _, skipped = extract_markdown_images(
+            "![d](attachment:d.svg)", attachments
+        )
+
+        assert images == []
+        assert skipped[0]["mime_type"] == "image/svg+xml"
+        assert "SVG" in skipped[0]["reason"]
+
+    def test_non_viewable_data_uri_is_skipped(self):
+        source = "![s](data:image/svg+xml;utf8,<svg/>)"
+
+        images, _, skipped = extract_markdown_images(source, {})
+
+        assert images == []
+        assert skipped[0]["source"] == "data_uri"
+
+    def test_angle_brackets_title_and_encoded_name(self):
+        source = (
+            '![a](<attachment:my chart.png> "Title")\n![b](attachment:my%20chart.png)'
+        )
+        attachments = {"my chart.png": {"image/png": PNG_B64}}
+
+        images, attached, skipped = extract_markdown_images(source, attachments)
+
+        # Both references name the same attachment: it is attached once.
+        assert len(images) == 1
+        assert attached[0]["name"] == "my chart.png"
+        assert skipped == []
+
+    def test_limit_applies(self):
+        source = "\n".join(f"![{i}](data:image/png;base64,{PNG_B64})" for i in range(3))
+
+        images, _, skipped = extract_markdown_images(source, {}, max_images=2)
+
+        assert len(images) == 2
+        assert "limit" in skipped[0]["reason"]
+
+    def test_plain_markdown_has_no_images(self):
+        assert extract_markdown_images("# Title\n[link](https://x.org)", {}) == (
+            [],
+            [],
+            [],
+        )
+
+
+class TestViewMarkdownCellImages:
+    @pytest.mark.asyncio
+    async def test_markdown_attachment_is_returned(self, tmp_path):
+        cell = new_markdown_cell("Pasted:\n\n![image.png](attachment:image.png)")
+        cell["attachments"] = {"image.png": {"image/png": PNG_B64}}
+        path = tmp_path / "md.ipynb"
+        nbformat.write(new_notebook(cells=[cell]), str(path))
+
+        result = await view_cell_image(str(path), position_index=0)
+
+        summary = result.structured_content
+        assert summary["cell_type"] == "markdown"
+        assert summary["images"][0]["source"] == "attachment"
+        images = [c for c in result.content if isinstance(c, ImageContent)]
+        assert [i.data for i in images] == [PNG_B64]

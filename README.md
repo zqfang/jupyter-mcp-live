@@ -23,7 +23,7 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 - **Kernel Management**: Automatic kernel reuse, smart kernel resolution, and session management
 - **Complete Notebook Control**: Create, read, update, and delete cells programmatically
 - **Output Filtering**: Intelligent filtering of large outputs to optimize token usage
-- **Plots the Model Can See**: `view_cell_image` returns a cell's PNG/JPEG figures as MCP image content, also from inside Code Mode scripts
+- **Plots the Model Can See**: `view_cell_image` returns a cell's PNG/JPEG figures, or a markdown cell's pasted images, as MCP image content, also from inside Code Mode scripts
 - **MCP Protocol**: Standard MCP interface for AI assistant integration
 - **Authenticated by Jupyter**: The MCP endpoint lives on the Jupyter Server itself and accepts the same token as Jupyter — works on a local server and on JupyterHub
 - **Production Ready**: Comprehensive test suite, modular architecture, and detailed documentation

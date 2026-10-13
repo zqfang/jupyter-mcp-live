@@ -91,6 +91,8 @@ class CellContent:
     execution_count: int | None = None
     outputs: list[dict[str, Any]] = field(default_factory=list)
     cell_id: str | None = None
+    # Markdown cell attachments (pasted images): {name: {mime_type: base64}}
+    attachments: dict[str, Any] = field(default_factory=dict)
 
     def get_source_as_string(self) -> str:
         """Get source as a single string."""

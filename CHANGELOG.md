@@ -22,6 +22,12 @@
   scripts: the `CodeModeImageForwarder` middleware moves image blocks out of
   nested `call_tool()` results (the script gets the JSON summary, never
   base64) and attaches them to the `execute` response (at most 8).
+- **`view_cell_image` also shows images embedded in markdown cells**: pasted
+  or dragged images (`attachment:` references) and `data:` URIs, from both
+  `![](...)` and `<img src>`. Remote URLs and local image files are listed
+  in `skipped` with their target. Summary entries now carry a `source` field
+  (`output`, `attachment`, `data_uri`, `url`, `file`) and the summary a
+  `cell_type`.
 
 ### Changed
 
