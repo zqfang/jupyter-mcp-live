@@ -13,13 +13,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.x']
-        fastmcp: ['latest']
+        deps: ['latest']
         include:
-          # Oldest supported Python with fastmcp 3.x, which ships Monty 0.0.x
-          # (the other Code Mode sandbox-limit code path).
+          # Oldest supported versions: Python, fastmcp and Jupyter Server.
           - os: ubuntu-latest
             python-version: '3.11'
-            fastmcp: '3'
+            deps: 'oldest'
 
     steps:
     - uses: actions/checkout@v4
@@ -33,8 +32,8 @@ jobs:
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        if [ "${{ matrix.fastmcp }}" = "3" ]; then
-          pip install -e .[test] "fastmcp[code-mode]>=3.4.3,<4"
+        if [ "${{ matrix.deps }}" = "oldest" ]; then
+          pip install -e .[test] "fastmcp[code-mode]==4.1.0" "jupyter_server==2.16.0"
         else
           pip install -e .[test]
         fi

@@ -6,6 +6,8 @@ FastMCP client, so routing, Jupyter auth, the ASGI bridge and FastMCP's
 streamable-HTTP transport are all exercised together.
 """
 
+import asyncio
+import dataclasses
 import json
 import time
 
@@ -14,13 +16,19 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from tornado.simple_httpclient import HTTPStreamClosedError
 
-from jupyter_mcp_executor.notebook_config import ProgressConfig
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG, ProgressConfig
 
 EXTENSION = "jupyter_mcp_executor"
 TOY_TOOL = "tests.integration.toy_tools:add"
 EXECUTION_TOOLS = [
     f"jupyter_mcp_executor.execution_tools:{name}"
-    for name in ("setup_notebook", "add_code_cell", "shutdown_notebook")
+    for name in (
+        "setup_notebook",
+        "add_code_cell",
+        "shutdown_notebook",
+        "interrupt_notebook_kernel",
+        "restart_notebook_kernel",
+    )
 ]
 INITIALIZE = {
     "jsonrpc": "2.0",
@@ -269,3 +277,156 @@ class TestProgressNotifications:
         assert finished - received[0][0] > 0.8
         progresses = [p for _, p, _ in received]
         assert progresses == sorted(progresses)
+
+
+def _script_value(result):
+    """The value a Code Mode script returned.
+
+    fastmcp wraps some return values as ``{"result": value}``; unwrap it.
+    """
+    data = json.loads(result.content[0].text)
+    if isinstance(data, dict) and set(data) == {"result"}:
+        return data["result"]
+    return data
+
+
+def _execute_args(notebook: str, *statements: str) -> dict:
+    """A Code Mode script: set up ``notebook``, run statements, return ``out``."""
+    lines = [f"await call_tool('setup_notebook', {{'notebook_path': {notebook!r}}})"]
+    lines += list(statements)
+    lines.append("return out")
+    return {"code": "\n".join(lines)}
+
+
+# A 60s cell that any OS can interrupt. On Windows, an interrupt only takes
+# effect between Python bytecodes, so a single time.sleep(60) would run to
+# completion there.
+LONG_CELL = "import time\nfor _ in range(600):\n    time.sleep(0.1)"
+
+
+def _cell(notebook: str, source: str) -> str:
+    """Code Mode expression that runs ``source`` in a new cell of ``notebook``."""
+    return (
+        f"await call_tool('add_code_cell', "
+        f"{{'notebook_path': {notebook!r}, 'source': {source!r}}})"
+    )
+
+
+class TestInterruptAndRestart:
+    """Real kernels: timeouts, cancellation and explicit tools stop cells."""
+
+    @pytest.fixture
+    def jp_server_config(self):
+        return _config(mcp_tools=[TOY_TOOL, *EXECUTION_TOOLS])
+
+    @pytest.fixture
+    def client_factory(self, jp_serverapp, jp_http_port, jp_base_url):
+        def make(timeout=120):
+            return Client(
+                StreamableHttpTransport(
+                    _mcp_url(jp_http_port, jp_base_url),
+                    headers={"Authorization": f"Bearer {_token(jp_serverapp)}"},
+                ),
+                timeout=timeout,
+            )
+
+        return make
+
+    @pytest.mark.usefixtures("http_server", "mcp_extension")
+    async def test_timeout_interrupts_kernel_and_keeps_state(
+        self, client_factory, monkeypatch
+    ):
+        short = dataclasses.replace(EXECUTION_CONFIG, default_timeout=2)
+        for module in ("cell_operations", "execution_engine", "execution_utils"):
+            monkeypatch.setattr(f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short)
+
+        args = _execute_args(
+            "t.ipynb",
+            "r1 = " + _cell("t.ipynb", "x = 41\n" + LONG_CELL),
+            "r2 = " + _cell("t.ipynb", "x + 1"),
+            "out = {'r1': [r1['status'], r1.get('error', '')], 'r2': r2['outputs']}",
+        )
+        start = time.monotonic()
+        async with client_factory() as client:
+            result = _script_value(await client.call_tool("execute", args))
+
+        assert time.monotonic() - start < 30  # not the 60s the cell asked for
+        status, error = result["r1"]
+        assert status == "error"
+        assert "the kernel was interrupted" in error
+        # Kernel survived the interrupt with its state.
+        assert result["r2"][0]["data"]["text/plain"] == "42"
+
+    @pytest.mark.usefixtures("http_server", "mcp_extension")
+    async def test_interrupt_tool_stops_running_cell(self, client_factory):
+        async def run_long_cell():
+            args = _execute_args(
+                "i.ipynb",
+                "r = " + _cell("i.ipynb", LONG_CELL),
+                "out = [o.get('ename') for o in r['outputs']]",
+            )
+            async with client_factory() as client:
+                return await client.call_tool("execute", args)
+
+        start = time.monotonic()
+        long_call = asyncio.create_task(run_long_cell())
+        await asyncio.sleep(4)  # let the cell start
+        async with client_factory() as other:
+            interrupted = await other.call_tool(
+                "execute",
+                {
+                    "code": "return await call_tool('interrupt_notebook_kernel', "
+                    "{'notebook_path': 'i.ipynb'})"
+                },
+            )
+        result = await asyncio.wait_for(long_call, timeout=30)
+
+        assert "variables are kept" in interrupted.content[0].text
+        assert _script_value(result) == ["KeyboardInterrupt"]
+        assert time.monotonic() - start < 30
+
+    @pytest.mark.usefixtures("http_server", "mcp_extension")
+    async def test_restart_tool_clears_state_and_keeps_kernel(self, client_factory):
+        args = _execute_args(
+            "r.ipynb",
+            "before = " + _cell("r.ipynb", "y = 5"),
+            "restarted = await call_tool('restart_notebook_kernel', "
+            "{'notebook_path': 'r.ipynb'})",
+            "after = " + _cell("r.ipynb", "y"),
+            "out = {'same_kernel': before['kernel_id'] == restarted['kernel_id'] "
+            "== after['kernel_id'], 'after': [o.get('ename') for o in "
+            "after['outputs']], 'message': restarted['message']}",
+        )
+        async with client_factory() as client:
+            result = _script_value(await client.call_tool("execute", args))
+
+        out = result
+        assert out["same_kernel"] is True
+        assert out["after"] == ["NameError"]  # y is gone after the restart
+        assert "cleared" in out["message"]
+
+    @pytest.mark.usefixtures("http_server", "mcp_extension")
+    async def test_cancelled_request_interrupts_kernel(self, client_factory):
+        setup = _execute_args("c.ipynb", "out = 'ready'")
+        long_cell = _execute_args(
+            "c.ipynb", "out = " + _cell("c.ipynb", LONG_CELL)
+        )
+        quick_cell = _execute_args(
+            "c.ipynb", "out = (" + _cell("c.ipynb", "1 + 1") + ")['outputs']"
+        )
+
+        async with client_factory() as client:
+            await client.call_tool("execute", setup)
+        # This call gives up after 3s, which cancels the request server-side.
+        async with client_factory() as impatient:
+            with pytest.raises(Exception):  # noqa: B017, PT011 - client timeout error
+                await impatient.call_tool("execute", long_cell, timeout=3)
+
+        start = time.monotonic()
+        async with client_factory() as client:
+            result = await client.call_tool("execute", quick_cell)
+
+        # Without the interrupt this would queue behind the 60s sleep.
+        assert time.monotonic() - start < 20
+        outputs = _script_value(result)
+        assert outputs[-1]["data"]["text/plain"] == "2"

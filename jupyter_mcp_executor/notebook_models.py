@@ -195,6 +195,24 @@ class ShutdownResult(BaseModel):
     )
 
 
+class KernelActionResult(BaseModel):
+    """Result of interrupting or restarting a notebook's kernel."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "kernel_id": "abc-123-def",
+                    "message": "Interrupt sent; variables are kept",
+                }
+            ]
+        }
+    )
+
+    kernel_id: str = Field(description="ID of the kernel the action applied to")
+    message: str = Field(description="What happened and what to do next")
+
+
 class CellInfo(BaseModel):
     """Information about a notebook cell."""
 

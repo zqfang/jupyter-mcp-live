@@ -2,6 +2,39 @@
 
 
 
+## 0.6.0 (Unreleased)
+
+### Enhancements made
+
+- **New tools `interrupt_notebook_kernel` and `restart_notebook_kernel`.**
+  Interrupt stops the running cell with KeyboardInterrupt and keeps the
+  variables. Restart keeps the same kernel (and JupyterLab session) but clears
+  all state. Both work on cells started from JupyterLab too, and neither ever
+  starts a kernel.
+- **Runaway cells are interrupted automatically:**
+  - when they hit the execution timeout, the kernel is interrupted and drained
+    to idle (bounded by `interrupt_grace_secs`, 10s), so the next execution
+    no longer queues behind them;
+  - when the MCP request is cancelled.
+
+### Changed
+
+- **Requires fastmcp >= 4.1** (`fastmcp[code-mode]>=4.1,<5`). Support for
+  fastmcp 3.x and 4.0.x is dropped; they still ship pydantic-monty 0.0.x. The
+  old sandbox-limit code path is removed: there is no `max_duration_secs` and
+  no `SANDBOX_TIMEOUT_HEADROOM_SECS`. CI's oldest-versions job now tests
+  fastmcp 4.1.0 with Jupyter Server 2.16.0 on Python 3.11.
+
+### Bugs fixed
+
+- A cancelled execution left its iopub collector running until the deadline,
+  up to 10 hours, reading the shared kernel client's channel. Both inner tasks
+  are now always finished, and the kernel stays reserved until the cancelled
+  cell has ended.
+- A cell that ipykernel aborted (queued behind a failing or interrupted cell)
+  was reported as a successful run with no output. It is now an error that
+  says to re-run the cell.
+
 ## 0.5.0 (Unreleased)
 
 ### Enhancements made

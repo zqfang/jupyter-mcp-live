@@ -11,6 +11,8 @@ class ExecutionConfig:
     kernel_ready_timeout: int = 1200
     iopub_msg_rate_limit: float = 0.01  # seconds between message checks
     iopub_poll_interval: float = 0.5  # seconds per iopub poll while collecting
+    # After a timeout interrupt, wait this long for the kernel to go idle
+    interrupt_grace_secs: float = 10.0
 
 
 @dataclass(frozen=True)

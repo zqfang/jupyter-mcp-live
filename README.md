@@ -74,6 +74,8 @@ c.MCPExtensionApp.mcp_tools = [
     "jupyter_mcp_executor.execution_tools:setup_notebook",
     "jupyter_mcp_executor.execution_tools:switch_notebook_kernel",
     "jupyter_mcp_executor.execution_tools:shutdown_notebook",
+    "jupyter_mcp_executor.execution_tools:interrupt_notebook_kernel",
+    "jupyter_mcp_executor.execution_tools:restart_notebook_kernel",
     "jupyter_mcp_executor.execution_tools:add_code_cell",
     "jupyter_mcp_executor.execution_tools:edit_code_cell",
     "jupyter_mcp_executor.execution_tools:add_markdown_cell",
@@ -174,6 +176,15 @@ Your MCP client has its own limits. In Claude Code:
   hours) or a per-server `timeout` in `.mcp.json`. Progress does not extend
   these, so if you set one, keep it above your longest cell, e.g.
   `MCP_TOOL_TIMEOUT=36000000` for 10 hours.
+
+To stop a cell, call `interrupt_notebook_kernel` (like JupyterLab's stop
+button; variables are kept) or, if it ignores the interrupt,
+`restart_notebook_kernel` (clears all state). A cell that hits the timeout,
+or whose MCP request is cancelled, is interrupted automatically.
+On Windows, an interrupt only takes effect between Python statements, so a
+single long call into C code (e.g. `time.sleep(600)` or one huge native
+operation) finishes before it stops. JupyterLab's stop button behaves the
+same. Use `restart_notebook_kernel` if a cell must stop immediately.
 
 See [Claude Code's MCP docs](https://code.claude.com/docs/en/mcp) and
 [environment variables](https://code.claude.com/docs/en/env-vars).
