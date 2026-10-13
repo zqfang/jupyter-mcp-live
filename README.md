@@ -160,6 +160,9 @@ claude mcp add --transport http jupyter-hub https://<hub-host>/user/<username>/m
 
 Each user's MCP endpoint can only reach that user's kernels and files.
 
+For the full step-by-step setup (user image, tool config, restart, token,
+verification, troubleshooting), see [JUPYTERHUB.md](JUPYTERHUB.md).
+
 ### Long-running cells
 
 A cell may run for up to 10 hours (`EXECUTION_CONFIG.default_timeout`). While

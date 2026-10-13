@@ -114,8 +114,8 @@ curl -X POST http://localhost:8888/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
 ```
 
-For connecting MCP clients (Claude Code, Gemini CLI, …) and for JupyterHub
-deployments, see the README.
+For connecting MCP clients (Claude Code, Gemini CLI, …), see the README.
+For JupyterHub deployments, see [JUPYTERHUB.md](JUPYTERHUB.md).
 
 ## Installing Additional Tools
 
