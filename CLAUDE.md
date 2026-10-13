@@ -45,7 +45,7 @@ pytest tests/test_notebook_execution_tools.py -v
 # Run single test
 pytest tests/test_notebook_execution_tools.py::TestExecuteCell::test_execute_cell -v
 
-# Run with coverage
+# Run with coverage (needs pytest-cov, which is not a test dependency)
 pytest --cov=jupyter_mcp_executor --cov-report=html
 
 # Run specific test pattern
@@ -314,7 +314,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-262 tests total across:
+267 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)

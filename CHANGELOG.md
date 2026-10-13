@@ -34,6 +34,14 @@
 - A cell that ipykernel aborted (queued behind a failing or interrupted cell)
   was reported as a successful run with no output. It is now an error that
   says to re-run the cell.
+- No more ERROR traceback ("Failed to recreate YDoc room … WebsocketServer is
+  not running") on every notebook operation before any browser has connected.
+  Falling back to the file is correct then, and is now logged at debug level.
+- Under JupyterHub, the startup log shows the public MCP endpoint
+  (`JUPYTERHUB_PUBLIC_URL`, else the `/user/<name>/` path) instead of the
+  single-user server's internal address.
+- `pytest.ini` used the setup.cfg header `[tool:pytest]` and was ignored by
+  pytest; it now takes effect (see the file for the kept settings).
 
 ## 0.5.0 (Unreleased)
 
