@@ -6,6 +6,7 @@ import importlib
 import importlib.metadata
 import inspect
 import logging
+import os
 import re
 
 from jupyter_server.extension.application import ExtensionApp
@@ -239,7 +240,19 @@ class MCPExtensionApp(ExtensionApp):
         self.handlers.append((pattern, MCPHandler, {"extension": self}))
 
     def _endpoint_url(self) -> str:
-        """Return the URL clients use for the authenticated endpoint."""
+        """Return the URL clients use for the authenticated endpoint.
+
+        Under JupyterHub the server's own connection_url is an internal
+        address behind the Hub proxy, so prefer the public URL of this server
+        (``JUPYTERHUB_PUBLIC_URL``), else its path on the proxy
+        (``JUPYTERHUB_SERVICE_PREFIX``).
+        """
+        hub_public_url = os.environ.get("JUPYTERHUB_PUBLIC_URL")
+        if hub_public_url:
+            return url_path_join(hub_public_url, self.mcp_endpoint_path)
+        hub_prefix = os.environ.get("JUPYTERHUB_SERVICE_PREFIX")
+        if hub_prefix:
+            return url_path_join(hub_prefix, self.mcp_endpoint_path)
         base = getattr(self.serverapp, "connection_url", "") or "/"
         return url_path_join(base, self.mcp_endpoint_path)
 
@@ -330,7 +343,7 @@ class MCPExtensionApp(ExtensionApp):
                 await self.mcp_server_instance.start_embedded()
                 self.log.info(
                     f"✅ MCP endpoint at {self._endpoint_url()} "
-                    "(Jupyter token required)"
+                    "(Jupyter/JupyterHub token required)"
                 )
 
             if self.mcp_standalone:

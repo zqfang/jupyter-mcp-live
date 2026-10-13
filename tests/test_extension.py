@@ -661,3 +661,48 @@ class TestEntrypointDiscovery:
                 extension._confirm_mcp_server_started.assert_awaited_once()
 
                 await extension.stop_extension()
+
+
+class TestEndpointUrl:
+    """The logged endpoint URL is the one clients actually use."""
+
+    @staticmethod
+    def _extension(connection_url="http://127.0.0.1:59945/user/alice/"):
+        extension = MCPExtensionApp()
+        extension.serverapp = Mock(connection_url=connection_url)
+        return extension
+
+    def test_plain_jupyter_uses_connection_url(self, monkeypatch):
+        monkeypatch.delenv("JUPYTERHUB_PUBLIC_URL", raising=False)
+        monkeypatch.delenv("JUPYTERHUB_SERVICE_PREFIX", raising=False)
+        extension = self._extension("http://localhost:8888/")
+
+        assert extension._endpoint_url() == "http://localhost:8888/mcp"
+
+    def test_jupyterhub_uses_public_server_url(self, monkeypatch):
+        monkeypatch.setenv(
+            "JUPYTERHUB_PUBLIC_URL", "https://hub.example.org/user/alice/"
+        )
+        monkeypatch.setenv("JUPYTERHUB_SERVICE_PREFIX", "/user/alice/")
+        extension = self._extension()
+
+        assert extension._endpoint_url() == "https://hub.example.org/user/alice/mcp"
+
+    def test_jupyterhub_without_public_url_uses_proxy_path(self, monkeypatch):
+        monkeypatch.setenv("JUPYTERHUB_PUBLIC_URL", "")
+        monkeypatch.setenv("JUPYTERHUB_SERVICE_PREFIX", "/user/alice/")
+        extension = self._extension()
+
+        assert extension._endpoint_url() == "/user/alice/mcp"
+
+    def test_custom_endpoint_path_is_used(self, monkeypatch):
+        monkeypatch.setenv(
+            "JUPYTERHUB_PUBLIC_URL", "https://hub.example.org/user/alice/"
+        )
+        extension = self._extension()
+        extension.mcp_endpoint_path = "agent-mcp"
+
+        assert (
+            extension._endpoint_url()
+            == "https://hub.example.org/user/alice/agent-mcp"
+        )

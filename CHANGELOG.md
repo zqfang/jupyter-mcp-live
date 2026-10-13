@@ -34,6 +34,20 @@
 - A cell that ipykernel aborted (queued behind a failing or interrupted cell)
   was reported as a successful run with no output. It is now an error that
   says to re-run the cell.
+- Timeout interrupts no longer depend on timer precision. jupyter_client can
+  report "no reply" a few ms before the requested timeout; the timeout then
+  went undetected, the kernel was not interrupted, and the call returned
+  "timed out while collecting outputs" 5s later. Seen on Linux CI.
+- Once the kernel reports idle, a missing execute_reply is waited for at most
+  2s instead of until the execution deadline, which can be hours away.
+- No more ERROR traceback ("Failed to recreate YDoc room … WebsocketServer is
+  not running") on every notebook operation before any browser has connected.
+  Falling back to the file is correct then, and is now logged at debug level.
+- Under JupyterHub, the startup log shows the public MCP endpoint
+  (`JUPYTERHUB_PUBLIC_URL`, else the `/user/<name>/` path) instead of the
+  single-user server's internal address.
+- `pytest.ini` used the setup.cfg header `[tool:pytest]` and was ignored by
+  pytest; it now takes effect (see the file for the kept settings).
 
 ## 0.5.0 (Unreleased)
 
