@@ -298,6 +298,12 @@ def _execute_args(notebook: str, *statements: str) -> dict:
     return {"code": "\n".join(lines)}
 
 
+# A 60s cell that any OS can interrupt. On Windows, an interrupt only takes
+# effect between Python bytecodes, so a single time.sleep(60) would run to
+# completion there.
+LONG_CELL = "import time\nfor _ in range(600):\n    time.sleep(0.1)"
+
+
 def _cell(notebook: str, source: str) -> str:
     """Code Mode expression that runs ``source`` in a new cell of ``notebook``."""
     return (
@@ -336,7 +342,7 @@ class TestInterruptAndRestart:
 
         args = _execute_args(
             "t.ipynb",
-            "r1 = " + _cell("t.ipynb", "x = 41\nimport time\ntime.sleep(60)"),
+            "r1 = " + _cell("t.ipynb", "x = 41\n" + LONG_CELL),
             "r2 = " + _cell("t.ipynb", "x + 1"),
             "out = {'r1': [r1['status'], r1.get('error', '')], 'r2': r2['outputs']}",
         )
@@ -356,7 +362,7 @@ class TestInterruptAndRestart:
         async def run_long_cell():
             args = _execute_args(
                 "i.ipynb",
-                "r = " + _cell("i.ipynb", "import time\ntime.sleep(60)"),
+                "r = " + _cell("i.ipynb", LONG_CELL),
                 "out = [o.get('ename') for o in r['outputs']]",
             )
             async with client_factory() as client:
@@ -403,7 +409,7 @@ class TestInterruptAndRestart:
     async def test_cancelled_request_interrupts_kernel(self, client_factory):
         setup = _execute_args("c.ipynb", "out = 'ready'")
         long_cell = _execute_args(
-            "c.ipynb", "out = " + _cell("c.ipynb", "import time\ntime.sleep(60)")
+            "c.ipynb", "out = " + _cell("c.ipynb", LONG_CELL)
         )
         quick_cell = _execute_args(
             "c.ipynb", "out = (" + _cell("c.ipynb", "1 + 1") + ")['outputs']"
