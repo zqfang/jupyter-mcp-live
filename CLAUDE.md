@@ -474,6 +474,18 @@ room up (`ywebsocket_server.rooms`) and, if it is not `ready`, call
 handler's `open()` takes, so the two never load concurrently (initialize()
 is a no-op once ready). This is the one private attribute we still rely on.
 
+**Rooms we create use the configured ystore.** The handler builds a room's
+ystore with `partial(ystore_class, config=...)`, but `get_document()`
+instantiates the bare `ystore_class` (jupyter-collaboration 4.4.0–5.0.4), so
+`SQLiteYStore.db_path` / `squash_after_inactivity_of` were ignored for rooms
+it created: they read a different database than browser rooms, and a
+reconnecting browser merged two unrelated histories (duplicated cells).
+`_configure_ystore_class()` swaps `YDocExtension.ystore_class` for a subclass
+that injects the extension's config before the first `create=True` call.
+`get_document()` is the only runtime reader of that trait (handlers got their
+class at startup). `tests/integration/test_ydoc_rooms.py` configures
+`SQLiteYStore.db_path` to catch this.
+
 ### Persistence Strategy
 
 When using `YDocAdapter` (notebook is open):

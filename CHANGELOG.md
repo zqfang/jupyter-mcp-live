@@ -43,6 +43,10 @@
   (same ystore, content loaded, file adapter until the first browser
   connects), and room creation now shares jupyter_server_ydoc's per-room
   lock with the browser websocket handler instead of a private one.
+  `get_document()` ignores the ystore configuration for the rooms it creates
+  (e.g. `c.SQLiteYStore.db_path`), so those rooms would have read another
+  CRDT history than browser rooms, and a reconnecting browser duplicated
+  cells; the extension's ystore class is now given the server config first.
 
 ### Bugs fixed
 
