@@ -108,6 +108,22 @@ class ExecutionEngine:
         self.kernel_service = kernel_service or KernelManager()
         self._clients: dict[str, Any] = {}
         self._kernel_locks: dict[str, asyncio.Lock] = {}
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    def _release_after(
+        self, lock: asyncio.Lock, tasks: list[asyncio.Task[None]]
+    ) -> None:
+        """Release ``lock`` once ``tasks`` (cancellation cleanup) are done."""
+
+        async def release() -> None:
+            try:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                lock.release()
+
+        task = asyncio.create_task(release())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def forget_kernel_client(self, kernel_id: str) -> None:
         """Drop the cached client so the next execution reconnects.
@@ -221,10 +237,13 @@ class ExecutionEngine:
         # Serialize executions per kernel: the cached client's channels must
         # only be consumed by one coroutine at a time.
         lock = self._kernel_locks.setdefault(kernel_id, asyncio.Lock())
-        async with progress or contextlib.nullcontext(), lock:
-            if progress is not None:
-                progress.mark_running()
+        cleanup: list[asyncio.Task[None]] = []
+        async with progress or contextlib.nullcontext():
+            await lock.acquire()
+            handed_off = False
             try:
+                if progress is not None:
+                    progress.mark_running()
                 client = await self._get_client(kernel, kernel_id)
                 result_dict = await execute_code_on_kernel(
                     client,
@@ -235,12 +254,23 @@ class ExecutionEngine:
                     interrupt=lambda: ensure_async(
                         kernel_manager.interrupt_kernel(kernel_id)
                     ),
+                    cancel_cleanup=cleanup,
                 )
+            except asyncio.CancelledError:
+                # Keep the kernel reserved until the interrupted cell has
+                # ended; the cleanup task releases the lock when it finishes.
+                if cleanup:
+                    handed_off = True
+                    self._release_after(lock, cleanup)
+                raise
             except Exception:
                 # Connection-level failure: drop the cached client so the
                 # next execution reconnects from scratch.
                 self._drop_client(kernel_id)
                 raise
+            finally:
+                if not handed_off:
+                    lock.release()
 
         return ExecutionResult(
             execution_count=result_dict.get("execution_count"),

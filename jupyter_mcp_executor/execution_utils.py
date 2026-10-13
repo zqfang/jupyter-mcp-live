@@ -21,10 +21,14 @@ COLLECT_TIMEOUT_MSG = "Execution timed out while collecting outputs"
 # the kernel already sent is still drained when the shell wait times out.
 IOPUB_DRAIN_GRACE_SECS = 5
 
+# Strong references to cleanup tasks started on cancellation, so they are not
+# garbage-collected before they finish.
+_CLEANUP_TASKS: set[asyncio.Task[None]] = set()
+
 
 async def wait_for_execute_reply(
     client: Any, msg_id: str, deadline: float
-) -> int | None:
+) -> dict[str, Any] | None:
     """Wait for the execute_reply matching msg_id on the shell channel.
 
     Stale shell messages (e.g., replies to a previous execution that timed
@@ -37,7 +41,8 @@ async def wait_for_execute_reply(
         deadline: Absolute event-loop time after which we give up
 
     Returns:
-        execution_count from the matching reply, or None on timeout/error
+        The matching reply's content (status, execution_count, ...), or None
+        on timeout/error
     """
     loop = asyncio.get_running_loop()
 
@@ -68,11 +73,15 @@ async def wait_for_execute_reply(
             continue
 
         reply_content = shell_reply.get("content", {})
-        if reply_content.get("status") == "error":
-            logger.warning("execute_reply indicates error status")
-        execution_count = reply_content.get("execution_count")
-        logger.debug(f"Captured execution_count from shell reply: {execution_count}")
-        return execution_count
+        if reply_content.get("status") in ("error", "aborted"):
+            logger.warning(
+                f"execute_reply indicates {reply_content.get('status')} status"
+            )
+        logger.debug(
+            "Captured execution_count from shell reply: "
+            f"{reply_content.get('execution_count')}"
+        )
+        return reply_content
 
 
 async def collect_outputs(
@@ -214,6 +223,7 @@ async def execute_code_on_kernel(
     on_output: OutputCallback | None = None,
     interrupt: InterruptFn | None = None,
     interrupt_grace: float | None = None,
+    cancel_cleanup: list[asyncio.Task[None]] | None = None,
 ) -> dict[str, Any]:
     """Execute code on kernel and collect results.
 
@@ -227,9 +237,15 @@ async def execute_code_on_kernel(
       (bounded by ``interrupt_grace``), so the next execution doesn't queue
       behind a runaway cell;
     - when this coroutine is cancelled (e.g. the MCP request was cancelled).
+      Cancellation is not delayed: a background cleanup task interrupts the
+      kernel and drains it to idle (bounded by ``interrupt_grace``), and is
+      appended to ``cancel_cleanup`` so the caller can keep the kernel
+      reserved until it finishes. Otherwise the next execution could reach the
+      kernel while the interrupted cell is still ending, and ipykernel aborts
+      requests queued behind a failing cell.
 
-    Either way both inner tasks are always finished, so no collector keeps
-    reading the shared client's iopub channel after this returns.
+    Both inner tasks are always finished (by the cleanup task after a
+    cancellation), so no collector outlives the execution it belongs to.
 
     Args:
         client: Kernel client with started channels
@@ -239,8 +255,10 @@ async def execute_code_on_kernel(
         on_output: Optional async callback fired per collected output
             (live streaming); see collect_outputs
         interrupt: Optional best-effort kernel interrupt
-        interrupt_grace: Seconds to wait for idle after a timeout interrupt;
+        interrupt_grace: Seconds to wait for idle after an interrupt;
             defaults to ``EXECUTION_CONFIG.interrupt_grace_secs``
+        cancel_cleanup: Receives the background cleanup task started when
+            this execution is cancelled (only if ``interrupt`` is given)
 
     Returns:
         dict with execution_count, outputs, status, and optional error
@@ -273,9 +291,23 @@ async def execute_code_on_kernel(
         )
     )
     interrupted = False
+    finish_inline = True
+
+    async def cleanup_after_cancel() -> None:
+        """Interrupt, drain to idle within the grace, then end both tasks."""
+        nonlocal iopub_deadline
+        try:
+            await _interrupt_kernel(interrupt, kernel_id)
+            iopub_deadline = loop.time() + grace
+            if not iopub_task.done():
+                await asyncio.wait({iopub_task})
+        finally:
+            await _finish_tasks(shell_task, iopub_task)
+
     try:
-        execution_count = await shell_task
-        if execution_count is None and interrupt and loop.time() >= deadline:
+        reply = await shell_task
+        execution_count = reply.get("execution_count") if reply else None
+        if reply is None and interrupt and loop.time() >= deadline:
             logger.warning(
                 f"Execution on kernel {kernel_id} timed out after {timeout}s; "
                 "interrupting the kernel"
@@ -287,11 +319,26 @@ async def execute_code_on_kernel(
         outputs, status, error_msg = await iopub_task
     except asyncio.CancelledError:
         if interrupt is not None:
+            # Don't wait here: the caller may be cancelled again at every
+            # await (anyio cancel scopes). The cleanup runs in its own task.
             logger.info(f"Execution on kernel {kernel_id} cancelled; interrupting")
-            await asyncio.shield(_interrupt_kernel(interrupt, kernel_id))
+            cleanup = asyncio.create_task(cleanup_after_cancel())
+            _CLEANUP_TASKS.add(cleanup)
+            cleanup.add_done_callback(_CLEANUP_TASKS.discard)
+            if cancel_cleanup is not None:
+                cancel_cleanup.append(cleanup)
+            finish_inline = False
         raise
     finally:
-        await _finish_tasks(shell_task, iopub_task)
+        if finish_inline:
+            await _finish_tasks(shell_task, iopub_task)
+
+    if reply is not None and reply.get("status") == "aborted":
+        status = "error"
+        error_msg = (
+            "Execution was aborted by the kernel: it was queued behind an "
+            "execution that failed or was interrupted. Re-run the cell."
+        )
 
     if interrupted:
         status = "error"

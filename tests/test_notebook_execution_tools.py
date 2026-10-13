@@ -1210,19 +1210,32 @@ class TestTimeoutInterruptAndCancel:
         assert result["status"] == "error"
         assert "timed out" in result["error"]
 
+    @staticmethod
+    def _start(client, cleanup, **kwargs):
+        return asyncio.create_task(
+            execute_code_on_kernel(
+                client,
+                "x",
+                "k1",
+                timeout=60,
+                interrupt=client.interrupt,
+                cancel_cleanup=cleanup,
+                **kwargs,
+            )
+        )
+
     @pytest.mark.asyncio
     async def test_cancel_interrupts_kernel_and_stops_collector(self):
         client = HangingKernelClient()
-        task = asyncio.create_task(
-            execute_code_on_kernel(
-                client, "x", "k1", timeout=60, interrupt=client.interrupt
-            )
-        )
+        cleanup = []
+        task = self._start(client, cleanup)
         await asyncio.sleep(0.1)
 
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+        assert len(cleanup) == 1
+        await asyncio.wait_for(asyncio.gather(*cleanup), timeout=2)
 
         assert client.interrupt_calls == 1
         # No orphaned iopub collector keeps reading the shared client.
@@ -1230,6 +1243,131 @@ class TestTimeoutInterruptAndCancel:
         await asyncio.sleep(0.1)
         assert client.iopub_active == 0
         assert client.iopub_calls == calls
+
+    @pytest.mark.asyncio
+    async def test_cancel_drains_kernel_to_idle_before_returning(self):
+        """The kernel lock must not be released while the cell still runs.
+
+        Otherwise the next execution reaches the kernel before the interrupted
+        cell fails, and ipykernel aborts it as "queued behind an error".
+        """
+        client = HangingKernelClient()
+        cleanup = []
+        task = self._start(client, cleanup)
+        await asyncio.sleep(0.1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.wait_for(asyncio.gather(*cleanup), timeout=2)
+
+        # The KeyboardInterrupt error and the idle status were consumed.
+        assert client._pending == []
+
+    @pytest.mark.asyncio
+    async def test_repeated_cancellation_still_drains_in_background(self):
+        """anyio re-delivers cancellation at every await; cleanup must survive."""
+        client = HangingKernelClient()
+        cleanup = []
+        task = self._start(client, cleanup)
+        await asyncio.sleep(0.1)
+
+        for _ in range(3):
+            task.cancel()
+            await asyncio.sleep(0)
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.wait_for(asyncio.gather(*cleanup), timeout=2)
+
+        assert client.interrupt_calls == 1
+        assert client._pending == []
+        assert client.iopub_active == 0
+
+    @pytest.mark.asyncio
+    async def test_cancel_drain_is_bounded_by_grace(self):
+        client = HangingKernelClient(stops_on_interrupt=False)
+        cleanup = []
+        task = self._start(client, cleanup, interrupt_grace=0.3)
+        await asyncio.sleep(0.1)
+
+        start = asyncio.get_running_loop().time()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.wait_for(asyncio.gather(*cleanup), timeout=2)
+
+        assert asyncio.get_running_loop().time() - start < 2
+        assert client.iopub_active == 0
+
+    @pytest.mark.asyncio
+    async def test_engine_keeps_kernel_reserved_until_cleanup_finishes(
+        self, mock_serverapp, monkeypatch
+    ):
+        """The next execution must start only after the cancelled one ended."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+        events = []
+
+        async def fake_execute(_client, code, *_args, cancel_cleanup=None, **_kw):
+            if code == "slow":
+                try:
+                    await asyncio.sleep(60)
+                except asyncio.CancelledError:
+
+                    async def cleanup():
+                        await asyncio.sleep(0.3)
+                        events.append("cleanup done")
+
+                    cancel_cleanup.append(asyncio.create_task(cleanup()))
+                    raise
+            events.append(f"run {code}")
+            return {"execution_count": 1, "outputs": [], "status": "ok"}
+
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_engine.execute_code_on_kernel",
+            fake_execute,
+        )
+        engine = container.execution_engine
+        slow = asyncio.create_task(
+            engine.execute_cell_code("slow", kernel_id="kernel-live")
+        )
+        await asyncio.sleep(0.1)
+        slow.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await slow
+
+        result = await engine.execute_cell_code("next", kernel_id="kernel-live")
+
+        assert result.status == "ok"
+        assert events == ["cleanup done", "run next"]
+
+    @pytest.mark.asyncio
+    async def test_aborted_execution_is_reported_as_error(self):
+        """ipykernel aborts cells queued behind a failing one; say so."""
+
+        class AbortedClient:
+            def execute(self, _code):
+                return "msg-ab"
+
+            async def get_shell_msg(self, timeout=None):  # noqa: ARG002
+                return {
+                    "header": {"msg_type": "execute_reply"},
+                    "parent_header": {"msg_id": "msg-ab"},
+                    "content": {"status": "aborted", "execution_count": None},
+                }
+
+            async def get_iopub_msg(self, timeout=None):  # noqa: ARG002
+                return {
+                    "header": {"msg_type": "status"},
+                    "parent_header": {"msg_id": "msg-ab"},
+                    "content": {"execution_state": "idle"},
+                }
+
+        result = await execute_code_on_kernel(AbortedClient(), "1 + 1", "k1", timeout=5)
+
+        assert result["status"] == "error"
+        assert "aborted" in result["error"]
+        assert result["outputs"] == []
 
     @pytest.mark.asyncio
     async def test_failing_interrupt_is_logged_not_raised(self):

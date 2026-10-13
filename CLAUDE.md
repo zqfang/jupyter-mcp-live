@@ -314,7 +314,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-258 tests total across:
+262 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -490,9 +490,19 @@ executions instead of everything appearing when the MCP tool call returns:
     `status="error"`: "…; the kernel was interrupted", or "…still busy; use
     restart_notebook_kernel" if it ignores SIGINT.
   - **On cancellation** of the MCP request (fastmcp 4 propagates it into tools
-    called from Code Mode), it interrupts the kernel, then re-raises.
-  - **Either way**, both inner tasks (shell wait and iopub collector) are always
-    finished, so no orphaned collector keeps reading the shared client.
+    called from Code Mode), it re-raises immediately. A background cleanup task
+    interrupts the kernel, drains to idle within the grace, and finishes both
+    inner tasks. `ExecutionEngine` hands the per-kernel lock to that task
+    (`_release_after`), so the next execution reaches the kernel only after
+    the interrupted cell has ended. Don't wait inline here: anyio re-delivers
+    cancellation at every await, so an inline drain gets abandoned and leaves a
+    second iopub reader behind. Also, ipykernel aborts requests queued behind a
+    failing cell.
+  - **Either way**, both inner tasks (shell wait and iopub collector) are
+    always finished, so no orphaned collector keeps reading the shared client.
+  - An `aborted` execute_reply (the kernel skipped the cell because an earlier
+    one failed or was interrupted) is reported as `status="error"` with a
+    "re-run the cell" message instead of an empty success.
   - `interrupt_notebook_kernel` and `restart_notebook_kernel` resolve the
     kernel with `KernelManager.find_kernel_for_notebook()` (tracked kernel,
     then Jupyter session; never starts one). Restart keeps the kernel id, and

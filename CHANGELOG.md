@@ -29,7 +29,11 @@
 
 - A cancelled execution left its iopub collector running until the deadline,
   up to 10 hours, reading the shared kernel client's channel. Both inner tasks
-  are now always finished.
+  are now always finished, and the kernel stays reserved until the cancelled
+  cell has ended.
+- A cell that ipykernel aborted (queued behind a failing or interrupted cell)
+  was reported as a successful run with no output. It is now an error that
+  says to re-run the cell.
 
 ## 0.5.0 (Unreleased)
 
