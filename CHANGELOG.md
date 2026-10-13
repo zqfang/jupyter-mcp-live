@@ -50,6 +50,10 @@
 
 ### Bugs fixed
 
+- A cell that called `input()` blocked until the execution timeout (10 hours
+  by default): it was executed with stdin allowed, and nobody answers the
+  kernel's input request. Executions now refuse stdin, so `input()` raises
+  `StdinNotImplementedError` immediately.
 - An MCP call that arrived after a browser had registered a notebook's YDoc
   room but before the room was loaded got the room's still-empty document:
   reads saw no cells, and edits were autosaved over the notebook on disk.

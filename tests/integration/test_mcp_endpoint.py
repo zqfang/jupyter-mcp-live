@@ -360,6 +360,31 @@ class TestInterruptAndRestart:
         assert result["r2"][0]["data"]["text/plain"] == "42"
 
     @pytest.mark.usefixtures("http_server", "mcp_extension")
+    async def test_input_fails_fast_instead_of_waiting_for_stdin(
+        self, client_factory, monkeypatch
+    ):
+        """Nobody can answer input(): the cell must fail, not wait for stdin.
+
+        With stdin allowed the kernel sends input_request and blocks until the
+        execution timeout (10 hours by default).
+        """
+        short = dataclasses.replace(EXECUTION_CONFIG, default_timeout=5)
+        for module in ("cell_operations", "execution_engine", "execution_utils"):
+            monkeypatch.setattr(
+                f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short
+            )
+
+        args = _execute_args(
+            "s.ipynb",
+            "r = " + _cell("s.ipynb", "input('name? ')"),
+            "out = [r['status'], [o.get('ename') for o in r['outputs']]]",
+        )
+        async with client_factory() as client:
+            result = _script_value(await client.call_tool("execute", args))
+
+        assert result == ["error", ["StdinNotImplementedError"]]
+
+    @pytest.mark.usefixtures("http_server", "mcp_extension")
     async def test_interrupt_tool_stops_running_cell(self, client_factory):
         async def run_long_cell():
             args = _execute_args(

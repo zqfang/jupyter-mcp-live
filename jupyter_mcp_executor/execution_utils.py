@@ -269,9 +269,11 @@ async def execute_code_on_kernel(
     Returns:
         dict with execution_count, outputs, status, and optional error
     """
-    # Execute the code
+    # Execute the code. Nobody can answer an input() prompt, so stdin is
+    # refused: the kernel raises StdinNotImplementedError at once instead of
+    # blocking on input_request until the timeout (10 hours by default).
     logger.info(f"Executing code in kernel {kernel_id}")
-    msg_id = client.execute(code)
+    msg_id = client.execute(code, allow_stdin=False)
 
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout

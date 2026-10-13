@@ -550,6 +550,9 @@ executions instead of everything appearing when the MCP tool call returns:
 
 ### Execution Internals
 
+- **No stdin**: `execute_code_on_kernel()` sends `allow_stdin=False`, so
+  `input()` / `getpass()` raise `StdinNotImplementedError` at once instead of
+  blocking on an input request nobody answers until the timeout.
 - **Stopping runaway cells**: `execute_code_on_kernel()` takes an `interrupt`
   callback (the engine passes `kernel_manager.interrupt_kernel`).
   - **On timeout**, it interrupts the kernel and drains output until idle,

@@ -108,7 +108,7 @@ class MockKernelClient:
         """Mock wait for ready."""
         await asyncio.sleep(0.01)
 
-    def execute(self, _code):
+    def execute(self, _code, **_kwargs):
         """Mock execute - prepares shell reply with execution_count."""
         msg_id = f"msg-id-{self.execution_count}"
         self._current_msg_id = msg_id
@@ -1016,7 +1016,7 @@ class TestExecutionMessageHandling:
             def __init__(self):
                 self.iopub_calls = 0
 
-            def execute(self, _code):
+            def execute(self, _code, **_kwargs):
                 return "msg-1"
 
             async def get_shell_msg(self, timeout=None):
@@ -1059,7 +1059,7 @@ class TestExecutionMessageHandling:
                     },
                 ]
 
-            def execute(self, _code):
+            def execute(self, _code, **_kwargs):
                 return "msg-2"
 
             async def get_shell_msg(self, timeout=None):
@@ -1099,7 +1099,7 @@ class HangingKernelClient:
             }
         ]
 
-    def execute(self, _code):
+    def execute(self, _code, **_kwargs):
         return "msg-hang"
 
     async def interrupt(self):
@@ -1200,7 +1200,7 @@ class TestTimeoutInterruptAndCancel:
         )
 
         class NoReplyClient:
-            def execute(self, _code):
+            def execute(self, _code, **_kwargs):
                 return "msg-nr"
 
             async def get_shell_msg(self, timeout=None):
@@ -1391,7 +1391,7 @@ class TestTimeoutInterruptAndCancel:
         """ipykernel aborts cells queued behind a failing one; say so."""
 
         class AbortedClient:
-            def execute(self, _code):
+            def execute(self, _code, **_kwargs):
                 return "msg-ab"
 
             async def get_shell_msg(self, timeout=None):
@@ -1610,7 +1610,7 @@ class OutputtingClient:
     async def wait_for_ready(self, timeout=10):
         pass
 
-    def execute(self, _code):
+    def execute(self, _code, **_kwargs):
         msg_id = "msg-live-1"
         self._shell.append(
             {
@@ -1695,7 +1695,7 @@ class TestLiveOutputStreaming:
         streamed = asyncio.Event()
 
         class LiveClient:
-            def execute(self, _code):
+            def execute(self, _code, **_kwargs):
                 return "msg-live"
 
             async def get_shell_msg(self, timeout=None):
