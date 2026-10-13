@@ -200,7 +200,8 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 - `ydoc_adapter.py` - YDoc-based (collaborative editing)
 - `nbformat_adapter.py` - File-based (disk persistence)
 - `ydoc_helpers.py` - YDoc utilities, including `ensure_ynotebook()` which
-  recreates cleaned-up YDoc rooms to preserve CRDT history
+  recreates cleaned-up YDoc rooms (via `get_document(create=True)`) to
+  preserve CRDT history, and initializes rooms the browser has not loaded yet
 
 ### Foundation/Utilities
 
@@ -338,7 +339,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-307 tests total across:
+314 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -349,6 +350,8 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
   real YNotebook (edit_cell, append/coalesce/clear)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
+- `tests/integration/test_ydoc_rooms.py` - `ensure_ynotebook` against a real
+  jupyter_server_ydoc (headless room load and reuse)
 - `tests/test_sessions.py` - Session matching tests
 - `tests/test_imports.py` - Import validation tests
 - `tests/test_kernel_utils.py` - Kernel utilities tests
@@ -450,8 +453,26 @@ On browser reconnect, the new room detects the ystore/disk mismatch and resets
 CRDT state — the browser's stored state vector no longer matches, and cells
 appear **duplicated** in JupyterLab. `ensure_ynotebook()` recreates the room
 with the same `file_id` (same ystore path), preserving CRDT history so
-reconnecting browsers sync cleanly. Room creation is guarded by a per-room
-asyncio lock in `ydoc_helpers.py` to prevent duplicate rooms under concurrency.
+reconnecting browsers sync cleanly. Recreation uses jupyter_server_ydoc's
+official `YDocExtension.get_document(copy=False, create=True)`
+(jupyter-collaboration >= 4.4): it builds the room from the same ystore,
+initializes its content, and holds the extension's per-room lock — the same
+lock the browser websocket handler takes — so concurrent callers never create
+duplicate rooms. Until the first browser connects (websocket server not
+started) `ensure_ynotebook()` returns None and the file adapter is used: no
+client holds CRDT state yet, and rooms with no websocket are never cleaned
+up.
+
+**Existing rooms are initialized too.** `get_document()` initializes only
+rooms it creates; for an existing room it returns `room._document` as is. The
+browser handler registers a room in `prepare()` but loads it only in
+`open()`, so in between that document is **empty** — and edits to it are
+autosaved over the .ipynb (`DocumentRoom` autosaves whether or not it is
+ready). Both `get_ynotebook()` and `ensure_ynotebook()` therefore look the
+room up (`ywebsocket_server.rooms`) and, if it is not `ready`, call
+`room.initialize()` under `YDocExtension._room_locks[room_id]` — the lock the
+handler's `open()` takes, so the two never load concurrently (initialize()
+is a no-op once ready). This is the one private attribute we still rely on.
 
 ### Persistence Strategy
 

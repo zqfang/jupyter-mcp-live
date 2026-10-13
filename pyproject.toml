@@ -31,7 +31,9 @@ dependencies = [
     "jupyterlab_commands_toolkit",
     "jupyterlab_notebook_awareness",
     "nbformat>=5.0",
-    "jupyter-collaboration",
+    # >=4.4 (jupyter-server-ydoc >=2.4): YDocExtension.get_document(create=True),
+    # used by ydoc_helpers.ensure_ynotebook to recreate cleaned-up rooms
+    "jupyter-collaboration>=4.4,<5",
     "jupyter_ydoc>=2.0.0",
     "pycrdt>=0.8.0",
     "pandas>=2.3.3",
