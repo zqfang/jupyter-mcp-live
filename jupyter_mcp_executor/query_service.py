@@ -45,6 +45,8 @@ class QueryService:
                     "execution_count": cell.execution_count,
                     "outputs": cell.outputs,
                     "id": cell.cell_id,
+                    # The name read_cell / view_cell_image take it under
+                    "cell_id": cell.cell_id,
                 }
                 for cell in cells
             ]

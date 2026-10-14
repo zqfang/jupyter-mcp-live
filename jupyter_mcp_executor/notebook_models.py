@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 @dataclass
@@ -230,6 +230,7 @@ class CellInfo(BaseModel):
                         {"output_type": "stream", "name": "stdout", "text": "hello\n"}
                     ],
                     "id": "abc-123-def",
+                    "cell_id": "abc-123-def",
                 }
             ]
         }
@@ -249,3 +250,9 @@ class CellInfo(BaseModel):
         default_factory=list, description="List of outputs (for code cells only)"
     )
     id: str = Field(description="Unique identifier for the cell")
+
+    @computed_field(description="Same as id: the name read_cell takes it under")
+    @property
+    def cell_id(self) -> str:
+        """The id under the name the tools take it as a parameter."""
+        return self.id
