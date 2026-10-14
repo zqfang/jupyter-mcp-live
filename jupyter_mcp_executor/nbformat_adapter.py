@@ -5,7 +5,10 @@ from typing import Any
 
 from nbformat.v4 import new_code_cell, new_markdown_cell
 
-from jupyter_mcp_executor.notebook_adapter import NotebookAdapter
+from jupyter_mcp_executor.notebook_adapter import (
+    NotebookAdapter,
+    resolve_insert_position,
+)
 from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.notebook_store import editing_notebook, load_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
@@ -92,9 +95,7 @@ class NbformatAdapter(NotebookAdapter):
     ) -> tuple[int, str]:
         """Add cell to notebook file."""
         async with editing_notebook(self._notebook_path) as nb:
-            pos = len(nb.cells) if position is None else position
-            if pos < 0 or pos > len(nb.cells):
-                pos = len(nb.cells)
+            pos = resolve_insert_position(position, len(nb.cells))
 
             source_str = cell_content.get_source_as_string()
             if cell_content.cell_type == "code":

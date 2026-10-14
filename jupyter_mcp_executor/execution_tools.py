@@ -33,12 +33,14 @@ user_info = {
 # Apply collaborative awareness
 @collaborative_tool(user=user_info)
 async def list_notebook_kernels() -> dict[str, Any]:
-    """List all available kernel specifications.
+    """List the kernels notebooks can use, and the server's default.
 
     Returns:
-        Dict with "kernelspecs" key containing kernel spec dicts
+        dict with "default_kernel" (started when setup_notebook gets no
+        kernel_name) and "kernelspecs": {name: {"display_name", "language"}}.
+        Pass a name to setup_notebook / switch_notebook_kernel.
     """
-    return await container.kernel_manager.list_notebook_kernels()
+    return await container.kernel_manager.describe_kernels()
 
 
 # Apply collaborative awareness
@@ -281,7 +283,8 @@ async def add_code_cell(
     Args:
         notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         source: Code for the new cell
-        position_index: Where to insert (0-indexed); appends at end if omitted
+        position_index: Where to insert (0-indexed, 0 to the cell count);
+            appends at the end if omitted. Other values raise an error
         execute: Whether to execute the cell after adding (default: True)
 
     Returns:
@@ -344,7 +347,8 @@ async def add_markdown_cell(
     Args:
         notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         source: Markdown content for the new cell
-        position_index: Where to insert (0-indexed); appends at end if omitted
+        position_index: Where to insert (0-indexed, 0 to the cell count);
+            appends at the end if omitted. Other values raise an error
 
     Returns:
         dict with message, position, and cell_type

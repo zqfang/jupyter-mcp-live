@@ -31,6 +31,15 @@
 
 ### Changed
 
+- **`add_code_cell` / `add_markdown_cell` reject a `position_index` outside
+  0..cell count** with an error, instead of silently appending at the end
+  (the agent then reported a position the cell was not at). Omit it to
+  append.
+- **`list_notebook_kernels` returns only what an agent needs**:
+  `{"default_kernel": ..., "kernelspecs": {name: {"display_name",
+  "language"}}}`. Each kernelspec's `argv`, `env` and `resource_dir` cost
+  tokens and `env` may hold secrets.
+- Placeholders for filtered images say to call `view_cell_image`.
 - **pandas, numpy, seaborn, matplotlib and scipy are no longer installed
   with the extension.** The extension never imported them; they belong in
   the kernel's environment. Install them there if your notebooks use them

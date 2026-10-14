@@ -71,6 +71,25 @@ class KernelManager:
 
         return {"kernelspecs": specs}
 
+    async def describe_kernels(self) -> dict[str, Any]:
+        """The kernels an agent can choose from, and the server's default.
+
+        Only each kernelspec's display name and language: argv, env and
+        resource_dir cost tokens and env may hold values (keys, tokens).
+        """
+        specs = (await self.list_notebook_kernels()).get("kernelspecs", {})
+        kernels = {}
+        for name, entry in specs.items():
+            spec = entry.get("spec", {})
+            kernels[name] = {
+                "display_name": spec.get("display_name", name),
+                "language": spec.get("language", ""),
+            }
+        return {
+            "default_kernel": default_kernel_name(get_server_context()),
+            "kernelspecs": kernels,
+        }
+
     async def setup_notebook(
         self,
         notebook_path: str,

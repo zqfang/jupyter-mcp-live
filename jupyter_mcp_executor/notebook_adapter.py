@@ -12,6 +12,25 @@ from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.ydoc_helpers import ensure_notebook_room
 
 
+def resolve_insert_position(position: int | None, cell_count: int) -> int:
+    """Where a new cell goes: ``position``, or the end when it is None.
+
+    Raises:
+        IndexError: If ``position`` is not 0..cell_count. Moving it to the end
+            silently would make the agent report a position the cell is not at.
+    """
+    if position is None:
+        return cell_count
+    if position < 0 or position > cell_count:
+        msg = (
+            f"Cannot insert a cell at position {position}: the notebook has "
+            f"{cell_count} cells (valid positions 0 to {cell_count}); omit "
+            "position_index to append"
+        )
+        raise IndexError(msg)
+    return position
+
+
 class NotebookAdapter(ABC):
     """Abstract base class for notebook operations.
 
