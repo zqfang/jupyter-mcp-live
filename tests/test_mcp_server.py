@@ -11,7 +11,6 @@ from jupyter_mcp_executor.mcp_server import (
     SANDBOX_EXECUTION_BUDGET_SECS,
     SANDBOX_MAX_MEMORY_BYTES,
     MCPServer,
-    _wrap_with_json_conversion,
     build_code_mode,
     build_sandbox_limits,
 )
@@ -291,235 +290,128 @@ class TestMCPServerIntegration:
         assert server._registered_tools["printer"]["is_async"] is False
 
 
-class TestJSONArgumentConversion:
-    """Test JSON argument conversion functionality."""
+class TestToolRegistration:
+    """Tools are registered with FastMCP as-is, signature and all.
 
-    def test_simple_dict_conversion(self):
-        """Test basic JSON string to dict conversion."""
+    Clients reach configured tools only through Code Mode, where a script
+    passes ``call_tool(name, params)`` a Python dict: dict and list
+    arguments arrive as JSON objects/arrays, never as JSON-encoded strings.
+    """
 
-        def func_with_dict(data: dict) -> dict:
-            """Function that expects a dict."""
-            return {"received": data, "type": type(data).__name__}
-
-        wrapped_func = _wrap_with_json_conversion(func_with_dict)
-
-        # Test with actual dict (should pass through)
-        result = wrapped_func(data={"key": "value"})
-        assert result["received"] == {"key": "value"}
-        assert result["type"] == "dict"
-
-        # Test with JSON string (should be converted)
-        result = wrapped_func(data='{"key": "value"}')
-        assert result["received"] == {"key": "value"}
-        assert result["type"] == "dict"
-
-    def test_optional_dict_conversion(self):
-        """Test JSON conversion with Optional[dict] annotation."""
-
-        def func_with_optional_dict(data: dict | None = None) -> dict:
-            """Function with optional dict parameter."""
-            return {
-                "received": data,
-                "type": type(data).__name__ if data else "NoneType",
-            }
-
-        wrapped_func = _wrap_with_json_conversion(func_with_optional_dict)
-
-        # Test with None (should pass through)
-        result = wrapped_func(data=None)
-        assert result["received"] is None
-        assert result["type"] == "NoneType"
-
-        # Test with JSON string (should be converted)
-        result = wrapped_func(data='{"optional": true}')
-        assert result["received"] == {"optional": True}
-        assert result["type"] == "dict"
-
-    def test_union_dict_conversion(self):
-        """Test JSON conversion with Union type annotations."""
-
-        def func_with_union_dict(data: dict | None) -> dict:
-            """Function with Union[dict, None] parameter."""
-            return {
-                "received": data,
-                "type": type(data).__name__ if data else "NoneType",
-            }
-
-        wrapped_func = _wrap_with_json_conversion(func_with_union_dict)
-
-        # Test with JSON string (should be converted)
-        result = wrapped_func(data='{"union": "test"}')
-        assert result["received"] == {"union": "test"}
-        assert result["type"] == "dict"
-
-    def test_typed_dict_conversion(self):
-        """Test JSON conversion with typed dict annotations."""
-
-        def func_with_typed_dict(config: dict[str, str]) -> dict:
-            """Function with Dict[str, str] annotation."""
-            return {"received": config, "type": type(config).__name__}
-
-        wrapped_func = _wrap_with_json_conversion(func_with_typed_dict)
-
-        # Test with JSON string (should be converted)
-        result = wrapped_func(config='{"name": "test", "value": "data"}')
-        assert result["received"] == {"name": "test", "value": "data"}
-        assert result["type"] == "dict"
-
-    def test_invalid_json_handling(self):
-        """Test handling of invalid JSON strings."""
-
-        def func_with_dict(data: dict) -> dict:
-            """Function that expects a dict."""
-            return {"received": data, "type": type(data).__name__}
-
-        wrapped_func = _wrap_with_json_conversion(func_with_dict)
-
-        # Test with invalid JSON (should pass string as-is)
-        result = wrapped_func(data="invalid json {")
-        assert result["received"] == "invalid json {"
-        assert result["type"] == "str"
-
-        # Test with empty string (should pass as-is)
-        result = wrapped_func(data="")
-        assert result["received"] == ""
-        assert result["type"] == "str"
-
-    def test_non_dict_parameters_unchanged(self):
-        """Test that non-dict parameters are not affected."""
-
-        def mixed_func(name: str, count: int, data: dict) -> dict:
-            """Function with mixed parameter types."""
-            return {
-                "name": name,
-                "name_type": type(name).__name__,
-                "count": count,
-                "count_type": type(count).__name__,
-                "data": data,
-                "data_type": type(data).__name__,
-            }
-
-        wrapped_func = _wrap_with_json_conversion(mixed_func)
-
-        # Only the dict parameter should be converted
-        result = wrapped_func(name="test", count=42, data='{"converted": true}')
-
-        assert result["name"] == "test"
-        assert result["name_type"] == "str"
-        assert result["count"] == 42
-        assert result["count_type"] == "int"
-        assert result["data"] == {"converted": True}
-        assert result["data_type"] == "dict"
+    @staticmethod
+    async def _input_schema(server: MCPServer, name: str) -> dict:
+        tool = await server.mcp.get_tool(name)
+        return tool.parameters
 
     @pytest.mark.asyncio
-    async def test_async_function_conversion(self):
-        """Test JSON conversion with async functions."""
+    async def test_dict_parameter_schema_is_a_plain_object(self):
+        """A dict parameter is advertised as an object, not object-or-string."""
 
-        async def async_func_with_dict(config: dict) -> dict:
-            """Async function that expects a dict."""
-            await asyncio.sleep(0.001)  # Small delay
-            return {"async_result": config, "type": type(config).__name__}
+        def configure(options: dict[str, int], extra: dict | None = None) -> str:
+            """Take dict parameters."""
+            return "ok"
 
-        wrapped_func = _wrap_with_json_conversion(async_func_with_dict)
-
-        # Test with JSON string (should be converted)
-        result = await wrapped_func(config='{"async": true, "value": 123}')
-        assert result["async_result"] == {"async": True, "value": 123}
-        assert result["type"] == "dict"
-
-    def test_complex_nested_json(self):
-        """Test conversion of complex nested JSON structures."""
-
-        def func_with_nested_dict(data: dict) -> dict:
-            """Function that processes nested dict data."""
-            return {"processed": data}
-
-        wrapped_func = _wrap_with_json_conversion(func_with_nested_dict)
-
-        complex_json = """{
-            "users": [
-                {"name": "Alice", "age": 30},
-                {"name": "Bob", "age": 25}
-            ],
-            "metadata": {
-                "version": "1.0",
-                "created": "2024-01-01"
-            }
-        }"""
-
-        result = wrapped_func(data=complex_json)
-        expected = {
-            "users": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}],
-            "metadata": {"version": "1.0", "created": "2024-01-01"},
-        }
-        assert result["processed"] == expected
-
-    def test_annotation_modification(self):
-        """Test that function annotations are properly modified."""
-
-        def original_func(data: dict) -> dict:
-            """Original function with dict annotation."""
-            return data
-
-        wrapped_func = _wrap_with_json_conversion(original_func)
-
-        # Check that annotations were modified to accept strings
-        annotations = wrapped_func.__annotations__
-        assert "data" in annotations
-
-        # The annotation should now be dict | str (or Union equivalent)
-        data_annotation = annotations["data"]
-        # We can check this works by ensuring both dict and str are acceptable
-        assert hasattr(data_annotation, "__args__") or data_annotation == (dict | str)
-
-
-class TestJSONSchemaModification:
-    """Test JSON schema modification for MCP tools."""
-
-    def test_schema_modification_applied(self):
-        """Test that schema modification is applied during tool registration."""
         server = MCPServer()
+        server.register_tool(configure)
 
-        def func_with_dict_param(config: dict) -> str:
-            """Function with dict parameter."""
-            return f"Received config: {config}"
+        properties = (await self._input_schema(server, "configure"))["properties"]
+        assert properties["options"] == {
+            "additionalProperties": {"type": "integer"},
+            "type": "object",
+        }
+        assert properties["extra"]["anyOf"] == [
+            {"additionalProperties": True, "type": "object"},
+            {"type": "null"},
+        ]
 
-        # Register the function - schema should be automatically modified
-        server.register_tool(func_with_dict_param)
+    @pytest.mark.asyncio
+    async def test_code_mode_script_passes_dict_and_list_arguments(self):
+        """A configured tool taking dict/list parameters works from a script."""
 
-        # Verify the tool was registered
-        assert "func_with_dict_param" in server._registered_tools
-        tool_info = server._registered_tools["func_with_dict_param"]
-        assert tool_info["name"] == "func_with_dict_param"
+        def summarize(config: dict[str, int], tags: list[str]) -> str:
+            """Describe the received argument types."""
+            return (
+                f"{type(config).__name__}:{sorted(config.items())} "
+                f"{type(tags).__name__}:{tags}"
+            )
 
-    def test_multiple_dict_parameters(self):
-        """Test conversion with multiple dict parameters."""
-
-        def func_multiple_dicts(config: dict, metadata: dict, name: str) -> dict:
-            """Function with multiple dict parameters."""
-            return {
-                "config": config,
-                "metadata": metadata,
-                "name": name,
-                "types": {
-                    "config": type(config).__name__,
-                    "metadata": type(metadata).__name__,
-                    "name": type(name).__name__,
-                },
-            }
-
-        wrapped_func = _wrap_with_json_conversion(func_multiple_dicts)
-
-        result = wrapped_func(
-            config='{"key1": "value1"}', metadata='{"version": 2}', name="test_function"
+        server = MCPServer()
+        server.register_tool(summarize)
+        code = (
+            "return await call_tool('summarize', "
+            "{'config': {'b': 2, 'a': 1}, 'tags': ['x', 'y']})"
         )
+        async with Client(server.mcp) as client:
+            result = await client.call_tool("execute", {"code": code})
 
-        assert result["config"] == {"key1": "value1"}
-        assert result["metadata"] == {"version": 2}
-        assert result["name"] == "test_function"
-        assert result["types"]["config"] == "dict"
-        assert result["types"]["metadata"] == "dict"
-        assert result["types"]["name"] == "str"
+        assert "dict:[('a', 1), ('b', 2)] list:['x', 'y']" in result.content[0].text
+
+    @pytest.mark.asyncio
+    async def test_json_string_for_dict_parameter_is_rejected(self):
+        """A JSON-encoded string is a type error, not silently parsed or passed."""
+        received = []
+
+        def take_config(config: dict) -> str:
+            """Record what arrived."""
+            received.append(config)
+            return "called"
+
+        server = MCPServer()
+        server.register_tool(take_config)
+        code = "return await call_tool('take_config', {'config': '{\"a\": 1}'})"
+        async with Client(server.mcp) as client:
+            result = await client.call_tool(
+                "execute", {"code": code}, raise_on_error=False
+            )
+
+        assert result.is_error
+        assert "valid dictionary" in result.content[0].text
+        assert received == []
+
+    @pytest.mark.asyncio
+    async def test_tool_keeps_name_docstring_and_signature(self):
+        """Sync, async and unannotated callables register unchanged."""
+
+        def untyped(value):
+            """Echo the value."""
+            return value
+
+        server = MCPServer()
+        server.register_tool(simple_function)
+        server.register_tool(async_function)
+        server.register_tool(untyped)
+
+        add = await server.mcp.get_tool("simple_function")
+        assert add.description == "Add two numbers."
+        assert add.parameters["properties"] == {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+        }
+        assert (await server.mcp.get_tool("untyped")).parameters["properties"] == {
+            "value": {}
+        }
+        code = (
+            "a = await call_tool('simple_function', {'x': 2, 'y': 3})\n"
+            "b = await call_tool('async_function', {'name': 'Ada'})\n"
+            "c = await call_tool('untyped', {'value': [1, 'two']})\n"
+            "return [a, b, c]"
+        )
+        async with Client(server.mcp) as client:
+            result = await client.call_tool("execute", {"code": code})
+
+        text = result.content[0].text
+        assert "5" in text
+        assert "Hello, Ada!" in text
+        assert "two" in text
+
+    @pytest.mark.asyncio
+    async def test_register_tools_dict_uses_the_given_name(self):
+        """register_tools({name: func}) exposes the tool under that name."""
+        server = MCPServer()
+        server.register_tools({"printer": function_with_docstring})
+
+        assert await server.mcp.get_tool("printer") is not None
+        assert await server.mcp.get_tool("function_with_docstring") is None
 
 
 class TestEmbeddedApp:

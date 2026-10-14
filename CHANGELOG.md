@@ -31,6 +31,15 @@
 
 ### Changed
 
+- Tools are registered with FastMCP as they are. A wrapper rewrote `dict`
+  parameters to also accept a JSON string (`anyOf [object, string]`),
+  which made schemas ambiguous for Code Mode codegen; tools are only
+  reached through Code Mode scripts, whose `call_tool()` passes objects as
+  JSON values. A JSON string for a `dict` parameter is now a validation
+  error. `register_tools({"name": func})` now registers the tool under that
+  name. The 16 notebook tools' schemas are unchanged. (`json:dumps` is gone
+  from the README and example config: FastMCP rejects `**kwargs`, so it
+  never registered.)
 - **`jupyter-ai-tools`, `jupyterlab_commands_toolkit` and
   `jupyterlab_notebook_awareness` are no longer installed.** They provided
   `@collaborative_tool`, whose per-notebook "AI is editing" indicator never
