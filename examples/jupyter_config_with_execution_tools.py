@@ -153,6 +153,9 @@ workspace_dir.mkdir(parents=True, exist_ok=True)
 c.ServerApp.root_dir = str(workspace_dir)
 
 # Enable autoreload for development
-c.ServerApp.autoreload = False  
+c.ServerApp.autoreload = False
 # Set Jupyter log level to INFO
 c.ServerApp.log_level = 'INFO'
+
+# Talk to kernels over private Unix sockets instead of unencrypted TCP (Linux/macOS only).
+c.KernelManager.transport = "ipc"
