@@ -353,7 +353,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-438 tests total across:
+447 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
