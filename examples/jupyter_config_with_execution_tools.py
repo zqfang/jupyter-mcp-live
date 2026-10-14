@@ -18,6 +18,7 @@ c = get_config()  # noqa: F821
 # ============================================================================
 # MCP Server Basic Configuration
 # ============================================================================
+c.LabApp.extension_manager = "readonly"  # list installed extensions only, never query PyPI
 
 # Name for the MCP server (shown to MCP clients)
 c.MCPExtensionApp.mcp_name = "Jupyter Code Execution MCP Server"
