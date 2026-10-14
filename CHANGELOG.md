@@ -31,6 +31,10 @@
 
 ### Changed
 
+- **pandas, numpy, seaborn, matplotlib and scipy are no longer installed
+  with the extension.** The extension never imported them; they belong in
+  the kernel's environment. Install them there if your notebooks use them
+  (`pip install pandas matplotlib …` in the kernel's environment).
 - **Notebooks must be inside the Jupyter root directory.** Absolute paths
   outside it (or reaching outside through a symlink) are rejected with an
   error. They never worked fully: Jupyter cannot open them, so they had no

@@ -43,11 +43,6 @@ dependencies = [
     # output text in pycrdt Text since 3.0.2 (YDocAdapter relies on it)
     "jupyter_ydoc>=3.4",
     "pycrdt>=0.8.0",
-    "pandas>=2.3.3",
-    "numpy>=2.2.6",
-    "seaborn>=0.13.2",
-    "matplotlib>=3.10.7",
-    "scipy>=1.15.3",
 ]
 
 [project.optional-dependencies]
