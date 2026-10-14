@@ -35,6 +35,20 @@ def _combine_callbacks(*callbacks: OutputCallback | None) -> OutputCallback | No
     return combined
 
 
+async def _keep_room_alive(adapter: NotebookAdapter) -> None:
+    """Keep the adapter's YDoc room alive until cancelled.
+
+    A silent cell makes no adapter calls, so without this the room could be
+    deleted (the browser left) while the cell runs. Errors only stop it.
+    """
+    try:
+        while True:
+            adapter.keep_alive()
+            await asyncio.sleep(EXECUTION_CONFIG.room_keepalive_interval)
+    except Exception:
+        logger.debug("Keeping the YDoc room alive failed; stopped", exc_info=True)
+
+
 class _CellOutputStreamer:
     """Mirrors outputs into the notebook as the kernel emits them.
 
@@ -348,14 +362,23 @@ class ExecutionEngine:
             streamer = _CellOutputStreamer(adapter, cell_id, cell_position)
             await streamer.clear_outputs()
 
-        # Execute code
-        exec_result = await self.execute_cell_code(
-            code,
-            kernel_id=kernel_id,
-            timeout=timeout,
-            on_output=streamer.on_output if streamer else None,
-            progress_label=f"{Path(adapter.notebook_path).name} cell {cell_position}",
-        )
+        # Execute code, keeping an open notebook's room alive meanwhile.  The
+        # task is only cancelled, never awaited, so a cancelled call does not
+        # wait on it (anyio re-delivers cancellation at every await).
+        keepalive = asyncio.create_task(_keep_room_alive(adapter)) if streamer else None
+        try:
+            exec_result = await self.execute_cell_code(
+                code,
+                kernel_id=kernel_id,
+                timeout=timeout,
+                on_output=streamer.on_output if streamer else None,
+                progress_label=(
+                    f"{Path(adapter.notebook_path).name} cell {cell_position}"
+                ),
+            )
+        finally:
+            if keepalive is not None:
+                keepalive.cancel()
 
         if started_new:
             exec_result = exec_result.model_copy(update={"started_new_kernel": True})

@@ -1,6 +1,7 @@
 """Test notebook execution tools functionality - refactored for modular architecture."""
 
 import asyncio
+import dataclasses
 from datetime import datetime
 from pathlib import Path
 from queue import Empty
@@ -31,7 +32,7 @@ from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 # Import from new modular structure
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
-from jupyter_mcp_executor.notebook_config import ProgressConfig
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG, ProgressConfig
 from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.output_filter import OutputFilter
@@ -1910,6 +1911,48 @@ class TestLiveOutputStreaming:
         assert adapter.appended == []
         assert len(adapter.updated) == 1
         assert adapter.updated[0][2] is not None  # full batch write
+
+    @pytest.mark.asyncio
+    async def test_room_is_kept_alive_while_a_silent_cell_runs(
+        self, mock_serverapp, monkeypatch
+    ):
+        """A cell without output makes no adapter calls, yet the browser may
+        have left: the room must be kept alive for the whole execution."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_engine.EXECUTION_CONFIG",
+            dataclasses.replace(EXECUTION_CONFIG, room_keepalive_interval=0.01),
+        )
+
+        async def silent_execute(*_args, **_kwargs):
+            await asyncio.sleep(0.2)
+            return {"execution_count": 1, "outputs": [], "status": "ok"}
+
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_engine.execute_code_on_kernel",
+            silent_execute,
+        )
+
+        class KeptAliveAdapter(RecordingCollabAdapter):
+            kept_alive = 0
+
+            def keep_alive(self):
+                self.kept_alive += 1
+
+        adapter = KeptAliveAdapter()
+        await container.execution_engine.execute_and_update_cell(
+            adapter,
+            0,
+            "import time; time.sleep(600)",
+            kernel_id="kernel-live",
+            cell_id="cell-1",
+        )
+        kept_alive_during_run = adapter.kept_alive
+        await asyncio.sleep(0.05)
+
+        assert kept_alive_during_run >= 3
+        assert adapter.kept_alive == kept_alive_during_run  # stopped afterwards
 
     @pytest.mark.asyncio
     async def test_replaced_room_gets_the_full_outputs(self, mock_serverapp):

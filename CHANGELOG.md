@@ -72,12 +72,14 @@
 - A tool call could outlive its YDoc room: 60 s after the browser left,
   jupyter_server_ydoc deletes the room, cancelling its pending save, and
   writes to its detached document vanished without an error (outputs of a
-  long cell missing after reopening). Using a room now cancels its pending
-  cleanup, and an adapter whose room was replaced anyway follows the new
-  room and rewrites the cell's full outputs at the end.
+  long cell missing after reopening). Editing a room, or running a cell in
+  it, now cancels its pending cleanup, and an adapter whose room was
+  replaced anyway follows the new room and rewrites the cell's full outputs
+  at the end.
 - If the YDoc lookup failed while the notebook had a room, the tools fell
   back to writing the `.ipynb` behind it, with the same overwrite. They now
-  fail with an error instead; the file is used only when no room exists.
+  fail with an error instead, also when it cannot be told whether a room
+  exists; the file is used only when the notebook has no room.
 - `shutdown_notebook(shutdown_kernel=False)` reported "kernel still running"
   but shut the kernel down: Jupyter cannot delete a session without stopping
   its kernel. The session and kernel are now left running. With the default

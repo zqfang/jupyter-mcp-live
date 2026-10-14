@@ -8,6 +8,10 @@ from jupyter_mcp_executor.path_utils import to_api_path
 
 logger = logging.getLogger(__name__)
 
+# Room ID of each notebook we attached to, by normalized path. Lets
+# _has_room() answer even when the file ID lookup is what just failed.
+_known_room_ids: dict[str, str] = {}
+
 # Check if YDoc is available
 try:
     from jupyter_ydoc import YNotebook
@@ -109,9 +113,8 @@ async def _attach_room(
     room = await _ensure_room_initialized(ydoc_extension, api_path)
     if room is None:
         return None
-    notebook_room = NotebookRoom(ydoc, room, ydoc_extension, file_path)
-    notebook_room.keep_alive()
-    return notebook_room
+    _known_room_ids[file_path] = room.room_id
+    return NotebookRoom(ydoc, room, ydoc_extension, file_path)
 
 
 def _room_id(ydoc_extension: Any, api_path: str) -> str:
@@ -183,13 +186,20 @@ async def _ensure_room_initialized(ydoc_extension: Any, api_path: str) -> Any | 
     return room
 
 
-def _has_room(ydoc_extension: Any, file_path: str) -> bool:
-    """Whether the notebook has a room now; False if that cannot be told."""
+def _has_room(ydoc_extension: Any, file_path: str) -> bool | None:
+    """Whether the notebook has a room now; None if that cannot be told.
+
+    Checks the room we last attached to first, which needs no file ID lookup
+    (the lookup may be what just failed).
+    """
     try:
-        room_id = _room_id(ydoc_extension, to_api_path(file_path))
-        return room_id in ydoc_extension.ywebsocket_server.rooms
-    except Exception:  # noqa: BLE001 - unknown: let the caller fall back
-        return False
+        rooms = ydoc_extension.ywebsocket_server.rooms
+        known = _known_room_ids.get(file_path)
+        if known is not None and known in rooms:
+            return True
+        return _room_id(ydoc_extension, to_api_path(file_path)) in rooms
+    except Exception:  # noqa: BLE001 - reported as unknown
+        return None
 
 
 async def get_ynotebook(file_path: str) -> Any | None:
@@ -275,37 +285,42 @@ async def ensure_notebook_room(file_path: str) -> NotebookRoom | None:
     if not ydoc_extension:
         return None
 
+    # jupyter_server_ydoc starts its websocket server when the first browser
+    # connects.  Until then no client holds CRDT state for any document, so
+    # the file adapter is safe.  Creating rooms here would also leak them:
+    # rooms are only cleaned up when a websocket closes.
     try:
-        # jupyter_server_ydoc starts its websocket server when the first
-        # browser connects.  Until then no client holds CRDT state for any
-        # document, so the file adapter is safe.  Creating rooms here would
-        # also leak them: rooms are only cleaned up when a websocket closes.
-        if not ydoc_extension.ywebsocket_server.started.is_set():
-            logger.debug(
-                f"YDoc websocket server not started (no browser has connected "
-                f"yet); using the file for {file_path}"
-            )
-            return None
-
-        return await _attach_room(ydoc_extension, file_path, create=True)
-
-    except (AttributeError, KeyError) as e:
-        # Infrastructure not present or misconfigured (e.g. no file ID
-        # manager) — return None so the caller can decide how to proceed.
+        started = ydoc_extension.ywebsocket_server.started.is_set()
+    except AttributeError as e:
         logger.warning(f"YDoc infrastructure unavailable for {file_path}: {e}")
-    except Exception as e:
-        if _has_room(ydoc_extension, file_path):
-            msg = (
-                f"{file_path} is open in JupyterLab, but its live document "
-                f"could not be attached ({e}). Not editing the file instead: "
-                "that would discard unsaved changes in the browser."
-            )
-            raise RuntimeError(msg) from e
-        # No room to conflict with: the file adapter is safe, but log the
-        # failure at ERROR so it is visible in production.
-        logger.exception(f"Failed to get or recreate YDoc room for {file_path}")
+        return None
+    if not started:
+        logger.debug(
+            f"YDoc websocket server not started (no browser has connected "
+            f"yet); using the file for {file_path}"
+        )
+        return None
 
-    return None
+    try:
+        return await _attach_room(ydoc_extension, file_path, create=True)
+    except Exception as e:
+        has_room = _has_room(ydoc_extension, file_path)
+        if has_room is False:
+            # No room to conflict with: the file adapter is safe, but log the
+            # failure at ERROR so it is visible in production.
+            logger.exception(f"Failed to get or recreate YDoc room for {file_path}")
+            return None
+        state = (
+            "is open in JupyterLab"
+            if has_room
+            else "may be open in JupyterLab (its room could not be checked)"
+        )
+        msg = (
+            f"{file_path} {state}, but its live document could not be "
+            f"attached ({e!r}). Not editing the file instead: that would "
+            "discard unsaved changes in the browser."
+        )
+        raise RuntimeError(msg) from e
 
 
 def get_cell_index_by_id_ydoc(ydoc: Any, cell_id: str) -> int | None:

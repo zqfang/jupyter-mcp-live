@@ -186,6 +186,13 @@ class NotebookAdapter(ABC):
         """
         return 0
 
+    def keep_alive(self) -> None:  # noqa: B027 - optional hook, no-op default
+        """Keep the notebook's live document from being closed (if any).
+
+        Called periodically during long executions, which make no other
+        adapter calls while the cell is silent. No-op for files.
+        """
+
 
 async def get_notebook_adapter(notebook_path: str) -> NotebookAdapter:
     """Factory function to get the appropriate adapter for a notebook.

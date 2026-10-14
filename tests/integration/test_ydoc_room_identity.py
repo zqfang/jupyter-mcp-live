@@ -116,24 +116,47 @@ async def test_finds_the_browsers_room_under_a_symlinked_root(
     assert await ensure_ynotebook(notebook_path) is room._document
 
 
-async def test_using_a_room_cancels_its_pending_cleanup(ydoc_extension, notebook_path):
-    """The browser left; the room must not be evicted while we work in it.
+def _schedule_cleanup(extension, room: DocumentRoom) -> asyncio.Task:
+    """What the handler does when the last browser leaves (delay shortened)."""
+
+    async def cleanup():
+        await asyncio.sleep(0.3)
+        await _evict(extension, room)
+
+    room.cleaner = asyncio.create_task(cleanup())
+    return room.cleaner
+
+
+async def test_editing_a_room_cancels_its_pending_cleanup(
+    ydoc_extension, notebook_path
+):
+    """The browser left; the room must not be evicted while we edit it.
 
     Eviction cancels the room's pending save, so edits from the last save
     delay would never reach the disk the next room loads from.
     """
     room = await _open_in_browser(ydoc_extension)
+    cleanup = _schedule_cleanup(ydoc_extension, room)
 
-    async def cleanup_soon():
-        await asyncio.sleep(0.3)
-        await _evict(ydoc_extension, room)
+    adapter = await get_notebook_adapter(notebook_path)
+    await adapter.add_cell(CellContent(source="y = 2", cell_type="code"))
+    await asyncio.wait({cleanup}, timeout=2)
 
-    room.cleaner = asyncio.create_task(cleanup_soon())
-
-    await ensure_ynotebook(notebook_path)
-    await asyncio.sleep(0.5)
-
+    assert cleanup.cancelled()
     assert ydoc_extension.ywebsocket_server.rooms.get(room.room_id) is room
+
+
+async def test_reading_does_not_pin_the_room(ydoc_extension, notebook_path):
+    """Viewing a notebook must not keep its room for the server's lifetime."""
+    room = await _open_in_browser(ydoc_extension)
+    cleanup = _schedule_cleanup(ydoc_extension, room)
+
+    adapter = await get_notebook_adapter(notebook_path)
+    assert [c.source for c in await adapter.get_all_cells()] == ["x = 1"]
+    await asyncio.wait({cleanup}, timeout=2)
+
+    assert not cleanup.cancelled()
+    assert room.room_id not in ydoc_extension.ywebsocket_server.rooms
 
 
 async def test_adapter_follows_a_room_that_was_replaced(ydoc_extension, notebook_path):

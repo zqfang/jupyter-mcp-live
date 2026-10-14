@@ -38,6 +38,7 @@ _ROOM_ID = room_id_from_encoded_path(encode_file_path("json", "notebook", "fid")
 def _make_room(*, ready: bool = True):
     """A DocumentRoom mock; initialize() marks it ready."""
     room = MagicMock()
+    room.room_id = _ROOM_ID
     room.ready = ready
 
     async def initialize():
@@ -167,15 +168,54 @@ async def test_unexpected_error_with_a_room_raises_instead_of_using_the_file():
 
 
 @pytest.mark.asyncio
-async def test_missing_infrastructure_is_a_warning():
-    """No file_id_manager (KeyError) means the YDoc stack is not set up."""
+async def test_missing_websocket_server_is_a_warning():
+    """No websocket server means the YDoc stack is not set up: use the file."""
     ext = _make_extension()
-    ext.get_document.side_effect = KeyError("file_id_manager")
+    del ext.ywebsocket_server
     log = MagicMock()
 
     assert await _ensure(ext, logger=log) is None
     log.warning.assert_called_once()
-    log.exception.assert_not_called()
+    ext.get_document.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_key_error_with_a_room_raises_instead_of_using_the_file():
+    """KeyError is not proof that YDoc is absent (e.g. a file loader removed
+    by a concurrent room cleanup), so it gets the same room check."""
+    ext = _make_extension()
+    ext.get_document.side_effect = KeyError("fid")
+
+    with pytest.raises(RuntimeError, match="is open in JupyterLab"):
+        await _ensure(ext)
+
+
+@pytest.mark.asyncio
+async def test_unknown_room_state_raises_instead_of_using_the_file():
+    """If the file ID lookup itself fails, whether a room exists is unknown:
+    assume it may, rather than write the file behind a live room."""
+    ext = _make_extension()
+    index = ext.serverapp.web_app.settings["file_id_manager"].index
+    index.side_effect = RuntimeError("database is locked")
+    ext.get_document.side_effect = RuntimeError("database is locked")
+
+    with pytest.raises(RuntimeError, match="may be open in JupyterLab"):
+        await _ensure(ext, "/tmp/never-attached.ipynb")
+
+
+@pytest.mark.asyncio
+async def test_room_attached_before_is_known_without_a_file_id_lookup():
+    """A notebook we attached to before is known to have a room even when
+    the file ID lookup is what fails now."""
+    ext = _make_extension(document=_FakeYNotebook())
+    assert await _ensure(ext, "/tmp/known.ipynb") is not None
+
+    index = ext.serverapp.web_app.settings["file_id_manager"].index
+    index.side_effect = RuntimeError("database is locked")
+    ext.get_document.side_effect = RuntimeError("database is locked")
+
+    with pytest.raises(RuntimeError, match="is open in JupyterLab"):
+        await _ensure(ext, "/tmp/known.ipynb")
 
 
 @pytest.mark.asyncio

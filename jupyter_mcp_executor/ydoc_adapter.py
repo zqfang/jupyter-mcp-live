@@ -55,13 +55,23 @@ class YDocAdapter(NotebookAdapter):
         """
         return self._generation
 
-    async def _live(self) -> None:
+    def keep_alive(self) -> None:
+        """Cancel the room's pending cleanup, if it is still the live room."""
+        if self._room is not None and self._room.is_attached():
+            self._room.keep_alive()
+
+    async def _live(self, *, write: bool = False) -> None:
         """Make ``self.ydoc`` the live document before an operation.
 
         A call can outlive its room (a long cell after the browser left): a
         stopped room's document is detached, and edits to it are lost without
-        an error. Follow the notebook to its current room instead, and keep
-        that room alive while it is in use.
+        an error. Follow the notebook to its current room instead. Writes
+        also keep that room alive: a deleted room cancels its pending save,
+        so the write could otherwise miss the disk a recreated room loads.
+        Reads do not, so merely viewing a notebook never pins its room.
+
+        Args:
+            write: The operation edits the document
 
         Raises:
             RuntimeError: If the room is gone and cannot be recreated
@@ -81,7 +91,8 @@ class YDocAdapter(NotebookAdapter):
             self._room = room = replacement
             self.ydoc = replacement.ydoc
             self._generation += 1
-        room.keep_alive()
+        if write:
+            room.keep_alive()
 
     @property
     def is_collaborative(self) -> bool:
@@ -120,7 +131,7 @@ class YDocAdapter(NotebookAdapter):
         self, cell_content: CellContent, position: int | None = None
     ) -> tuple[int, str]:
         """Add cell to YDoc."""
-        await self._live()
+        await self._live(write=True)
         # Convert source to string
         source_str = cell_content.get_source_as_string()
 
@@ -172,7 +183,7 @@ class YDocAdapter(NotebookAdapter):
         by the ones in `content` (typically empty), so stale outputs from the
         old source never linger on the edited cell.
         """
-        await self._live()
+        await self._live(write=True)
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -227,7 +238,7 @@ class YDocAdapter(NotebookAdapter):
 
     async def delete_cell(self, position: int) -> None:
         """Delete cell from YDoc."""
-        await self._live()
+        await self._live(write=True)
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -257,7 +268,7 @@ class YDocAdapter(NotebookAdapter):
         outputs: list[dict[str, Any]] | None,
     ) -> None:
         """Update cell outputs in YDoc."""
-        await self._live()
+        await self._live(write=True)
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -292,7 +303,7 @@ class YDocAdapter(NotebookAdapter):
         printing thousands of lines stays one outputs entry with small CRDT
         deltas instead of thousands of Array inserts.
         """
-        await self._live()
+        await self._live(write=True)
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
