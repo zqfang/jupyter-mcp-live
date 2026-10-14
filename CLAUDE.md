@@ -45,7 +45,7 @@ pytest tests/test_notebook_execution_tools.py -v
 # Run single test
 pytest tests/test_notebook_execution_tools.py::TestExecuteCell::test_execute_cell -v
 
-# Run with coverage (needs pytest-cov, which is not a test dependency)
+# Run with coverage (pytest-cov is in the [test] extra; CI reports it once per run)
 pytest --cov=jupyter_mcp_executor --cov-report=html
 
 # Run specific test pattern
@@ -421,7 +421,18 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/integration/conftest.py` - Marks every test in the directory
   `integration` (CI runs `-m "not integration"` and `-m integration` as
   separate steps) and, after each test, closes the execution engine's cached
-  kernel clients and clears the process-wide singletons
+  kernel clients, the server's signature store, clears the process-wide
+  singletons and runs `gc.collect()`. It also ignores ResourceWarnings for
+  these tests: the real FastMCP/YDoc stack leaks streams and SQLite
+  connections, and collecting them here keeps them from failing a later
+  unit test
+
+**Warnings are errors** (`pytest.ini` `filterwarnings`): any warning raised
+from `jupyter_mcp_executor` (e.g. a deprecated API we call), and resource
+leaks (`ResourceWarning`, also when reported from `__del__` as
+`PytestUnraisableExceptionWarning`) outside `tests/integration/`. Fixtures
+that create a contents manager must close its notary store
+(`MockServerApp.close()`, `cm.notary.store.close()`).
 
 Apart from `tests/integration/`, tests use mocks (no actual kernels/servers
 started).

@@ -58,6 +58,7 @@ def contents_manager(request, tmp_path):
     set_server_context(_ServerApp(root, cm))
     yield cm
     set_server_context(None)
+    cm.notary.store.close()
 
 
 def _write(cm, name: str, nb) -> str:

@@ -185,6 +185,10 @@ class MockServerApp:
             db_file=":memory:", secret=b"test-secret"
         )
 
+    def close(self):
+        """Close the signature store's SQLite connection."""
+        self.contents_manager.notary.store.close()
+
 
 def read_notebook(path):
     return nbformat.read(path, as_version=4)
@@ -288,7 +292,9 @@ def temp_notebook(tmp_path):
 @pytest.fixture
 def mock_serverapp(tmp_path):
     """Create a mock server app rooted at the test's tmp dir (temp_notebook)."""
-    return MockServerApp(tmp_path)
+    app = MockServerApp(tmp_path)
+    yield app
+    app.close()
 
 
 @pytest.fixture(autouse=True)
