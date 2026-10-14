@@ -5,16 +5,18 @@ from urllib.parse import unquote
 
 
 def normalize_path(path: str) -> str:
-    """Normalize a file path to an absolute path.
+    """Normalize a notebook path to an absolute, resolved path.
 
-    Handles URL-encoded paths and resolves relative paths against
-    the Jupyter server root directory if available.
+    Handles URL-encoded paths and resolves relative paths against the Jupyter
+    server root directory.
 
-    Relative paths that resolve outside the server root are rejected to
-    prevent path traversal attacks (e.g. "../../etc/passwd"). Absolute
-    paths are accepted as-is because JupyterLab allows notebooks to reside
-    anywhere on the filesystem. Only `.ipynb` files are accepted to prevent
-    arbitrary file reads/writes through the notebook API.
+    The resolved path (symlinks followed) must lie inside the root directory:
+    Jupyter's contents manager cannot open anything else, so such a notebook
+    could have no kernel session and no live document, and edits would go to
+    a file JupyterLab never shows. This also blocks traversal such as
+    "../../etc/x.ipynb". Only `.ipynb` files are accepted, so the notebook
+    API cannot read or write other files. Without a server context (library
+    use, tests) there is no root to check against.
 
     Args:
         path: File path (possibly URL-encoded or relative)
@@ -23,14 +25,14 @@ def normalize_path(path: str) -> str:
         Absolute normalized path
 
     Raises:
-        ValueError: If path is empty, not a .ipynb file, or a relative path
-            escapes the server root
+        ValueError: If path is empty, not a .ipynb file, or outside the
+            server root
     """
     if not path or not path.strip():
         msg = "path cannot be empty"
         raise ValueError(msg)
 
-    decoded_path = unquote(path)
+    decoded_path = Path(unquote(path))
 
     # Deferred import to avoid circular dependencies at module load time
     from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
@@ -40,16 +42,16 @@ def normalize_path(path: str) -> str:
     if serverapp and hasattr(serverapp, "root_dir"):
         root_dir = Path(serverapp.root_dir).resolve()
 
-    if Path(decoded_path).is_absolute():
-        resolved = Path(decoded_path).resolve()
-    elif root_dir is not None:
-        resolved = (root_dir / decoded_path).resolve()
-        # Guard: relative paths must not escape the server root (traversal prevention)
-        if not resolved.is_relative_to(root_dir):
-            msg = "Path is not permitted"
-            raise ValueError(msg)
+    if root_dir is None:
+        resolved = decoded_path.resolve()
     else:
-        resolved = Path(decoded_path).resolve()
+        resolved = (root_dir / decoded_path).resolve()  # absolute paths win
+        if not resolved.is_relative_to(root_dir):
+            msg = (
+                f"{path} is outside the Jupyter root directory ({root_dir}); "
+                "only notebooks inside it can be used"
+            )
+            raise ValueError(msg)
 
     # Only .ipynb files are allowed through the notebook API
     if resolved.suffix != ".ipynb":
@@ -67,15 +69,15 @@ def to_api_path(absolute_path: str) -> str:
     rather than absolute filesystem paths. This function converts absolute
     paths to the relative API format expected by JupyterLab.
 
-    For paths outside root_dir, returns the absolute path to ensure correct
-    session matching when notebooks are opened from anywhere on the filesystem.
+    A path outside root_dir is returned as is; normalize_path() rejects
+    those, so this happens only for unnormalized input.
 
     Args:
         absolute_path: Absolute filesystem path
 
     Returns:
         Path relative to server root_dir (if inside root_dir), using forward slashes.
-        Absolute path (if outside root_dir) for correct session matching.
+        The path unchanged if it is outside root_dir.
 
     Examples:
         # If root_dir = "/Users/fangzq/Github/jupyter-server-mcp"
@@ -104,7 +106,5 @@ def to_api_path(absolute_path: str) -> str:
             # Forward slashes for API paths (Jupyter convention)
             return resolved.relative_to(root_dir).as_posix()
 
-    # For paths outside root_dir: use absolute path
-    # This ensures session matching works correctly when notebooks are
-    # outside the Jupyter server's root directory
+    # Outside root_dir (or no server): no API path exists; return it as is
     return str(abs_path)

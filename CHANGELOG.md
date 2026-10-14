@@ -31,6 +31,11 @@
 
 ### Changed
 
+- **Notebooks must be inside the Jupyter root directory.** Absolute paths
+  outside it (or reaching outside through a symlink) are rejected with an
+  error. They never worked fully: Jupyter cannot open them, so they had no
+  kernel session and no live document, and edits went to a file JupyterLab
+  did not show.
 - Dependency floors match what the code uses: `nbformat>=5.1` (cell ids),
   `jupyter_ydoc>=3.4`, and `tornado>=6.5.9` is declared (imported directly;
   fixes pre-authentication request-parsing DoS advisories). CI now fails if

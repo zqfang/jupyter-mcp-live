@@ -340,7 +340,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-339 tests total across:
+345 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -363,6 +363,8 @@ position_index), and include a recovery hint for the common failure mode.
   that reproduce jupyter_server's 404-for-dead-kernel contract
 - `tests/test_imports.py` - Import validation tests
 - `tests/test_kernel_utils.py` - Kernel utilities tests
+- `tests/test_path_utils.py` - `normalize_path()`: notebooks only, inside the
+  Jupyter root (relative, absolute, symlinks)
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
   limits)
 - `tests/test_extension.py` - Extension tests (endpoint traits, both serving modes)
@@ -697,9 +699,12 @@ Cells can be identified three ways (see `CellIdentifier` in `notebook_models.py`
 
 - Only `.ipynb` files are accepted (prevents arbitrary file read/write through
   the notebook API)
-- Relative paths must not escape the server root (traversal prevention)
-- Absolute paths are allowed anywhere on the filesystem (JupyterLab supports
-  notebooks outside root_dir)
+- The resolved path (symlinks followed) must be inside the server root, for
+  relative and absolute paths alike: Jupyter's contents manager cannot open
+  anything else, so such a notebook could have no kernel session and no YDoc
+  room — the tools could only edit a file JupyterLab never shows. This also
+  blocks traversal (`../../etc/x.ipynb`). Without a server context (tests,
+  library use) there is no root to check.
 
 All MCP tools call `normalize_path()` (directly or via the service layer)
 before touching disk.

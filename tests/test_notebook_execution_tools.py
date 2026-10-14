@@ -165,11 +165,12 @@ class MockKernelSpecManager:
 class MockServerApp:
     """Mock server app for testing."""
 
-    def __init__(self):
+    def __init__(self, root_dir):
         self.kernel_manager = MockKernelManager()
         self.kernel_spec_manager = MockKernelSpecManager()
         self.session_manager = MockSessionManager(kernel_manager=self.kernel_manager)
-        self.root_dir = str(Path.cwd())
+        # Notebooks must be inside the root (normalize_path rejects others)
+        self.root_dir = str(root_dir)
         self.contents_manager = MockContentsManager()
 
 
@@ -273,9 +274,9 @@ def temp_notebook(tmp_path):
 
 
 @pytest.fixture
-def mock_serverapp():
-    """Create a mock server app."""
-    return MockServerApp()
+def mock_serverapp(tmp_path):
+    """Create a mock server app rooted at the test's tmp dir (temp_notebook)."""
+    return MockServerApp(tmp_path)
 
 
 @pytest.fixture(autouse=True)
@@ -654,7 +655,10 @@ class TestSetupNotebook:
         assert len(mock_serverapp.kernel_manager.kernels) == 1
         assert existing_kernel_id not in mock_serverapp.kernel_manager.kernels
         sessions = await mock_serverapp.session_manager.list_sessions()
-        assert len([s for s in sessions if s["path"] == normalized_path]) == 1
+        assert (
+            len([s for s in sessions if normalize_path(s["path"]) == normalized_path])
+            == 1
+        )
 
     @pytest.mark.asyncio
     async def test_setup_notebook_handles_dead_kernel(
