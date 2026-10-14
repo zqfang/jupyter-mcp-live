@@ -340,7 +340,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-339 tests total across:
+340 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -660,6 +660,12 @@ executions instead of everything appearing when the MCP tool call returns:
   SANDBOX_MAX_MEMORY_BYTES` (100 MB, fastmcp's default): passing limits
   replaces fastmcp's defaults wholesale, and Monty treats an omitted key as
   unlimited.
+- The engine's kernel client gets its **own `Session`** (the kernel's key and
+  signature scheme): `kernel.client()` alone clones the manager's session,
+  i.e. the same shell DEALER identity as every other server-side client, and
+  ipykernel's `ROUTER_HANDOVER` gives the identity to the newest connection —
+  our requests were then dropped and timed out
+  (`tests/integration/test_kernel_client_identity.py`).
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is

@@ -8,6 +8,7 @@ from queue import Empty
 
 import nbformat
 import pytest
+from jupyter_client.session import Session
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 from jupyter_mcp_executor.execution_progress import ExecutionProgress
@@ -81,9 +82,10 @@ class MockKernel:
         self.last_activity = datetime.now()
         self.execution_state = "idle"
         self.connections = 0
+        self.session = Session()
         self._client = MockKernelClient()
 
-    def client(self):
+    def client(self, **_kwargs):
         """Return a mock client."""
         return self._client
 
@@ -1675,9 +1677,10 @@ class OutputtingKernel:
     """Mock kernel handle returning an OutputtingClient."""
 
     def __init__(self):
+        self.session = Session()
         self._client = OutputtingClient()
 
-    def client(self):
+    def client(self, **_kwargs):
         return self._client
 
 

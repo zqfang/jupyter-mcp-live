@@ -60,6 +60,12 @@
 
 ### Bugs fixed
 
+- If another server-side client connected to a notebook's kernel after
+  ours (e.g. an extension calling `km.client()`), cells sent by the MCP
+  tools never ran: they timed out and the error advised restarting the
+  kernel. Both clients cloned the kernel manager's session, so they shared
+  one socket identity, and ipykernel hands an identity over to its newest
+  connection. The tools' kernel client now has its own session.
 - With the Jupyter root directory behind a symlink (macOS `/tmp` and
   `/var`, symlinked home or project directories, container volumes), the
   tools never found the notebook's YDoc room: they looked it up by the

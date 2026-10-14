@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from jupyter_client.session import Session
 from jupyter_core.utils import ensure_async
 
 from jupyter_mcp_executor.execution_progress import ExecutionProgress
@@ -171,12 +172,24 @@ class ExecutionEngine:
 
         Reusing the client avoids per-execution ZMQ channel setup and the
         kernel_info round-trip of wait_for_ready.
+
+        The client gets its own Session (same key and signature scheme):
+        kernel.client() alone clones the manager's Session, so every such
+        client shares one shell socket identity, and with ipykernel's
+        ROUTER_HANDOVER the last one to connect takes it over. Another
+        server-side client of the kernel connecting after us then swallowed
+        our execute requests: the cell never ran and timed out.
         """
         client = self._clients.get(kernel_id)
         if client is not None:
             return client
 
-        client = kernel.client()
+        client = kernel.client(
+            session=Session(
+                key=kernel.session.key,
+                signature_scheme=kernel.session.signature_scheme,
+            )
+        )
         client.start_channels()
         try:
             await client.wait_for_ready(timeout=EXECUTION_CONFIG.kernel_ready_timeout)
