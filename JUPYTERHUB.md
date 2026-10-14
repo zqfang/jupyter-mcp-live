@@ -109,7 +109,7 @@ A successful response contains the server's `initialize` result.
 
 | Symptom | Likely cause |
 |---------|--------------|
-| `403` | Token missing or wrong, or it lacks the `access:servers` scope |
+| `403` | Token missing or wrong, or it lacks the `access:servers` scope, or a custom authorizer denies `execute` on `kernels` or `read`/`write` on `contents` |
 | `404` or a redirect to the Hub | Server not running, or the package isn't installed in the single-user environment |
 | Connected but no tools listed | `mcp_tools` isn't set in a config file the single-user server reads |
 | Tools work but nothing appears live in JupyterLab | The notebook isn't open in JupyterLab; closed notebooks are edited on disk (expected) |

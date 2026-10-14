@@ -349,7 +349,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-420 tests total across:
+426 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -461,11 +461,15 @@ print(tracker.get_all_tracked())
   `{base_url}<mcp_endpoint_path>` (default `mcp`) on the Jupyter port. Under
   JupyterHub that is `/user/<name>/mcp` through the Hub proxy.
 - `MCPHandler` requires a Jupyter-authenticated user (403 otherwise, never a
-  login redirect: `prepare(_redirect_to_login=False)`) and `execute`
-  permission on `kernels`, via jupyter_server's `@authorized` on `get`/`post`/
-  `delete`. The action is passed explicitly: the decorator's default derives
-  it from the HTTP method (GET -> `read`), which would let a read-only user
-  open the SSE stream. Jupyter's
+  login redirect: `prepare(_redirect_to_login=False)`) with `execute`
+  permission on `kernels` and `read` + `write` on `contents` (the tools run
+  code and read/modify notebooks; a read-only collaborator under a custom
+  authorizer must not modify notebooks through MCP). Checked for the whole
+  endpoint, not per tool: tools have no handler to authorize against. Done
+  by `_mcp_authorized`, jupyter_server's `@authorized` once per permission,
+  on `get`/`post`/`delete`. Actions are passed explicitly: the decorator's
+  default derives one from the HTTP method (GET -> `read`), which would let
+  a read-only user open the SSE stream. Jupyter's
   `check_host` and XSRF rules still apply: a server with auth disabled treats
   requests as anonymous and rejects MCP `POST`s for missing XSRF — by design.
 - FastMCP still implements the whole transport (sessions, SSE, protocol

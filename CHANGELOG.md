@@ -31,6 +31,12 @@
 
 ### Changed
 
+- **The MCP endpoint also requires `read` and `write` permission on
+  `contents`**, besides `execute` on `kernels`: the tools read and modify
+  notebooks, and a user the authorizer keeps from modifying files (e.g. a
+  read-only collaborator) could do it through MCP. Nothing changes with
+  Jupyter's default authorizer or JupyterHub's `access:servers`, which grant
+  every permission; custom authorizers get `403` for such users.
 - **pandas, numpy, seaborn, matplotlib and scipy are no longer installed
   with the extension.** The extension never imported them; they belong in
   the kernel's environment. Install them there if your notebooks use them
