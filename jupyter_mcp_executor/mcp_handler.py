@@ -18,9 +18,9 @@ forwards through the in-process ASGI bridge.
 from __future__ import annotations
 
 import asyncio
-import inspect
 from typing import TYPE_CHECKING, Any
 
+from jupyter_server.auth.decorator import authorized
 from jupyter_server.base.handlers import JupyterHandler
 from tornado.web import HTTPError
 
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 # kernels API rather than mere read access.
 MCP_AUTH_ACTION = "execute"
 MCP_AUTH_RESOURCE = "kernels"
+MCP_AUTH_MESSAGE = "Not authorized to execute code in kernels"
 
 
 class MCPHandler(JupyterHandler):
@@ -46,22 +47,11 @@ class MCPHandler(JupyterHandler):
         self._disconnected = asyncio.Event()
 
     async def prepare(self) -> None:  # type: ignore[override]
-        """Require an authenticated, authorized user for every request."""
-        # MCP clients are not browsers: answer 403 instead of redirecting to
-        # the login page. The parent also enforces Host checks and XSRF for
-        # cookie-authenticated (browser) requests.
+        """Authenticate without redirecting; each method is @authorized."""
+        # MCP clients are not browsers: answer 403 (from @authorized) instead
+        # of redirecting to the login page. The parent also enforces Host
+        # checks and XSRF for cookie-authenticated (browser) requests.
         await super().prepare(_redirect_to_login=False)
-        user = self.current_user
-        if not user:
-            raise HTTPError(403, "Jupyter authentication required")
-
-        authorized = self.authorizer.is_authorized(
-            self, user, MCP_AUTH_ACTION, MCP_AUTH_RESOURCE
-        )
-        if inspect.isawaitable(authorized):
-            authorized = await authorized
-        if not authorized:
-            raise HTTPError(403, "Not authorized to execute code in kernels")
 
     def set_default_headers(self) -> None:
         """Keep proxies from caching or buffering MCP (SSE) responses."""
@@ -73,14 +63,19 @@ class MCPHandler(JupyterHandler):
         """Let the MCP app see the client disconnect."""
         self._disconnected.set()
 
+    # Every method needs the same permission (the decorator would otherwise
+    # derive the action from the HTTP method: GET -> "read").
+    @authorized(MCP_AUTH_ACTION, MCP_AUTH_RESOURCE, MCP_AUTH_MESSAGE)
     async def get(self) -> None:
         """Server-to-client SSE stream of a streamable-HTTP session."""
         await self._forward()
 
+    @authorized(MCP_AUTH_ACTION, MCP_AUTH_RESOURCE, MCP_AUTH_MESSAGE)
     async def post(self) -> None:
         """Client JSON-RPC messages."""
         await self._forward()
 
+    @authorized(MCP_AUTH_ACTION, MCP_AUTH_RESOURCE, MCP_AUTH_MESSAGE)
     async def delete(self) -> None:
         """Session termination."""
         await self._forward()

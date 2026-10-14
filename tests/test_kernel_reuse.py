@@ -26,6 +26,9 @@ class FakeKernelManager:
         self.live = set(live_ids)
         self.shutdown_calls = []
 
+    def __contains__(self, kernel_id):
+        return kernel_id in self.live
+
     def get_kernel(self, kernel_id):
         if kernel_id not in self.live:
             # This is the real behaviour: jupyter_server's MappingKernelManager

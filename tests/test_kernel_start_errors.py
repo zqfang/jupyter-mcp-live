@@ -35,6 +35,9 @@ class RecordingKernelManager:
     def __getattr__(self, name):
         return getattr(self._inner, name)
 
+    def __contains__(self, kernel_id):
+        return kernel_id in self._inner
+
     async def start_kernel(self, **kwargs):
         self.started.append(kwargs)
         return "bare-kernel"

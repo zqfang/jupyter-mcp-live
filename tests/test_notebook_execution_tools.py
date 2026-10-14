@@ -61,6 +61,9 @@ class MockKernelManager:
         if kernel_id in self.kernels:
             del self.kernels[kernel_id]
 
+    def __contains__(self, kernel_id):
+        return kernel_id in self.kernels
+
     def get_kernel(self, kernel_id):
         """Mock get kernel."""
         if kernel_id not in self.kernels:
