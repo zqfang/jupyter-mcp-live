@@ -340,7 +340,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-370 tests total across:
+374 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -358,8 +358,11 @@ position_index), and include a recovery hint for the common failure mode.
   `root_dir`: finding JupyterLab's room, keeping it alive, following a
   replaced room, refusing the file fallback while a room exists
 - `tests/integration/test_ydoc_room_cleanup.py` - Rooms used without a
-  browser are deleted after the cleanup delay (after their autosave),
-  postponed while kept alive, kept when a browser joins or autosave is off
+  browser are deleted after the cleanup delay (after their autosave, and
+  after a save in progress), postponed while kept alive (one task, moving
+  deadline), kept when a browser joins or autosave is off; the handler's
+  cleanup is replaced despite a lingering client; a cancelled deletion
+  still finishes
 - `tests/integration/test_ydoc_rooms.py` - `ensure_ynotebook` against a real
   jupyter_server_ydoc (headless room load and reuse, unopened rooms, the
   configured ystore). Its server config puts the ystore and file ID
@@ -505,7 +508,9 @@ ready). Both `get_ynotebook()` and `ensure_ynotebook()` therefore look the
 room up (`ywebsocket_server.rooms`) and, if it is not `ready`, call
 `room.initialize()` under `YDocExtension._room_locks[room_id]` — the lock the
 handler's `open()` takes, so the two never load concurrently (initialize()
-is a no-op once ready). This is the one private attribute we still rely on.
+is a no-op once ready). Besides `room._saving_document` (read only, to
+delay a room cleanup during a save), this is the one private attribute we
+still rely on.
 
 **Rooms we create use the configured ystore.** The handler builds a room's
 ystore with `partial(ystore_class, config=...)`, but `get_document()`
@@ -537,14 +542,17 @@ call can outlive the room: the handler deletes it `document_cleanup_delay`
 after the last browser left, a deleted room **cancels its pending save**, and
 its document is detached (edits to it vanish without an error). So:
 
-- `NotebookRoom.keep_alive()` **postpones** the room's cleanup: it cancels a
-  pending one (`room.cleaner`, a public property; the handler's `open()` does
-  the same for a reconnecting browser) and schedules ours, counted from now.
-  `YDocAdapter` calls it on every **write** (reads do not, so viewing a
-  notebook never postpones its cleanup), and while a cell runs in an open
-  notebook the engine calls `adapter.keep_alive()` every
-  `EXECUTION_CONFIG.room_keepalive_interval` (15s; a silent cell makes no
-  other adapter calls).
+- `NotebookRoom.keep_alive()` **postpones** the room's cleanup. It cancels
+  the handler's pending one (`room.cleaner`, a public property; the
+  handler's `open()` does the same for a reconnecting browser) and replaces
+  it with ours — even if the leaving websocket is still in `room.clients`,
+  as it is when `on_close()` schedules the cleanup. If ours is already
+  pending it only moves its deadline (one task per room, in `_cleanups`), so
+  calling it for every streamed output is cheap. `YDocAdapter` calls it on
+  every **write** (reads do not, so viewing a notebook never postpones its
+  cleanup), and while a cell runs in an open notebook the engine calls
+  `adapter.keep_alive()` every `EXECUTION_CONFIG.room_keepalive_interval`
+  (15s; a silent cell makes no other adapter calls).
 - **Rooms without a browser are cleaned up too.** The handler schedules a
   cleanup only when a browser's websocket closes, so rooms we created
   headless, or kept alive after the browser left, used to stay (with a 1 s
@@ -555,10 +563,15 @@ its document is detached (edits to it vanish without an error). So:
   re-check (no clients, still the served room), `delete_room()`, then remove
   the file loader if nothing subscribes to it. The delay is
   `max(document_cleanup_delay, document_save_delay + CLEANUP_SAVE_MARGIN)`
-  so the room's autosave finishes first; nothing is scheduled while a
-  browser is connected, when `document_cleanup_delay` is None, or when
+  so the room's autosave finishes first, and a save still in progress
+  (`room._saving_document`) puts it off further. Nothing is scheduled while
+  a browser is connected, when `document_cleanup_delay` is None, or when
   autosave is off (`document_save_delay` None — the edits would be lost).
-  A browser joining cancels our cleaner like the handler's own.
+  A browser joining cancels our cleaner like the handler's own; once the
+  deletion has started it is finished anyway (`_run_to_completion`), so a
+  cancel cannot leave a room removed from the server but still watching its
+  file. Like upstream, a browser between `prepare()` and `serve()` (not yet
+  in `room.clients`) can still lose its room to a cleanup that fires then.
 - Before every operation `YDocAdapter._live()` checks the room is still the
   one `ywebsocket_server.rooms` serves; if not (e.g. deleted during a long
   silent cell) it re-attaches to the recreated room and bumps

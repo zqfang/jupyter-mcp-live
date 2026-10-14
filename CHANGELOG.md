@@ -74,7 +74,8 @@
   the last browser left, stayed in memory with a file watcher polling every
   second until the server stopped. Such rooms are now deleted
   `document_cleanup_delay` after the tools last wrote to them (and after
-  their autosave), as jupyter_server_ydoc does once the last browser leaves.
+  their autosave, including a save still in progress), as
+  jupyter_server_ydoc does once the last browser leaves.
   A running cell keeps its room, and a browser opening the notebook cancels
   the cleanup. With autosave off (`document_save_delay = None`) rooms are
   kept, since deleting them would discard the edits.

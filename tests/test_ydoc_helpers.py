@@ -61,6 +61,10 @@ def _make_extension(*, document=None, started: bool = True, room=None):
     ext.serverapp.web_app.settings["file_id_manager"].index.return_value = "fid"
     ext.ywebsocket_server.rooms = {_ROOM_ID: room if room is not None else _make_room()}
     ext._room_locks = defaultdict(asyncio.Lock)
+    # Rooms are never cleaned up, as with this upstream setting; the cleanup
+    # is tested against a real server (integration/test_ydoc_room_cleanup.py).
+    ext.document_cleanup_delay = None
+    ext.document_save_delay = 1.0
     return ext
 
 

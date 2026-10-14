@@ -54,6 +54,9 @@ def ydoc_extension(jp_serverapp, jp_asyncio_loop):
     server_task = jp_asyncio_loop.create_task(server.start())
     jp_asyncio_loop.run_until_complete(server.started.wait())
     yield extension
+    for room in list(extension.ywebsocket_server.rooms.values()):
+        if room.cleaner is not None:
+            room.cleaner.cancel()
     jp_asyncio_loop.run_until_complete(extension.stop_extension())
     server_task.cancel()
     set_server_context(None)
@@ -161,3 +164,84 @@ async def test_no_cleanup_without_autosave(ydoc_extension, notebook_path):
     assert room.cleaner is None
     await asyncio.sleep(EFFECTIVE_DELAY + 0.5)
     assert _is_live(ydoc_extension, room)
+
+
+async def test_keeping_alive_moves_the_deadline_without_new_tasks(
+    ydoc_extension, notebook_path
+):
+    """keep_alive() runs for every streamed output: no task churn."""
+    adapter = await get_notebook_adapter(notebook_path)
+    room = (await ensure_notebook_room(notebook_path)).room
+    cleaner = room.cleaner
+
+    for _ in range(100):
+        adapter.keep_alive()
+
+    assert room.cleaner is cleaner
+    assert not cleaner.done()
+
+
+async def test_replaces_the_handlers_cleanup_despite_a_lingering_client(
+    ydoc_extension, notebook_path
+):
+    """The handler schedules its cleanup while the leaving websocket is still
+    in room.clients; a write in that moment must not leave the room without
+    any cleanup."""
+    adapter = await get_notebook_adapter(notebook_path)
+    room = (await ensure_notebook_room(notebook_path)).room
+    room.cleaner.cancel()
+    leaving = object()
+    room.clients.add(leaving)
+    handlers_cleanup = asyncio.create_task(asyncio.sleep(3600))
+    room.cleaner = handlers_cleanup
+
+    await adapter.add_cell(CellContent(source="y = 2", cell_type="code"))
+    await asyncio.sleep(0)
+    room.clients.discard(leaving)  # serve() removes it a moment later
+
+    assert handlers_cleanup.cancelled()
+    assert await _wait_until_deleted(ydoc_extension, room, EFFECTIVE_DELAY + 2)
+
+
+async def test_cleanup_waits_for_a_save_in_progress(ydoc_extension, notebook_path):
+    """Deleting the room would cancel the save (a slow disk, a big notebook)."""
+    await get_notebook_adapter(notebook_path)
+    room = (await ensure_notebook_room(notebook_path)).room
+    slow_save = asyncio.create_task(asyncio.sleep(EFFECTIVE_DELAY + 1))
+    room._saving_document = slow_save
+
+    await asyncio.sleep(EFFECTIVE_DELAY + 0.5)
+    assert _is_live(ydoc_extension, room)
+
+    assert await _wait_until_deleted(ydoc_extension, room, 4)
+    assert slow_save.done()
+    assert not slow_save.cancelled()
+
+
+async def test_a_started_deletion_finishes_when_cancelled(
+    ydoc_extension, notebook_path, monkeypatch
+):
+    """A joining browser's open() cancels the cleaner, possibly mid-delete: the
+    room must not be left removed from the server but still watching its
+    file."""
+    server = ydoc_extension.ywebsocket_server
+    real_delete_room = server.delete_room
+    deleting = asyncio.Event()
+
+    async def slow_delete_room(**kwargs):
+        deleting.set()
+        await asyncio.sleep(0.3)
+        await real_delete_room(**kwargs)
+
+    monkeypatch.setattr(server, "delete_room", slow_delete_room)
+    await get_notebook_adapter(notebook_path)
+    room = (await ensure_notebook_room(notebook_path)).room
+    cleaner = room.cleaner
+
+    await asyncio.wait_for(deleting.wait(), EFFECTIVE_DELAY + 2)
+    cleaner.cancel()
+    await asyncio.wait({cleaner}, timeout=2)
+
+    assert cleaner.cancelled()
+    assert not _is_live(ydoc_extension, room)
+    assert _file_id(room) not in ydoc_extension.file_loaders
