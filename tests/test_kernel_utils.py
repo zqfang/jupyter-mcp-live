@@ -169,7 +169,9 @@ class TestResolveKernelName:
         specs = {
             "python3": {"spec": {"language": "python"}},
         }
-        assert resolve_kernel_name("nonexistent", specs, fallback="python3") == "python3"
+        assert (
+            resolve_kernel_name("nonexistent", specs, fallback="python3") == "python3"
+        )
 
     def test_custom_fallback(self):
         """Test custom fallback kernel."""
@@ -188,10 +190,7 @@ class TestGetKernelInfo:
         """Test getting info from kernel spec."""
         specs = {
             "rapids": {
-                "spec": {
-                    "language": "python",
-                    "display_name": "RAPIDS (Python)"
-                }
+                "spec": {"language": "python", "display_name": "RAPIDS (Python)"}
             }
         }
         info = get_kernel_info("rapids", specs)
@@ -200,14 +199,7 @@ class TestGetKernelInfo:
 
     def test_get_info_r_kernel(self):
         """Test getting info for R kernel."""
-        specs = {
-            "r45": {
-                "spec": {
-                    "language": "R",
-                    "display_name": "R 4.5"
-                }
-            }
-        }
+        specs = {"r45": {"spec": {"language": "R", "display_name": "R 4.5"}}}
         info = get_kernel_info("r45", specs)
         assert info["language"] == "R"
         assert info["display_name"] == "R 4.5"
@@ -241,7 +233,9 @@ class TestIntegrationScenarios:
         """Test AI agent creating notebook with RAPIDS kernel."""
         specs = {
             "python3": {"spec": {"language": "python", "display_name": "Python 3"}},
-            "rapids": {"spec": {"language": "python", "display_name": "RAPIDS (Python)"}},
+            "rapids": {
+                "spec": {"language": "python", "display_name": "RAPIDS (Python)"}
+            },
         }
 
         # Agent requests "rapids" - should get exact match
@@ -281,7 +275,9 @@ class TestIntegrationScenarios:
     def test_ai_agent_requests_python_gets_rapids(self):
         """Test AI agent requesting 'python' can get RAPIDS."""
         specs = {
-            "rapids": {"spec": {"language": "python", "display_name": "RAPIDS (Python)"}},
+            "rapids": {
+                "spec": {"language": "python", "display_name": "RAPIDS (Python)"}
+            },
             "python3": {"spec": {"language": "python", "display_name": "Python 3"}},
         }
 

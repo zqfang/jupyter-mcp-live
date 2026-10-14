@@ -338,7 +338,9 @@ class TestInterruptAndRestart:
     ):
         short = dataclasses.replace(EXECUTION_CONFIG, default_timeout=2)
         for module in ("cell_operations", "execution_engine", "execution_utils"):
-            monkeypatch.setattr(f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short)
+            monkeypatch.setattr(
+                f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short
+            )
 
         args = _execute_args(
             "t.ipynb",
@@ -356,6 +358,31 @@ class TestInterruptAndRestart:
         assert "the kernel was interrupted" in error
         # Kernel survived the interrupt with its state.
         assert result["r2"][0]["data"]["text/plain"] == "42"
+
+    @pytest.mark.usefixtures("http_server", "mcp_extension")
+    async def test_input_fails_fast_instead_of_waiting_for_stdin(
+        self, client_factory, monkeypatch
+    ):
+        """Nobody can answer input(): the cell must fail, not wait for stdin.
+
+        With stdin allowed the kernel sends input_request and blocks until the
+        execution timeout (10 hours by default).
+        """
+        short = dataclasses.replace(EXECUTION_CONFIG, default_timeout=5)
+        for module in ("cell_operations", "execution_engine", "execution_utils"):
+            monkeypatch.setattr(
+                f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short
+            )
+
+        args = _execute_args(
+            "s.ipynb",
+            "r = " + _cell("s.ipynb", "input('name? ')"),
+            "out = [r['status'], [o.get('ename') for o in r['outputs']]]",
+        )
+        async with client_factory() as client:
+            result = _script_value(await client.call_tool("execute", args))
+
+        assert result == ["error", ["StdinNotImplementedError"]]
 
     @pytest.mark.usefixtures("http_server", "mcp_extension")
     async def test_interrupt_tool_stops_running_cell(self, client_factory):
@@ -408,9 +435,7 @@ class TestInterruptAndRestart:
     @pytest.mark.usefixtures("http_server", "mcp_extension")
     async def test_cancelled_request_interrupts_kernel(self, client_factory):
         setup = _execute_args("c.ipynb", "out = 'ready'")
-        long_cell = _execute_args(
-            "c.ipynb", "out = " + _cell("c.ipynb", LONG_CELL)
-        )
+        long_cell = _execute_args("c.ipynb", "out = " + _cell("c.ipynb", LONG_CELL))
         quick_cell = _execute_args(
             "c.ipynb", "out = (" + _cell("c.ipynb", "1 + 1") + ")['outputs']"
         )

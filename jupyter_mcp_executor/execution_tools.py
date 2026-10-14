@@ -95,6 +95,9 @@ async def setup_notebook(
           list_notebook_kernels first and pick the closest matching kernelspec key.
         - If setup fails due to an unknown kernel, surface the list from
           list_notebook_kernels in your error message.
+        - Kernels only start for notebooks Jupyter itself can open: inside the
+          server's root directory and not in a hidden directory. The error
+          says which; do not retry the same path.
 
     Returns:
         dict with:
@@ -138,19 +141,21 @@ async def switch_notebook_kernel(
 async def shutdown_notebook(
     notebook_path: str, shutdown_kernel: bool = True
 ) -> dict[str, Any]:
-    """Close a notebook session and clean local kernel state.
+    """Close a notebook's kernel session; its variables are lost.
 
-    Shuts down the kernel associated with a notebook and removes the
-    notebook from active kernel tracking.
+    Shuts down the notebook's kernel and closes its Jupyter session — also
+    when the notebook is open in JupyterLab, whose kernel this is.
 
     Args:
         notebook_path: Path to the notebook file (relative or absolute)
-        shutdown_kernel: If True, shutdown the kernel (default: True)
+        shutdown_kernel: If False, nothing is shut down: Jupyter cannot close
+            a session without stopping its kernel, so the kernel and session
+            keep running (default: True)
 
     Returns:
         dict with:
-            - message: Status message
-            - kernel_id: ID of the kernel that was shut down (if any)
+            - message: What happened
+            - kernel_id: ID of the notebook's kernel (if it had one)
     """
     result = await container.kernel_manager.shutdown_notebook(
         notebook_path, shutdown_kernel

@@ -23,7 +23,7 @@ class ControllableKernelManager(FakeKernelManager):
     def interrupt_kernel(self, kernel_id):  # sync, like jupyter_server's wrapper
         self.interrupts.append(kernel_id)
 
-    async def restart_kernel(self, kernel_id, now=False):  # noqa: ARG002
+    async def restart_kernel(self, kernel_id, now=False):
         self.restarts.append(kernel_id)
 
 

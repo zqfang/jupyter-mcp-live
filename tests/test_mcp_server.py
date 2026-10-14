@@ -9,6 +9,7 @@ from pydantic_monty import ResourceLimits
 
 from jupyter_mcp_executor.mcp_server import (
     SANDBOX_EXECUTION_BUDGET_SECS,
+    SANDBOX_MAX_MEMORY_BYTES,
     MCPServer,
     _wrap_with_json_conversion,
     build_code_mode,
@@ -204,9 +205,18 @@ class TestCodeModeSandboxLimits:
     """
 
     def test_budgets_sandbox_execution_only(self):
-        assert build_sandbox_limits() == {
-            "max_feed_duration_secs": SANDBOX_EXECUTION_BUDGET_SECS
-        }
+        assert (
+            build_sandbox_limits()["max_feed_duration_secs"]
+            == SANDBOX_EXECUTION_BUDGET_SECS
+        )
+
+    def test_keeps_a_memory_cap(self):
+        """Passing limits replaces fastmcp's defaults, including 100 MB of memory.
+
+        Monty treats an omitted key as "no limit", so a prompt-injected script
+        could otherwise allocate without bound.
+        """
+        assert build_sandbox_limits()["max_memory"] == SANDBOX_MAX_MEMORY_BYTES
 
     def test_limits_match_installed_monty(self):
         """Every key we pass must be one the installed Monty accepts."""
@@ -257,7 +267,6 @@ class TestCodeModeSandboxLimits:
 class TestMCPServerIntegration:
     """Integration tests for MCP server."""
 
-    @pytest.mark.integration
     def test_server_with_multiple_tools(self):
         """Test server with multiple different types of tools."""
         server = MCPServer(name="Integration Test Server")

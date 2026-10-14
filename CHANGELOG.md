@@ -31,6 +31,16 @@
 
 ### Changed
 
+- Dependency floors match what the code uses: `nbformat>=5.1` (cell ids),
+  `jupyter_ydoc>=3.4`, and `tornado>=6.5.9` is declared (imported directly;
+  fixes pre-authentication request-parsing DoS advisories). CI now fails if
+  `pip-audit` reports a known vulnerability in the installed dependencies.
+- The Code Mode sandbox keeps a 100 MB memory cap. Passing our own limits
+  had replaced fastmcp's defaults, and Monty treats an omitted key as "no
+  limit".
+- The example config no longer listens on `0.0.0.0` or hard-codes a token
+  (the published `BLOCK`); README and INSTALL take the token from
+  `JUPYTER_TOKEN` too.
 - **Requires fastmcp >= 4.1** (`fastmcp[code-mode]>=4.1,<5`). Support for
   fastmcp 3.x and 4.0.x is dropped; they still ship pydantic-monty 0.0.x. The
   old sandbox-limit code path is removed: there is no `max_duration_secs` and
@@ -43,9 +53,33 @@
   (same ystore, content loaded, file adapter until the first browser
   connects), and room creation now shares jupyter_server_ydoc's per-room
   lock with the browser websocket handler instead of a private one.
+  `get_document()` ignores the ystore configuration for the rooms it creates
+  (e.g. `c.SQLiteYStore.db_path`), so those rooms would have read another
+  CRDT history than browser rooms, and a reconnecting browser duplicated
+  cells; the extension's ystore class is now given the server config first.
 
 ### Bugs fixed
 
+- `shutdown_notebook(shutdown_kernel=False)` reported "kernel still running"
+  but shut the kernel down: Jupyter cannot delete a session without stopping
+  its kernel. The session and kernel are now left running. With the default
+  (`True`), the reply names the kernel that was shut down also when only
+  JupyterLab's session knew it (it said "no kernel was tracked"), and
+  `shutdown_notebook`, `switch_notebook_kernel` and
+  `setup_notebook(force_new_kernel=True)` no longer shut the same kernel down
+  twice (a "Kernel does not exist" warning per call).
+- When no kernel could be started for a notebook (e.g. a path outside the
+  Jupyter root directory, which Jupyter's contents manager cannot open),
+  `setup_notebook` and `switch_notebook_kernel` failed with a pydantic
+  `ValidationError` ("kernel_id: Input should be a valid string"), and the
+  execution tools started a bare kernel with no Jupyter session that
+  JupyterLab could not see. All of them now fail with `KernelStartError`
+  and the reason. `switch_notebook_kernel` also checks the new kernel name
+  before it shuts the old kernel down.
+- A cell that called `input()` blocked until the execution timeout (10 hours
+  by default): it was executed with stdin allowed, and nobody answers the
+  kernel's input request. Executions now refuse stdin, so `input()` raises
+  `StdinNotImplementedError` immediately.
 - An MCP call that arrived after a browser had registered a notebook's YDoc
   room but before the room was loaded got the room's still-empty document:
   reads saw no cells, and edits were autosaved over the notebook on disk.

@@ -395,7 +395,6 @@ class TestShutdownRobustness:
 class TestExtensionIntegration:
     """Integration tests for extension."""
 
-    @pytest.mark.integration
     def test_extension_with_real_configuration(self):
         """Test extension with realistic configuration."""
         extension = MCPExtensionApp()
@@ -703,6 +702,5 @@ class TestEndpointUrl:
         extension.mcp_endpoint_path = "agent-mcp"
 
         assert (
-            extension._endpoint_url()
-            == "https://hub.example.org/user/alice/agent-mcp"
+            extension._endpoint_url() == "https://hub.example.org/user/alice/agent-mcp"
         )

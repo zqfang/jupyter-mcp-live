@@ -339,7 +339,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-314 tests total across:
+315 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -351,8 +351,12 @@ position_index), and include a recovery hint for the common failure mode.
   real YNotebook (edit_cell, append/coalesce/clear)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
 - `tests/integration/test_ydoc_rooms.py` - `ensure_ynotebook` against a real
-  jupyter_server_ydoc (headless room load and reuse)
-- `tests/test_sessions.py` - Session matching tests
+  jupyter_server_ydoc (headless room load and reuse, unopened rooms, the
+  configured ystore). Its server config puts the ystore and file ID
+  databases under `tmp_path`; by default they land in the process CWD and in
+  the user's real Jupyter data dir
+- `tests/test_kernel_reuse.py` - Kernel reuse and session matching against fakes
+  that reproduce jupyter_server's 404-for-dead-kernel contract
 - `tests/test_imports.py` - Import validation tests
 - `tests/test_kernel_utils.py` - Kernel utilities tests
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
@@ -369,8 +373,12 @@ position_index), and include a recovery hint for the common failure mode.
   imported in `tests/integration/conftest.py` only, so its async runner does not
   interfere with the pytest-asyncio unit tests. Note `jp_fetch` mutates the
   `headers` dict you pass (adds auth) — always pass a fresh dict.
-- `tests/conftest.py` - Shared fixtures and mocks (includes a `QueryService` stub
-  that must be kept in sync with the real `query_service.py` routing)
+- `tests/conftest.py` - Only enables pytest-asyncio; fixtures live with their
+  tests
+- `tests/integration/conftest.py` - Marks every test in the directory
+  `integration` (CI runs `-m "not integration"` and `-m integration` as
+  separate steps) and, after each test, closes the execution engine's cached
+  kernel clients and clears the process-wide singletons
 
 Apart from `tests/integration/`, tests use mocks (no actual kernels/servers
 started).
@@ -474,6 +482,18 @@ room up (`ywebsocket_server.rooms`) and, if it is not `ready`, call
 handler's `open()` takes, so the two never load concurrently (initialize()
 is a no-op once ready). This is the one private attribute we still rely on.
 
+**Rooms we create use the configured ystore.** The handler builds a room's
+ystore with `partial(ystore_class, config=...)`, but `get_document()`
+instantiates the bare `ystore_class` (jupyter-collaboration 4.4.0–5.0.4), so
+`SQLiteYStore.db_path` / `squash_after_inactivity_of` were ignored for rooms
+it created: they read a different database than browser rooms, and a
+reconnecting browser merged two unrelated histories (duplicated cells).
+`_configure_ystore_class()` swaps `YDocExtension.ystore_class` for a subclass
+that injects the extension's config before the first `create=True` call.
+`get_document()` is the only runtime reader of that trait (handlers got their
+class at startup). `tests/integration/test_ydoc_rooms.py` configures
+`SQLiteYStore.db_path` to catch this.
+
 ### Persistence Strategy
 
 When using `YDocAdapter` (notebook is open):
@@ -497,7 +517,11 @@ creating, in this order:
 Execution tools (`execute_cell`, `add_code_cell`, `edit_code_cell`) resolve
 through this path automatically — they never fork a bare, sessionless kernel
 when the tracker has no entry (that used to silently lose user state on
-"reconnect"). Symmetrically, `setup_notebook` falls back to the tracked kernel
+"reconnect"). If no session-backed kernel can be started (the
+contents manager cannot open the path — outside `root_dir`, hidden — or
+`create_session` fails), `_start_kernel_for_notebook()` raises
+`KernelStartError` with the reason; nothing falls back to a bare kernel.
+`switch_kernel()` resolves the kernel name before it stops the old kernel. Symmetrically, `setup_notebook` falls back to the tracked kernel
 when no session exists, so reconnecting to a notebook always reattaches to the
 running kernel unless `force_new_kernel=True`.
 
@@ -530,6 +554,9 @@ executions instead of everything appearing when the MCP tool call returns:
 
 ### Execution Internals
 
+- **No stdin**: `execute_code_on_kernel()` sends `allow_stdin=False`, so
+  `input()` / `getpass()` raise `StdinNotImplementedError` at once instead of
+  blocking on an input request nobody answers until the timeout.
 - **Stopping runaway cells**: `execute_code_on_kernel()` takes an `interrupt`
   callback (the engine passes `kernel_manager.interrupt_kernel`).
   - **On timeout**, it interrupts the kernel and drains output until idle,
@@ -578,7 +605,10 @@ executions instead of everything appearing when the MCP tool call returns:
   waits on tool calls, so long cell executions do not count against it.
   Requires fastmcp >= 4.1 (pydantic-monty 1.x). Older Monty versions used a
   wall-clock `max_duration_secs` that kept ticking during tool calls, and
-  they reject the new key.
+  they reject the new key. It also sets `max_memory =
+  SANDBOX_MAX_MEMORY_BYTES` (100 MB, fastmcp's default): passing limits
+  replaces fastmcp's defaults wholesale, and Monty treats an omitted key as
+  unlimited.
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is

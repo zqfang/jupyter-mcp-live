@@ -44,6 +44,8 @@ async def _get_live_document(
     with the browser websocket handler) and initialized before it is returned.
     An existing room is returned as is, so it is initialized here if needed.
     """
+    if create:
+        _configure_ystore_class(ydoc_extension)
     ydoc = await ydoc_extension.get_document(
         path=file_path,
         content_type="notebook",
@@ -61,6 +63,37 @@ async def _get_live_document(
     if not await _ensure_room_initialized(ydoc_extension, file_path):
         return None
     return ydoc
+
+
+def _configure_ystore_class(ydoc_extension: Any) -> None:
+    """Make get_document() build ystores from the server config.
+
+    The websocket handler creates a room's ystore with the configured class
+    (``partial(ystore_class, config=...)``), but get_document(create=True)
+    instantiates the bare ``ystore_class`` (jupyter-collaboration 4.4.0 to
+    5.0.4), so settings such as ``SQLiteYStore.db_path`` are ignored for the
+    rooms it creates. Those rooms then read another database than browser
+    rooms, and a reconnecting browser merges two unrelated CRDT histories
+    (duplicated cells).
+
+    get_document() is the only runtime reader of ``ystore_class``: the
+    handlers received their ystore class at startup. Swapping in a subclass
+    that injects the extension's config is therefore idempotent and local.
+    """
+    base = ydoc_extension.ystore_class
+    if getattr(base, "_mcp_injects_config", False):
+        return
+    config = ydoc_extension.config
+
+    class ConfiguredYStore(base):  # type: ignore[misc, valid-type]
+        _mcp_injects_config = True
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            kwargs.setdefault("config", config)
+            super().__init__(*args, **kwargs)
+
+    ConfiguredYStore.__name__ = ConfiguredYStore.__qualname__ = base.__name__
+    ydoc_extension.ystore_class = ConfiguredYStore
 
 
 async def _ensure_room_initialized(ydoc_extension: Any, file_path: str) -> bool:

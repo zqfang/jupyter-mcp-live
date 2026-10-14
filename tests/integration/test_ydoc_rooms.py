@@ -17,14 +17,24 @@ from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
 
 @pytest.fixture
-def jp_server_config():
+def ystore_db_path(tmp_path):
+    return str(tmp_path / "ystore.db")
+
+
+@pytest.fixture
+def jp_server_config(ystore_db_path):
+    # Both databases default to locations outside the test's tmp dir (the
+    # ystore to the process CWD, the file ID DB to the user's real Jupyter
+    # data dir); a configured ystore path also exercises config propagation.
     return {
         "ServerApp": {
             "jpserver_extensions": {
                 "jupyter_server_fileid": True,
                 "jupyter_server_ydoc": True,
             }
-        }
+        },
+        "BaseFileIdManager": {"db_path": ":memory:"},
+        "SQLiteYStore": {"db_path": ystore_db_path},
     }
 
 
@@ -71,7 +81,8 @@ async def _register_unopened_room(ydoc_extension, notebook_path) -> DocumentRoom
         "notebook",
         ydoc_extension.file_loaders[file_id],
         serverapp.event_logger,
-        ydoc_extension.ystore_class(
+        # The handler's ystore class carries the server config.
+        ydoc_extension.ywebsocket_server.ystore_class(
             path=f".notebook:{file_id}.y", log=ydoc_extension.log
         ),
         ydoc_extension.log,
@@ -127,6 +138,34 @@ async def test_initializes_room_the_browser_has_not_opened_yet(
         assert room.ready
         assert ydoc.cell_number == 2
         assert str(ydoc.ycells[1]["source"]) == "x = 1"
+    finally:
+        await ydoc_extension.stop_extension()
+        server_task.cancel()
+
+
+async def test_recreated_room_uses_the_configured_ystore(
+    ydoc_extension, notebook_path, ystore_db_path
+):
+    """A room we create must read the same CRDT history as the browser's.
+
+    The websocket handler builds ystores from the server config;
+    get_document() builds them from the bare class, so a configured
+    SQLiteYStore.db_path (or squash setting) was ignored for rooms it created:
+    they read another database than browser rooms, and a reconnecting browser
+    then merged two unrelated histories (duplicated cells).
+    """
+    server_task = await _start_websocket_server(ydoc_extension)
+    try:
+        assert await ensure_ynotebook(notebook_path) is not None
+
+        file_id = ydoc_extension.serverapp.web_app.settings["file_id_manager"].index(
+            notebook_path
+        )
+        room_id = room_id_from_encoded_path(
+            encode_file_path("json", "notebook", file_id)
+        )
+        room = ydoc_extension.ywebsocket_server.rooms[room_id]
+        assert room.ystore.db_path == ystore_db_path
     finally:
         await ydoc_extension.stop_extension()
         server_task.cancel()

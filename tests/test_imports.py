@@ -8,21 +8,21 @@ def test_import_main_module():
     import jupyter_mcp_executor.execution_tools as tools  # noqa: PLC0415
 
     # Verify all MCP-exported functions exist
-    assert hasattr(tools, 'list_notebook_sessions')
-    assert hasattr(tools, 'list_notebook_kernels')
-    assert hasattr(tools, 'setup_notebook')
-    assert hasattr(tools, 'switch_notebook_kernel')
-    assert hasattr(tools, 'shutdown_notebook')
-    assert hasattr(tools, 'execute_cell')
-    assert hasattr(tools, 'add_code_cell')
-    assert hasattr(tools, 'edit_code_cell')
-    assert hasattr(tools, 'add_markdown_cell')
-    assert hasattr(tools, 'edit_markdown_cell')
-    assert hasattr(tools, 'delete_cell')
-    assert hasattr(tools, 'view_notebook')
-    assert hasattr(tools, 'read_cell')
-    assert hasattr(tools, 'set_server_context')
-    assert hasattr(tools, 'get_server_context')
+    assert hasattr(tools, "list_notebook_sessions")
+    assert hasattr(tools, "list_notebook_kernels")
+    assert hasattr(tools, "setup_notebook")
+    assert hasattr(tools, "switch_notebook_kernel")
+    assert hasattr(tools, "shutdown_notebook")
+    assert hasattr(tools, "execute_cell")
+    assert hasattr(tools, "add_code_cell")
+    assert hasattr(tools, "edit_code_cell")
+    assert hasattr(tools, "add_markdown_cell")
+    assert hasattr(tools, "edit_markdown_cell")
+    assert hasattr(tools, "delete_cell")
+    assert hasattr(tools, "view_notebook")
+    assert hasattr(tools, "read_cell")
+    assert hasattr(tools, "set_server_context")
+    assert hasattr(tools, "get_server_context")
 
 
 def test_import_services():
@@ -151,11 +151,7 @@ def test_output_filter():
     assert OutputFilter.should_filter(["image/png"], 5000)
 
     # Test filter_single_output
-    output = {
-        "output_type": "stream",
-        "name": "stdout",
-        "text": "Hello"
-    }
+    output = {"output_type": "stream", "name": "stdout", "text": "Hello"}
     filtered = OutputFilter.filter_single_output(output)
     assert filtered == output  # Should not be filtered
 
@@ -186,7 +182,7 @@ def test_execution_result_model():
         outputs=[{"output_type": "stream", "text": "test"}],
         status="ok",
         kernel_id="kernel-123",
-        started_new_kernel=True
+        started_new_kernel=True,
     )
 
     # Test model_dump (Pydantic method)

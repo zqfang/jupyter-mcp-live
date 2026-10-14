@@ -35,7 +35,8 @@ jobs:
         python -m pip install --upgrade pip
         if [ "${{ matrix.deps }}" = "oldest" ]; then
           pip install -e .[test] "fastmcp[code-mode]==4.1.0" "jupyter_server==2.16.0" \
-            "jupyter-collaboration==4.4.0" "jupyter-server-ydoc==2.4.0"
+            "jupyter-collaboration==4.4.0" "jupyter-server-ydoc==2.4.0" \
+            "tornado==6.5.9"
         else
           pip install -e .[test]
         fi
@@ -44,18 +45,25 @@ jobs:
       run: |
         # Same ruff version as pyproject.toml: rule sets change between releases
         pip install "ruff==0.17.0"
-        # Check linting and formatting
-        ruff check jupyter_mcp_executor
-        ## fix check
-        ## ruff check --fix jupyter_mcp_executor
-        ruff format --check jupyter_mcp_executor
-        ## fix format
-        ## ruff format jupyter_mcp_executor
+        # Check linting and formatting (fix locally with `ruff check --fix` and
+        # `ruff format`)
+        ruff check jupyter_mcp_executor tests
+        ruff format --check jupyter_mcp_executor tests
     
+    # Once per run: the installed (latest) dependencies have no known
+    # vulnerabilities.
+    - name: Check dependency advisories
+      if: matrix.os == 'ubuntu-latest' && matrix.deps == 'latest'
+      run: |
+        pip install pip-audit
+        pip-audit --skip-editable
+
     - name: Run unit tests
       run: |
         pytest tests/ -v -m "not slow and not integration"
-    
+
+    # Everything under tests/integration/ is marked automatically (its
+    # conftest.py): a real Jupyter Server, real kernels, real YDoc rooms.
     - name: Run integration tests
       run: |
         pytest tests/ -v -m "integration"

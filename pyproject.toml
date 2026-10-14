@@ -23,6 +23,10 @@ dependencies = [
     # (start_all_extensions -> start_extension); mcp_handler also needs
     # JupyterHandler.prepare(_redirect_to_login=...) (>=2.13)
     "jupyter_server>=2.16,<3",
+    # Imported directly (mcp_handler, asgi_bridge). >=6.5.9: fixes for
+    # pre-authentication request-parsing DoS advisories (GHSA-3hv7-mjh2-fv65,
+    # CVE-2026-82397 and others), reachable before the MCP handler runs
+    "tornado>=6.5.9",
     # >=4.1: first release with pydantic-monty 1.x, whose sandbox clock pauses
     # during tool calls (see build_sandbox_limits) and that propagates MCP
     # cancellation into tools called from Code Mode
@@ -30,11 +34,14 @@ dependencies = [
     "jupyter-ai-tools>=0.1.0",
     "jupyterlab_commands_toolkit",
     "jupyterlab_notebook_awareness",
-    "nbformat>=5.0",
+    # >=5.1: cell ids (NbformatAdapter returns new cells' ids)
+    "nbformat>=5.1",
     # >=4.4 (jupyter-server-ydoc >=2.4): YDocExtension.get_document(create=True),
     # used by ydoc_helpers.ensure_ynotebook to recreate cleaned-up rooms
     "jupyter-collaboration>=4.4,<5",
-    "jupyter_ydoc>=2.0.0",
+    # >=3.4: what jupyter-server-ydoc 2.4 requires; create_ycell wraps stream
+    # output text in pycrdt Text since 3.0.2 (YDocAdapter relies on it)
+    "jupyter_ydoc>=3.4",
     "pycrdt>=0.8.0",
     "pandas>=2.3.3",
     "numpy>=2.2.6",
@@ -110,4 +117,5 @@ ignore = [
 docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["T20"]
+# Fakes mirror the real signatures, so unused arguments are expected there
+"tests/**" = ["T20", "ARG"]

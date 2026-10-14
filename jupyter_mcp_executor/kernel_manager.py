@@ -31,6 +31,10 @@ from jupyter_mcp_executor.server_context import (
 logger = logging.getLogger(__name__)
 
 
+class KernelStartError(RuntimeError):
+    """A kernel (with its Jupyter session) could not be started for a notebook."""
+
+
 class KernelManager:
     """Service for managing Jupyter kernel lifecycle.
 
@@ -111,14 +115,8 @@ class KernelManager:
             # and JupyterLab then pick different ones (see _find_session_for_notebook),
             # which breaks the guarantee that both drive the same kernel, and every
             # abandoned kernel keeps its memory (GPU included) until the server stops.
-            stale_id = self.kernel_tracker.get(notebook_path)
-            stale_session = await self._find_session_for_notebook(notebook_path)
-            if stale_session and not stale_id:
-                stale_id = stale_session.get("kernel", {}).get("id")
-            await self._delete_session_for_notebook(notebook_path)
+            stale_id = await self._stop_notebook_kernel(notebook_path)
             if stale_id:
-                await self._shutdown_kernel(stale_id)
-                self.kernel_tracker.untrack(notebook_path)
                 logger.info(
                     f"force_new_kernel: replaced kernel {stale_id} for {notebook_path}"
                 )
@@ -283,9 +281,12 @@ class KernelManager:
                 defaults to the notebook's kernelspec metadata, then "python3"
 
         Returns:
-            Tuple of (kernel_id, started_new). kernel_id is None if no server
-            context is available or kernel startup failed. started_new is True
-            only when a brand-new kernel was started (no prior state preserved).
+            Tuple of (kernel_id, started_new). kernel_id is None only if no
+            server context is available. started_new is True only when a
+            brand-new kernel was started (no prior state preserved).
+
+        Raises:
+            KernelStartError: If a new kernel was needed but could not start.
         """
         notebook_path = normalize_path(notebook_path)
         serverapp = get_server_context()
@@ -310,7 +311,7 @@ class KernelManager:
             kernel_name, available_kernels.get("kernelspecs", {}), fallback="python3"
         )
         kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
-        return kernel_id, kernel_id is not None
+        return kernel_id, True
 
     async def find_kernel_for_notebook(self, notebook_path: str) -> str | None:
         """Return the notebook's running kernel without ever starting one.
@@ -445,17 +446,19 @@ class KernelManager:
 
         Returns:
             KernelSwitchResult with status and new kernel info
+
+        Raises:
+            ValueError: If kernel_name matches no installed kernel (checked
+                before the old kernel is touched)
+            KernelStartError: If the new kernel could not be started
         """
         notebook_path = normalize_path(notebook_path)
+        available_kernels = await self.list_notebook_kernels()
+        kernel_name = resolve_kernel_name(
+            kernel_name, available_kernels.get("kernelspecs", {})
+        )
 
-        # Delete the old session first
-        await self._delete_session_for_notebook(notebook_path)
-
-        # Shutdown old kernel if tracked
-        old_kernel_id = self.kernel_tracker.get(notebook_path)
-        if old_kernel_id:
-            await self._shutdown_kernel(old_kernel_id)
-            self.kernel_tracker.untrack(notebook_path)
+        old_kernel_id = await self._stop_notebook_kernel(notebook_path)
 
         # Start new kernel (this will also create a new session)
         new_kernel_id = await self._start_kernel_for_notebook(
@@ -474,42 +477,66 @@ class KernelManager:
     async def shutdown_notebook(
         self, notebook_path: str, shutdown_kernel: bool = True
     ) -> ShutdownResult:
-        """Shutdown notebook session and optionally its kernel.
+        """Close the notebook's session and shut its kernel down.
 
-        Deletes the Jupyter session and optionally shuts down the kernel.
-        This ensures proper cleanup and prevents orphaned sessions.
+        Deleting a Jupyter session always shuts its kernel down
+        (jupyter_server's SessionManager.delete_session), so with
+        ``shutdown_kernel=False`` the session is kept too and only this
+        client's tracking is dropped.
 
         Args:
             notebook_path: Path to notebook
-            shutdown_kernel: Whether to shutdown the kernel
+            shutdown_kernel: Whether to shut the kernel (and session) down
 
         Returns:
-            ShutdownResult with status message
+            ShutdownResult with status message and the notebook's kernel ID
         """
         notebook_path = normalize_path(notebook_path)
 
-        kernel_id = self.kernel_tracker.get(notebook_path)
-
-        # Delete the Jupyter session for this notebook
-        await self._delete_session_for_notebook(notebook_path)
-
-        if kernel_id and shutdown_kernel:
-            await self._shutdown_kernel(kernel_id)
+        if not shutdown_kernel:
+            kernel_id = await self.find_kernel_for_notebook(notebook_path)
             self.kernel_tracker.untrack(notebook_path)
+            return ShutdownResult(
+                message=(
+                    "Kernel left running: its Jupyter session was kept, because "
+                    "closing a session always shuts its kernel down"
+                ),
+                kernel_id=kernel_id,
+            )
+
+        kernel_id = await self._stop_notebook_kernel(notebook_path)
+        if kernel_id:
             return ShutdownResult(
                 message="Notebook session closed and kernel shut down",
                 kernel_id=kernel_id,
             )
-        if kernel_id:
-            self.kernel_tracker.untrack(notebook_path)
-            return ShutdownResult(
-                message="Notebook session closed (kernel still running)",
-                kernel_id=kernel_id,
-            )
         return ShutdownResult(
-            message="Notebook session closed (no kernel was tracked)",
-            kernel_id=None,
+            message="No kernel was running for this notebook", kernel_id=None
         )
+
+    async def _stop_notebook_kernel(self, notebook_path: str) -> str | None:
+        """Delete the notebook's session and stop any kernel it still uses.
+
+        Deleting the session shuts the session's kernel down; a tracked kernel
+        that is still alive afterwards (one without a session) is shut down
+        explicitly. A kernel is never shut down twice.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+
+        Returns:
+            The kernel the notebook was using (the session's, else the
+            tracked one), or None if it had none.
+        """
+        session = await self._find_session_for_notebook(notebook_path)
+        session_kernel_id = (session or {}).get("kernel", {}).get("id")
+        tracked_id = self.kernel_tracker.get(notebook_path)
+
+        await self._delete_session_for_notebook(notebook_path)
+        if tracked_id and is_kernel_alive(get_server_context(), tracked_id):
+            await self._shutdown_kernel(tracked_id)
+        self.kernel_tracker.untrack(notebook_path)
+        return session_kernel_id or tracked_id
 
     async def _delete_session_for_notebook(self, notebook_path: str) -> None:
         """Delete the Jupyter session for a notebook.
@@ -694,7 +721,7 @@ class KernelManager:
 
     async def _start_kernel_for_notebook(
         self, notebook_path: str, kernel_name: str
-    ) -> str | None:
+    ) -> str:
         """Start a kernel and track it for a notebook.
 
         Creates a Jupyter session which automatically creates and links a kernel
@@ -708,12 +735,17 @@ class KernelManager:
             kernel_name: Kernel name
 
         Returns:
-            Kernel ID or None if failed
+            Kernel ID
+
+        Raises:
+            KernelStartError: With the reason, e.g. a path Jupyter's contents
+                manager cannot open (outside root_dir, hidden) or a failed
+                session/kernel start
         """
         serverapp = get_server_context()
         if not serverapp:
-            logger.warning("No server context available, cannot start kernel")
-            return None
+            msg = "Jupyter server context not available; cannot start a kernel"
+            raise KernelStartError(msg)
 
         try:
             session_manager = serverapp.session_manager
@@ -738,12 +770,14 @@ class KernelManager:
                 await ensure_async(
                     contents_manager.get(api_path, content=False, type="notebook")
                 )
-            except Exception as e:  # noqa: BLE001 - reported to the caller as None
-                logger.error(
-                    f"Contents manager cannot resolve path '{api_path}' "
-                    f"(root_dir='{root_dir}'). Error: {e}"
+            except Exception as e:
+                msg = (
+                    f"Cannot start a kernel for {notebook_path}: Jupyter's "
+                    f"contents manager cannot open it ({e}). Jupyter sessions "
+                    f"only exist for notebooks inside the server root "
+                    f"({root_dir}) and outside hidden directories."
                 )
-                return None
+                raise KernelStartError(msg) from e
 
             # Create session this lets SessionManager create the kernel
             # This avoids race conditions where we create a kernel but session manager
@@ -778,9 +812,12 @@ class KernelManager:
 
             return kernel_id
 
-        except Exception:
-            logger.exception(f"❌ Session/kernel creation FAILED for {notebook_path}!")
-            return None
+        except KernelStartError:
+            raise
+        except Exception as e:
+            logger.exception(f"Session/kernel creation failed for {notebook_path}")
+            msg = f"Cannot start a {kernel_name} kernel for {notebook_path}: {e}"
+            raise KernelStartError(msg) from e
 
     async def _shutdown_kernel(self, kernel_id: str) -> None:
         """Shutdown a kernel.

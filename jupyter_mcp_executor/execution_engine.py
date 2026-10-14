@@ -166,7 +166,6 @@ class ExecutionEngine:
         code: str,
         kernel_id: str | None = None,
         timeout: int | None = None,
-        kernel_name: str = "python3",
         on_output: OutputCallback | None = None,
         progress_label: str | None = None,
     ) -> ExecutionResult:
@@ -174,10 +173,11 @@ class ExecutionEngine:
 
         Args:
             code: The code to execute
-            kernel_id: Optional kernel ID to use. If None, starts a new kernel
-                (last-resort path; callers normally resolve the kernel first).
+            kernel_id: The kernel to run on, resolved by the caller (see
+                KernelManager.get_kernel_for_notebook). None is an error: a
+                bare kernel started here would have no Jupyter session, so
+                JupyterLab and later lookups could not find it.
             timeout: Maximum time in seconds to wait for execution
-            kernel_name: Kernel name to use when starting new kernel
             on_output: Optional async callback fired per output as it arrives
                 (live streaming into the notebook)
             progress_label: Names the execution in MCP progress notifications
@@ -201,14 +201,14 @@ class ExecutionEngine:
             )
 
         kernel_manager = serverapp.kernel_manager
-        started_new_kernel = False
-
-        # Get or create kernel
         if kernel_id is None:
-            logger.info(f"Starting new {kernel_name} kernel")
-            kernel_id = await kernel_manager.start_kernel(kernel_name=kernel_name)
-            started_new_kernel = True
-            logger.info(f"Started kernel {kernel_id}")
+            return ExecutionResult(
+                execution_count=None,
+                outputs=[],
+                status="error",
+                kernel_id="",
+                error="No kernel to run the code on; call setup_notebook first",
+            )
 
         # Get kernel handle (also validates the kernel is still alive).
         # is_kernel_alive, not `except KeyError`: jupyter_server raises
@@ -277,7 +277,6 @@ class ExecutionEngine:
             outputs=result_dict.get("outputs", []),
             status=result_dict.get("status", "ok"),
             kernel_id=kernel_id,
-            started_new_kernel=started_new_kernel,
             error=result_dict.get("error"),
         )
 
@@ -304,7 +303,8 @@ class ExecutionEngine:
             code: Code to execute
             kernel_id: Optional kernel ID. If None, the notebook's existing
                 kernel is reused (tracked kernel or running Jupyter session);
-                a new session-backed kernel is started only if none exists.
+                a new session-backed kernel is started only if none exists,
+                and KernelStartError is raised if that fails.
             timeout: Execution timeout
             cell_id: UUID of the target cell. When given, the cell is
                 re-located by ID after execution so outputs land in the right
@@ -345,12 +345,8 @@ class ExecutionEngine:
             progress_label=f"{Path(adapter.notebook_path).name} cell {cell_position}",
         )
 
-        if started_new and not exec_result.started_new_kernel:
+        if started_new:
             exec_result = exec_result.model_copy(update={"started_new_kernel": True})
-
-        # Track kernel if new
-        if exec_result.started_new_kernel:
-            self.kernel_tracker.track(adapter.notebook_path, exec_result.kernel_id)
 
         # Re-locate the cell by ID: positions can shift during a long
         # execution if cells are added/deleted concurrently in JupyterLab.
