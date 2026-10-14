@@ -228,6 +228,42 @@ async def test_callers_cannot_mark_cells_trusted(contents_manager):
     assert not contents_manager.notary.check_signature(_on_disk(path))
 
 
+def _signed(cm, name: str, nb) -> str:
+    path = _write(cm, name, nb)
+    signed = _on_disk(path)
+    cm.notary.sign(signed)
+    nbformat.write(signed, path)
+    return path
+
+
+@pytest.mark.asyncio
+async def test_replacement_outputs_do_not_inherit_the_cells_trust(contents_manager):
+    """A cell loaded from a signed notebook is marked trusted; outputs a
+    caller puts in its place must be judged on their own."""
+    path = _signed(
+        contents_manager, "nb.ipynb", new_notebook(cells=[new_code_cell("x")])
+    )
+
+    await NbformatAdapter(path).edit_cell(
+        0, CellContent(source="y", cell_type="code", outputs=[HTML_OUTPUT])
+    )
+
+    assert not contents_manager.notary.check_signature(_on_disk(path))
+
+
+@pytest.mark.asyncio
+async def test_editing_a_cell_of_a_signed_notebook_keeps_it_signed(contents_manager):
+    """What edit_code_cell does: new source, outputs cleared."""
+    trusted = new_code_cell("x", outputs=[new_output(**HTML_OUTPUT)])
+    path = _signed(contents_manager, "nb.ipynb", new_notebook(cells=[trusted]))
+
+    await NbformatAdapter(path).edit_cell(0, CellContent(source="y", cell_type="code"))
+
+    on_disk = _on_disk(path)
+    assert on_disk.cells[0].outputs == []
+    assert contents_manager.notary.check_signature(on_disk)
+
+
 @pytest.mark.asyncio
 async def test_a_failed_edit_saves_nothing(contents_manager):
     path = _write(

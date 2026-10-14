@@ -349,7 +349,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-416 tests total across:
+420 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -387,7 +387,7 @@ position_index), and include a recovery hint for the common failure mode.
   managers, each test against the async default and a sync one with a
   file-backed signature DB: tool outputs signed as trusted; untrusted
   outputs never laundered (other cells, appended outputs, caller-supplied
-  `metadata.trusted`); trust marks never in reads or on disk; checkpoint;
+  `metadata.trusted`, replacement outputs of a signed cell); trust marks never in reads or on disk; checkpoint;
   save hooks; concurrent edits serialized; failed edits not saved; missing
   or hidden notebooks are `FileNotFoundError`; paths outside the root
   refused; `notebook_exists`, `ensure_directory`. The unit tests'
@@ -621,8 +621,9 @@ When using `NbformatAdapter` (notebook is closed):
 - Outputs from the tools' own executions are marked `trusted` (as JupyterLab
   trusts cells it runs); outputs already in the notebook keep the trust the
   contents manager gave them on load (valid signature or not), so an edit
-  never signs outputs nobody trusted. Reads strip the in-memory `trusted`
-  marks.
+  never signs outputs nobody trusted. `edit_cell` drops the loaded trust
+  mark when it replaces a cell's outputs, and callers' `metadata.trusted`
+  is ignored. Reads strip the in-memory `trusted` marks.
 - Edits of one notebook are serialized (`editing_notebook`, a per-path
   lock): concurrent read-modify-write calls would otherwise lose changes.
 

@@ -139,6 +139,10 @@ class NbformatAdapter(NotebookAdapter):
             if cell.cell_type == "code":
                 cell.execution_count = content.execution_count
                 cell.outputs = convert_outputs_to_notebook_nodes(content.outputs or [])
+                # The trust mark from loading vouched for the old outputs, not
+                # for these: the notary judges them on their own (empty ones
+                # are always fine, so the notebook stays signed).
+                cell.metadata.pop("trusted", None)
 
             logger.info(
                 f"Edited {content.cell_type} cell via nbformat at position {position}"
