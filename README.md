@@ -88,6 +88,7 @@ c.MCPExtensionApp.mcp_tools = [
 ### 3. Start Jupyter Server
 
 ```bash
+export JUPYTER_TOKEN=<your Jupyter token>
 jupyter lab --config jupyter_config.py
 ## or use example config here
 # jupyter lab --config examples/jupyter_config_with_excution_tools.py
