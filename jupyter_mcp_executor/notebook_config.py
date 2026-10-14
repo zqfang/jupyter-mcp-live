@@ -13,6 +13,9 @@ class ExecutionConfig:
     iopub_poll_interval: float = 0.5  # seconds per iopub poll while collecting
     # After a timeout interrupt, wait this long for the kernel to go idle
     interrupt_grace_secs: float = 10.0
+    # While a cell runs in an open notebook, keep its YDoc room alive this
+    # often; well below jupyter_server_ydoc's document_cleanup_delay (60s).
+    room_keepalive_interval: float = 15.0
 
 
 @dataclass(frozen=True)
