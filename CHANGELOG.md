@@ -60,6 +60,24 @@
 
 ### Bugs fixed
 
+- With the Jupyter root directory behind a symlink (macOS `/tmp` and
+  `/var`, symlinked home or project directories, container volumes), the
+  tools never found the notebook's YDoc room: they looked it up by the
+  resolved absolute path, which the file ID service maps to another file ID
+  than JupyterLab's. Every edit then went to the `.ipynb` while JupyterLab
+  had the notebook open, and the room's file watcher loaded it over the live
+  document (unsaved browser edits lost; cells duplicated after reconnect).
+  Rooms are now looked up by API path, as JupyterLab does, and sessions get
+  a relative path under such a root too.
+- A tool call could outlive its YDoc room: 60 s after the browser left,
+  jupyter_server_ydoc deletes the room, cancelling its pending save, and
+  writes to its detached document vanished without an error (outputs of a
+  long cell missing after reopening). Using a room now cancels its pending
+  cleanup, and an adapter whose room was replaced anyway follows the new
+  room and rewrites the cell's full outputs at the end.
+- If the YDoc lookup failed while the notebook had a room, the tools fell
+  back to writing the `.ipynb` behind it, with the same overwrite. They now
+  fail with an error instead; the file is used only when no room exists.
 - `shutdown_notebook(shutdown_kernel=False)` reported "kernel still running"
   but shut the kernel down: Jupyter cannot delete a session without stopping
   its kernel. The session and kernel are now left running. With the default

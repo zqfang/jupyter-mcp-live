@@ -18,6 +18,7 @@ import pytest
 from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_path
 
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
 _HELPERS = "jupyter_mcp_executor.ydoc_helpers"
@@ -142,15 +143,27 @@ async def test_returns_none_if_get_document_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_unexpected_error_is_logged_and_returns_none():
-    """A failure to create the room is visible at ERROR, never silent: falling
-    back to the file would reintroduce the ystore/disk desync."""
+async def test_unexpected_error_without_a_room_is_logged_and_returns_none():
+    """No room to conflict with: the file is safe, but the failure is visible
+    at ERROR, never silent."""
     ext = _make_extension()
+    ext.ywebsocket_server.rooms = {}
     ext.get_document.side_effect = RuntimeError("boom")
     log = MagicMock()
 
     assert await _ensure(ext, logger=log) is None
     log.exception.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_with_a_room_raises_instead_of_using_the_file():
+    """The room's file watcher would load our file writes over the live
+    document, discarding the browser's unsaved changes."""
+    ext = _make_extension()
+    ext.get_document.side_effect = RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="open in JupyterLab"):
+        await _ensure(ext)
 
 
 @pytest.mark.asyncio
@@ -219,15 +232,15 @@ async def test_unopened_room_is_initialized_under_the_handler_lock():
 
 
 @pytest.mark.asyncio
-async def test_room_initialization_failure_is_logged_and_returns_none():
-    """Never hand out the empty document of a room that failed to load."""
+async def test_room_initialization_failure_raises():
+    """Never hand out the empty document of a room that failed to load, and
+    never write the file behind it either."""
     room = _make_room(ready=False)
     room.initialize.side_effect = RuntimeError("cannot load")
     ext = _make_extension(document=_FakeYNotebook(), room=room)
-    log = MagicMock()
 
-    assert await _ensure(ext, logger=log) is None
-    log.exception.assert_called_once()
+    with pytest.raises(RuntimeError, match="cannot load"):
+        await _ensure(ext)
 
 
 @pytest.mark.asyncio
@@ -277,24 +290,27 @@ async def test_get_ynotebook_initializes_unopened_room():
 
 
 @pytest.mark.asyncio
-async def test_get_notebook_adapter_calls_ensure_ynotebook():
-    """get_notebook_adapter() must call ensure_ynotebook(), NOT get_ynotebook().
+async def test_get_notebook_adapter_uses_the_room_it_recreates():
+    """get_notebook_adapter() must use ensure_notebook_room() (recreating a
+    cleaned-up room), not a lookup that falls back to the file, and hand the
+    room to the adapter so it can follow a replaced room.
 
-    This confirms room recreation is wired into the adapter factory — the
-    guarantee that NbformatAdapter is never used while an active CRDT session
-    exists in the ystore.
+    This is the guarantee that NbformatAdapter is never used while an active
+    CRDT session exists in the ystore.
     """
-    fake_ynb = _FakeYNotebook()
+    notebook_room = MagicMock()
 
     # YDocAdapter is a local import inside get_notebook_adapter(); patch at source.
     with (
         patch(
-            "jupyter_mcp_executor.notebook_adapter.ensure_ynotebook",
-            new=AsyncMock(return_value=fake_ynb),
+            "jupyter_mcp_executor.notebook_adapter.ensure_notebook_room",
+            new=AsyncMock(return_value=notebook_room),
         ) as mock_ensure,
         patch("jupyter_mcp_executor.ydoc_adapter.YDocAdapter") as mock_ydoc_cls,
     ):
         await get_notebook_adapter("/tmp/nb.ipynb")
 
     mock_ensure.assert_awaited_once()
-    mock_ydoc_cls.assert_called_once()
+    mock_ydoc_cls.assert_called_once_with(
+        notebook_room.ydoc, normalize_path("/tmp/nb.ipynb"), room=notebook_room
+    )

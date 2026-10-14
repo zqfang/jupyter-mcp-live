@@ -9,7 +9,7 @@ from typing import Any
 
 from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook
+from jupyter_mcp_executor.ydoc_helpers import ensure_notebook_room
 
 
 class NotebookAdapter(ABC):
@@ -176,6 +176,16 @@ class NotebookAdapter(ABC):
             Normalized notebook path
         """
 
+    @property
+    def generation(self) -> int:
+        """How often the adapter moved to a new document (0 = never).
+
+        A YDoc room can be deleted and recreated while an adapter is in use;
+        writes then go to the new room's document, which may lack what was
+        written to the old one (see YDocAdapter).
+        """
+        return 0
+
 
 async def get_notebook_adapter(notebook_path: str) -> NotebookAdapter:
     """Factory function to get the appropriate adapter for a notebook.
@@ -195,9 +205,9 @@ async def get_notebook_adapter(notebook_path: str) -> NotebookAdapter:
     notebook_path = normalize_path(notebook_path)
 
     # Try to get YDoc (collaborative mode), recreating the room if needed
-    ydoc = await ensure_ynotebook(notebook_path)
-    if ydoc:
-        return YDocAdapter(ydoc, notebook_path)
+    notebook_room = await ensure_notebook_room(notebook_path)
+    if notebook_room is not None:
+        return YDocAdapter(notebook_room.ydoc, notebook_path, room=notebook_room)
 
     # Fall back to file-based mode
     return NbformatAdapter(notebook_path)

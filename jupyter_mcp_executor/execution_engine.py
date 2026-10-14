@@ -49,7 +49,19 @@ class _CellOutputStreamer:
         self._adapter = adapter
         self._cell_id = cell_id
         self._position = position
+        self._generation = getattr(adapter, "generation", 0)
         self.streamed_ok = True
+
+    @property
+    def complete(self) -> bool:
+        """Whether every output is in the cell, so only the count is left.
+
+        Not if streaming failed, or if the adapter moved to a recreated YDoc
+        room meanwhile: the old room's last outputs may never have reached it.
+        """
+        return self.streamed_ok and (
+            getattr(self._adapter, "generation", 0) == self._generation
+        )
 
     async def _locate_cell(self) -> int:
         """Resolve the cell's current position by ID (positions can shift)."""
@@ -373,7 +385,7 @@ class ExecutionEngine:
         #   autosave handles disk persistence.  A direct nbformat.write() here
         #   would trigger JupyterLab's external-file-change detector and cause
         #   the notebook viewport to scroll back to the top on every execution.
-        if streamer is not None and streamer.streamed_ok:
+        if streamer is not None and streamer.complete:
             # Outputs already live in the cell via streaming; only record the
             # execution_count.  Skipping the clear+rewrite of identical
             # content avoids a re-render flash of plots/images in JupyterLab.

@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from jupyter_mcp_executor.notebook_adapter import NotebookAdapter
 from jupyter_mcp_executor.notebook_models import CellContent
@@ -11,6 +11,9 @@ from jupyter_mcp_executor.ydoc_helpers import (
     YText,
     get_cell_index_by_id_ydoc,
 )
+
+if TYPE_CHECKING:
+    from jupyter_mcp_executor.ydoc_helpers import NotebookRoom
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +25,17 @@ class YDocAdapter(NotebookAdapter):
     real-time collaboration and immediate visibility in JupyterLab.
     """
 
-    def __init__(self, ydoc: Any, notebook_path: str):
+    def __init__(
+        self, ydoc: Any, notebook_path: str, room: "NotebookRoom | None" = None
+    ):
         """Initialize with YNotebook instance.
 
         Args:
             ydoc: YNotebook instance from jupyter_ydoc
             notebook_path: Normalized path to notebook
+            room: The room serving ``ydoc``. When given, every operation first
+                checks the room is still the one the server uses and keeps it
+                alive; a replaced room is followed (see ``generation``).
         """
         if not YDOC_AVAILABLE:
             msg = "YDoc is not available (jupyter_ydoc not installed)"
@@ -35,6 +43,45 @@ class YDocAdapter(NotebookAdapter):
 
         self.ydoc = ydoc
         self._notebook_path = notebook_path
+        self._room = room
+        self._generation = 0
+
+    @property
+    def generation(self) -> int:
+        """How often the adapter moved to a recreated room (0 = never).
+
+        The previous room's last edits may be missing from the new one: a
+        deleted room cancels its pending save, and the new room loads the file.
+        """
+        return self._generation
+
+    async def _live(self) -> None:
+        """Make ``self.ydoc`` the live document before an operation.
+
+        A call can outlive its room (a long cell after the browser left): a
+        stopped room's document is detached, and edits to it are lost without
+        an error. Follow the notebook to its current room instead, and keep
+        that room alive while it is in use.
+
+        Raises:
+            RuntimeError: If the room is gone and cannot be recreated
+        """
+        room = self._room
+        if room is None:
+            return
+        if not room.is_attached():
+            replacement = await room.reattach()
+            if replacement is None:
+                msg = (
+                    f"The live document of {self._notebook_path} was closed "
+                    "and could not be reopened; retry the call"
+                )
+                raise RuntimeError(msg)
+            logger.info(f"YDoc room of {self._notebook_path} was replaced; following")
+            self._room = room = replacement
+            self.ydoc = replacement.ydoc
+            self._generation += 1
+        room.keep_alive()
 
     @property
     def is_collaborative(self) -> bool:
@@ -48,6 +95,7 @@ class YDocAdapter(NotebookAdapter):
 
     async def read_cell(self, position: int) -> CellContent:
         """Read cell from YDoc."""
+        await self._live()
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -72,6 +120,7 @@ class YDocAdapter(NotebookAdapter):
         self, cell_content: CellContent, position: int | None = None
     ) -> tuple[int, str]:
         """Add cell to YDoc."""
+        await self._live()
         # Convert source to string
         source_str = cell_content.get_source_as_string()
 
@@ -123,6 +172,7 @@ class YDocAdapter(NotebookAdapter):
         by the ones in `content` (typically empty), so stale outputs from the
         old source never linger on the edited cell.
         """
+        await self._live()
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -177,6 +227,7 @@ class YDocAdapter(NotebookAdapter):
 
     async def delete_cell(self, position: int) -> None:
         """Delete cell from YDoc."""
+        await self._live()
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -206,6 +257,7 @@ class YDocAdapter(NotebookAdapter):
         outputs: list[dict[str, Any]] | None,
     ) -> None:
         """Update cell outputs in YDoc."""
+        await self._live()
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -240,6 +292,7 @@ class YDocAdapter(NotebookAdapter):
         printing thousands of lines stays one outputs entry with small CRDT
         deltas instead of thousands of Array inserts.
         """
+        await self._live()
         if position < 0 or position >= self.ydoc.cell_number:
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
@@ -272,6 +325,7 @@ class YDocAdapter(NotebookAdapter):
 
     async def get_all_cells(self) -> list[CellContent]:
         """Get all cells from YDoc."""
+        await self._live()
         cells = []
         for i in range(self.ydoc.cell_number):
             cells.append(await self.read_cell(i))
@@ -279,10 +333,12 @@ class YDocAdapter(NotebookAdapter):
 
     async def get_cell_count(self) -> int:
         """Get cell count from YDoc."""
+        await self._live()
         return self.ydoc.cell_number
 
     async def find_cell_by_id(self, cell_id: str) -> tuple[CellContent, int] | None:
         """Find cell by UUID in YDoc."""
+        await self._live()
         position = get_cell_index_by_id_ydoc(self.ydoc, cell_id)
         if position is None:
             return None
@@ -294,6 +350,7 @@ class YDocAdapter(NotebookAdapter):
         self, execution_count: int
     ) -> tuple[CellContent, int] | None:
         """Find code cell by execution count in YDoc."""
+        await self._live()
         for i in range(self.ydoc.cell_number):
             ycell = self.ydoc.ycells[i]
             if (

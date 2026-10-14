@@ -199,9 +199,10 @@ notebook metadata (auto-start path), via `fallback="python3"`.
 - `notebook_adapter.py` - Abstract adapter protocol + factory function
 - `ydoc_adapter.py` - YDoc-based (collaborative editing)
 - `nbformat_adapter.py` - File-based (disk persistence)
-- `ydoc_helpers.py` - YDoc utilities, including `ensure_ynotebook()` which
-  recreates cleaned-up YDoc rooms (via `get_document(create=True)`) to
-  preserve CRDT history, and initializes rooms the browser has not loaded yet
+- `ydoc_helpers.py` - YDoc utilities, including `ensure_notebook_room()` which
+  finds the notebook's room by API path, recreates cleaned-up rooms (via
+  `get_document(create=True)`) to preserve CRDT history, and returns a
+  `NotebookRoom` the adapter keeps alive and follows if replaced, and initializes rooms the browser has not loaded yet
 
 ### Foundation/Utilities
 
@@ -339,7 +340,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-315 tests total across:
+331 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -350,6 +351,9 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
   real YNotebook (edit_cell, append/coalesce/clear)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
+- `tests/integration/test_ydoc_room_identity.py` - With a symlinked
+  `root_dir`: finding JupyterLab's room, keeping it alive, following a
+  replaced room, refusing the file fallback while a room exists
 - `tests/integration/test_ydoc_rooms.py` - `ensure_ynotebook` against a real
   jupyter_server_ydoc (headless room load and reuse, unopened rooms, the
   configured ystore). Its server config puts the ystore and file ID
@@ -446,12 +450,16 @@ print(tracker.get_all_tracked())
 ### YDoc vs Nbformat Selection
 
 The adapter is selected automatically in `get_notebook_adapter()` via
-`ensure_ynotebook()`:
+`ensure_notebook_room()` (`ensure_ynotebook()` returns just its document):
 
 - If a YDoc room exists for the notebook → `YDocAdapter`
 - If the room was cleaned up (browser disconnected for >60s) → the room is
   **recreated from the same ystore** and `YDocAdapter` is still used
-- Only if YDoc infrastructure is unavailable entirely → `NbformatAdapter`
+- `NbformatAdapter` only if YDoc infrastructure is unavailable, no browser
+  has connected yet, or the lookup failed **and the notebook has no room**.
+  If it has one, `ensure_notebook_room()` raises instead: the room's file
+  watcher would load our file writes over the live document, discarding the
+  browser's unsaved changes.
 
 **Why recreate the room instead of falling back to NbformatAdapter?**
 When the user's browser disconnects, `jupyter_server_ydoc` destroys the room
@@ -493,6 +501,35 @@ that injects the extension's config before the first `create=True` call.
 `get_document()` is the only runtime reader of that trait (handlers got their
 class at startup). `tests/integration/test_ydoc_rooms.py` configures
 `SQLiteYStore.db_path` to catch this.
+
+**Rooms are looked up by API path.** JupyterLab names a notebook by its path
+relative to `root_dir`; `ArbitraryFileIdManager` recognizes an absolute path
+only by a string prefix match on the *unresolved* `root_dir`. Our paths are
+resolved (`normalize_path()`), so under a symlinked root (macOS `/tmp`,
+`/var`, symlinked homes, container volumes) they got a different file ID — a
+different room — and every tool fell back to the file while JupyterLab had
+the notebook open. `get_document()` and the file ID lookup now get
+`to_api_path(path)`, which compares resolved paths. Covered by
+`tests/integration/test_ydoc_room_identity.py` (symlinked `root_dir`).
+
+**A call keeps its room alive and follows it if it was replaced.**
+`ensure_notebook_room()` returns a `NotebookRoom` (document + room). A tool
+call can outlive the room: the handler deletes it `document_cleanup_delay`
+after the last browser left, a deleted room **cancels its pending save**, and
+its document is detached (edits to it vanish without an error). So:
+
+- `NotebookRoom.keep_alive()` cancels the room's pending cleanup
+  (`room.cleaner`, a public property; the handler's `open()` does the same for
+  a reconnecting browser). `YDocAdapter` calls it on every operation, so a
+  room is not deleted while it is in use; it stays until a browser connects
+  and leaves again.
+- Before every operation `YDocAdapter._live()` checks the room is still the
+  one `ywebsocket_server.rooms` serves; if not (e.g. deleted during a long
+  silent cell) it re-attaches to the recreated room and bumps
+  `adapter.generation`. The engine's output streamer then writes the cell's
+  full outputs at the end instead of only the execution count, since the
+  old room's last outputs may never have reached the disk the new room
+  loaded.
 
 ### Persistence Strategy
 

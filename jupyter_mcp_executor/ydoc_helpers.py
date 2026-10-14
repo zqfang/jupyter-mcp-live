@@ -1,7 +1,10 @@
 """YDoc collaborative editing helper utilities."""
 
 import logging
+from dataclasses import dataclass
 from typing import Any
+
+from jupyter_mcp_executor.path_utils import to_api_path
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +36,52 @@ def _get_ydoc_extension() -> Any | None:
     return next(iter(ydoc_apps))
 
 
-async def _get_live_document(
+@dataclass
+class NotebookRoom:
+    """A notebook's live YDoc room, as the MCP tools hold it during a call.
+
+    A call can outlive the room: jupyter_server_ydoc deletes a room
+    ``document_cleanup_delay`` seconds after the last browser left, and a
+    stopped room's document is detached (no broadcast, ystore or autosave).
+    Callers therefore keep the room alive while they use it and follow it if
+    it was replaced anyway.
+    """
+
+    ydoc: Any
+    room: Any
+    extension: Any
+    file_path: str
+
+    def is_attached(self) -> bool:
+        """Whether this is still the room the server serves the notebook from."""
+        rooms = self.extension.ywebsocket_server.rooms
+        return rooms.get(self.room.room_id) is self.room
+
+    def keep_alive(self) -> None:
+        """Cancel the room's pending cleanup, as a reconnecting browser does.
+
+        Deleting a room cancels its pending save, so edits from the last save
+        delay would never reach the disk a recreated room loads from. The
+        room stays until a browser connects and leaves again.
+        """
+        cleaner = self.room.cleaner
+        if cleaner is not None and not cleaner.done():
+            cleaner.cancel()
+            logger.debug(f"Kept the YDoc room of {self.file_path} alive")
+
+    async def reattach(self) -> "NotebookRoom | None":
+        """Return the notebook's current room, recreating it if needed."""
+        return await ensure_notebook_room(self.file_path)
+
+
+async def _attach_room(
     ydoc_extension: Any, file_path: str, *, create: bool
-) -> Any | None:
-    """Return the room's live, initialized YNotebook via get_document().
+) -> NotebookRoom | None:
+    """Return the notebook's live, initialized room via get_document().
+
+    The room is looked up by the notebook's API path, as JupyterLab does: the
+    file ID manager matches absolute paths against the unresolved root_dir
+    only, so our resolved path would name another room under a symlinked root.
 
     copy=False returns the room's own document — the one browsers sync with —
     so changes to it propagate in real time. With create=True a missing room
@@ -44,10 +89,11 @@ async def _get_live_document(
     with the browser websocket handler) and initialized before it is returned.
     An existing room is returned as is, so it is initialized here if needed.
     """
+    api_path = to_api_path(file_path)
     if create:
         _configure_ystore_class(ydoc_extension)
     ydoc = await ydoc_extension.get_document(
-        path=file_path,
+        path=api_path,
         content_type="notebook",
         file_format="json",
         copy=False,
@@ -60,9 +106,24 @@ async def _get_live_document(
             f"get_document returned unexpected type {type(ydoc)} for {file_path}"
         )
         return None
-    if not await _ensure_room_initialized(ydoc_extension, file_path):
+    room = await _ensure_room_initialized(ydoc_extension, api_path)
+    if room is None:
         return None
-    return ydoc
+    notebook_room = NotebookRoom(ydoc, room, ydoc_extension, file_path)
+    notebook_room.keep_alive()
+    return notebook_room
+
+
+def _room_id(ydoc_extension: Any, api_path: str) -> str:
+    """Return the YDoc room ID of a notebook (indexing it if needed)."""
+    from jupyter_server_ydoc.utils import (  # noqa: PLC0415
+        encode_file_path,
+        room_id_from_encoded_path,
+    )
+
+    file_id_manager = ydoc_extension.serverapp.web_app.settings["file_id_manager"]
+    file_id = file_id_manager.index(api_path)
+    return room_id_from_encoded_path(encode_file_path("json", "notebook", file_id))
 
 
 def _configure_ystore_class(ydoc_extension: Any) -> None:
@@ -96,7 +157,7 @@ def _configure_ystore_class(ydoc_extension: Any) -> None:
     ydoc_extension.ystore_class = ConfiguredYStore
 
 
-async def _ensure_room_initialized(ydoc_extension: Any, file_path: str) -> bool:
+async def _ensure_room_initialized(ydoc_extension: Any, api_path: str) -> Any | None:
     """Load the notebook into its room if the browser handler has not yet.
 
     The websocket handler registers a room in prepare() but initializes it
@@ -107,27 +168,28 @@ async def _ensure_room_initialized(ydoc_extension: Any, file_path: str) -> bool:
     never load the room concurrently; it is a no-op once the room is ready.
 
     Returns:
-        False if the room was removed after get_document() returned (its
-        document is detached), True otherwise.
+        The room, or None if it was removed after get_document() returned
+        (its document is detached).
     """
-    from jupyter_server_ydoc.utils import (  # noqa: PLC0415
-        encode_file_path,
-        room_id_from_encoded_path,
-    )
-
-    file_id_manager = ydoc_extension.serverapp.web_app.settings["file_id_manager"]
-    file_id = file_id_manager.index(file_path)
-    room_id = room_id_from_encoded_path(encode_file_path("json", "notebook", file_id))
-
+    room_id = _room_id(ydoc_extension, api_path)
     room = ydoc_extension.ywebsocket_server.rooms.get(room_id)
     if room is None:
-        logger.debug(f"YDoc room for {file_path} was removed during lookup")
-        return False
+        logger.debug(f"YDoc room for {api_path} was removed during lookup")
+        return None
     if not room.ready:
         async with ydoc_extension._room_locks[room_id]:
             await room.initialize()
-        logger.debug(f"Initialized YDoc room the browser had not opened: {file_path}")
-    return True
+        logger.debug(f"Initialized YDoc room the browser had not opened: {api_path}")
+    return room
+
+
+def _has_room(ydoc_extension: Any, file_path: str) -> bool:
+    """Whether the notebook has a room now; False if that cannot be told."""
+    try:
+        room_id = _room_id(ydoc_extension, to_api_path(file_path))
+        return room_id in ydoc_extension.ywebsocket_server.rooms
+    except Exception:  # noqa: BLE001 - unknown: let the caller fall back
+        return False
 
 
 async def get_ynotebook(file_path: str) -> Any | None:
@@ -152,14 +214,33 @@ async def get_ynotebook(file_path: str) -> Any | None:
         return None
 
     try:
-        return await _get_live_document(ydoc_extension, file_path, create=False)
+        notebook_room = await _attach_room(ydoc_extension, file_path, create=False)
     except Exception as e:  # noqa: BLE001 - no YDoc means use the file adapter
         logger.debug(f"Failed to get YNotebook via YDocExtension.get_document: {e}")
         return None
+    return notebook_room.ydoc if notebook_room else None
 
 
 async def ensure_ynotebook(file_path: str) -> Any | None:
     """Return a live YNotebook, recreating the YDoc room if the browser closed it.
+
+    See ``ensure_notebook_room()``.
+
+    Args:
+        file_path: Normalized absolute path to notebook
+
+    Returns:
+        Live YNotebook instance or None if YDoc infrastructure is unavailable
+
+    Raises:
+        RuntimeError: If the notebook has a room but it cannot be attached
+    """
+    notebook_room = await ensure_notebook_room(file_path)
+    return notebook_room.ydoc if notebook_room else None
+
+
+async def ensure_notebook_room(file_path: str) -> NotebookRoom | None:
+    """Return the notebook's live room, recreating it if the browser closed it.
 
     When the last browser WebSocket disconnects, jupyter_server_ydoc deletes
     the room after ``document_cleanup_delay`` seconds (default 60 s).  Any
@@ -178,7 +259,14 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
         file_path: Normalized absolute path to notebook
 
     Returns:
-        Live YNotebook instance or None if YDoc infrastructure is unavailable
+        The live room, or None if the file should be used instead (no YDoc
+        infrastructure, or no browser has connected yet)
+
+    Raises:
+        RuntimeError: If the notebook has a room but it cannot be attached.
+            Writing the file behind a live room is not an option: the room's
+            file watcher loads the file over the live document, discarding
+            the browser's unsaved changes.
     """
     if not YDOC_AVAILABLE:
         return None
@@ -199,16 +287,22 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
             )
             return None
 
-        return await _get_live_document(ydoc_extension, file_path, create=True)
+        return await _attach_room(ydoc_extension, file_path, create=True)
 
     except (AttributeError, KeyError) as e:
         # Infrastructure not present or misconfigured (e.g. no file ID
         # manager) — return None so the caller can decide how to proceed.
         logger.warning(f"YDoc infrastructure unavailable for {file_path}: {e}")
-    except Exception:
-        # Unexpected failure — log at ERROR so it is visible in production
-        # rather than silently falling back to NbformatAdapter (which would
-        # reintroduce the ystore/disk desync bug).
+    except Exception as e:
+        if _has_room(ydoc_extension, file_path):
+            msg = (
+                f"{file_path} is open in JupyterLab, but its live document "
+                f"could not be attached ({e}). Not editing the file instead: "
+                "that would discard unsaved changes in the browser."
+            )
+            raise RuntimeError(msg) from e
+        # No room to conflict with: the file adapter is safe, but log the
+        # failure at ERROR so it is visible in production.
         logger.exception(f"Failed to get or recreate YDoc room for {file_path}")
 
     return None
