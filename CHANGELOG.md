@@ -31,6 +31,12 @@
 
 ### Changed
 
+- **The MCP endpoint also requires `read` and `write` permission on
+  `contents`**, besides `execute` on `kernels`: the tools read and modify
+  notebooks, and a user the authorizer keeps from modifying files (e.g. a
+  read-only collaborator) could do it through MCP. Nothing changes with
+  Jupyter's default authorizer or JupyterHub's `access:servers`, which grant
+  every permission; custom authorizers get `403` for such users.
 - **`add_code_cell` / `add_markdown_cell` reject a `position_index` outside
   0..cell count** with an error, instead of silently appending at the end
   (the agent then reported a position the cell was not at). Omit it to
