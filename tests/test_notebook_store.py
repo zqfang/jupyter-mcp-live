@@ -7,17 +7,27 @@ backends) apply.
 """
 
 import asyncio
+import json
 from pathlib import Path
 
 import nbformat
 import pytest
-from jupyter_server.services.contents.largefilemanager import AsyncLargeFileManager
+from jupyter_core.utils import ensure_async
+from jupyter_server.services.contents.largefilemanager import (
+    AsyncLargeFileManager,
+    LargeFileManager,
+)
 from nbformat.sign import NotebookNotary
 from nbformat.v4 import new_code_cell, new_notebook, new_output
 
 from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
 from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.notebook_store import load_notebook
+from jupyter_mcp_executor.notebook_store import (
+    editing_notebook,
+    ensure_directory,
+    load_notebook,
+    notebook_exists,
+)
 from jupyter_mcp_executor.server_context import set_server_context
 
 HTML_OUTPUT = {
@@ -33,13 +43,18 @@ class _ServerApp:
         self.contents_manager = contents_manager
 
 
-@pytest.fixture
-def contents_manager(tmp_path):
+@pytest.fixture(params=[AsyncLargeFileManager, LargeFileManager], ids=["async", "sync"])
+def contents_manager(request, tmp_path):
+    """Jupyter's default (async) contents manager and a sync one, both with a
+    file-backed signature store as in production: its SQLite connection may
+    only be used from the thread that opened it."""
     root = tmp_path / "root"
     root.mkdir()
-    cm = AsyncLargeFileManager(root_dir=str(root))
+    cm = request.param(root_dir=str(root))
     # Keep the signature DB and secret out of the user's Jupyter data dir.
-    cm.notary = NotebookNotary(data_dir=str(tmp_path), db_file=":memory:")
+    cm.notary = NotebookNotary(
+        data_dir=str(tmp_path), db_file=str(tmp_path / "nbsignatures.db")
+    )
     set_server_context(_ServerApp(root, cm))
     yield cm
     set_server_context(None)
@@ -89,7 +104,7 @@ async def test_saving_creates_a_checkpoint(contents_manager):
 
     await NbformatAdapter(path).add_cell(CellContent(source="x", cell_type="code"))
 
-    assert await contents_manager.list_checkpoints("nb.ipynb")
+    assert await ensure_async(contents_manager.list_checkpoints("nb.ipynb"))
 
 
 @pytest.mark.asyncio
@@ -138,5 +153,118 @@ async def test_hidden_notebooks_follow_the_contents_managers_rule(contents_manag
     (Path(contents_manager.root_dir) / ".private").mkdir()
     path = _write(contents_manager, ".private/nb.ipynb", new_notebook())
 
-    with pytest.raises(Exception, match="404"):
+    with pytest.raises(FileNotFoundError, match=r"No such notebook: \.private/nb"):
         await load_notebook(path)
+
+
+@pytest.mark.asyncio
+async def test_missing_notebook_is_a_plain_file_not_found(contents_manager):
+    """Agents see "No such notebook", not Tornado's "HTTP 404: Not Found"."""
+    with pytest.raises(FileNotFoundError, match=r"No such notebook: gone\.ipynb"):
+        await load_notebook(f"{contents_manager.root_dir}/gone.ipynb")
+
+
+@pytest.mark.asyncio
+async def test_paths_outside_the_root_are_refused(contents_manager):
+    """A contents manager would read an absolute path as relative to its root."""
+    with pytest.raises(ValueError, match="outside the Jupyter root"):
+        await load_notebook("/elsewhere/nb.ipynb")
+
+
+@pytest.mark.asyncio
+async def test_trust_marks_never_reach_the_file(contents_manager):
+    path = _write(
+        contents_manager, "nb.ipynb", new_notebook(cells=[new_code_cell("x")])
+    )
+
+    await NbformatAdapter(path).update_cell_outputs(0, 1, [HTML_OUTPUT])
+
+    raw = json.loads(Path(path).read_text())
+    assert "trusted" not in raw["cells"][0]["metadata"]
+
+
+@pytest.mark.asyncio
+async def test_editing_a_signed_notebook_keeps_it_signed(contents_manager):
+    trusted = new_code_cell("x", outputs=[new_output(**HTML_OUTPUT)])
+    path = _write(contents_manager, "nb.ipynb", new_notebook(cells=[trusted]))
+    nb = _on_disk(path)
+    contents_manager.notary.sign(nb)
+    nbformat.write(nb, path)
+
+    await NbformatAdapter(path).add_cell(CellContent(source="y", cell_type="code"))
+
+    assert contents_manager.notary.check_signature(_on_disk(path))
+
+
+@pytest.mark.asyncio
+async def test_appending_an_output_does_not_trust_the_cells_old_outputs(
+    contents_manager,
+):
+    untrusted = new_code_cell("x", outputs=[new_output(**HTML_OUTPUT)])
+    path = _write(contents_manager, "nb.ipynb", new_notebook(cells=[untrusted]))
+
+    await NbformatAdapter(path).append_cell_output(
+        0, {"output_type": "stream", "name": "stdout", "text": "more\n"}
+    )
+
+    assert not contents_manager.notary.check_signature(_on_disk(path))
+
+
+@pytest.mark.asyncio
+async def test_callers_cannot_mark_cells_trusted(contents_manager):
+    untrusted = new_code_cell("x", outputs=[new_output(**HTML_OUTPUT)])
+    path = _write(contents_manager, "nb.ipynb", new_notebook(cells=[untrusted]))
+
+    await NbformatAdapter(path).edit_cell(
+        0,
+        CellContent(
+            source="x",
+            cell_type="code",
+            metadata={"trusted": True},
+            outputs=[HTML_OUTPUT],
+        ),
+    )
+
+    assert not contents_manager.notary.check_signature(_on_disk(path))
+
+
+@pytest.mark.asyncio
+async def test_a_failed_edit_saves_nothing(contents_manager):
+    path = _write(
+        contents_manager, "nb.ipynb", new_notebook(cells=[new_code_cell("x")])
+    )
+    before = Path(path).read_text()
+
+    async def failing_edit():
+        async with editing_notebook(path) as nb:
+            nb.cells.clear()
+            msg = "boom"
+            raise RuntimeError(msg)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await failing_edit()
+
+    assert Path(path).read_text() == before
+
+
+@pytest.mark.asyncio
+async def test_notebook_exists(contents_manager):
+    root = Path(contents_manager.root_dir)
+    _write(contents_manager, "nb.ipynb", new_notebook())
+    (root / "dir.ipynb").mkdir()
+
+    assert await notebook_exists(str(root / "nb.ipynb"))
+    assert not await notebook_exists(str(root / "missing.ipynb"))
+    assert not await notebook_exists(str(root / "dir.ipynb"))
+
+
+@pytest.mark.asyncio
+async def test_ensure_directory_creates_missing_parents(contents_manager):
+    root = Path(contents_manager.root_dir)
+    (root / "a").mkdir()
+
+    await ensure_directory(str(root / "a" / "b" / "c"))
+    await ensure_directory(str(root / "a" / "b" / "c"))  # already there
+    await ensure_directory(str(root))  # the root itself
+
+    assert (root / "a" / "b" / "c").is_dir()

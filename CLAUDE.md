@@ -349,7 +349,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-391 tests total across:
+416 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -383,11 +383,16 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/test_kernel_utils.py` - Kernel utilities tests
 - `tests/test_default_kernel.py` - Without a kernel name, the server's
   `default_kernel_name` is started (setup_notebook and auto-start)
-- `tests/test_notebook_store.py` - Closed notebooks through a real
-  `AsyncLargeFileManager`: tool outputs signed as trusted, others' untrusted
-  outputs not, checkpoint, save hooks, no trust marks in reads, concurrent
-  edits serialized, hidden notebooks refused. The unit tests' `MockServerApp`
-  uses the same real contents manager (in-memory signatures, fixed secret)
+- `tests/test_notebook_store.py` - Closed notebooks through real contents
+  managers, each test against the async default and a sync one with a
+  file-backed signature DB: tool outputs signed as trusted; untrusted
+  outputs never laundered (other cells, appended outputs, caller-supplied
+  `metadata.trusted`); trust marks never in reads or on disk; checkpoint;
+  save hooks; concurrent edits serialized; failed edits not saved; missing
+  or hidden notebooks are `FileNotFoundError`; paths outside the root
+  refused; `notebook_exists`, `ensure_directory`. The unit tests'
+  `MockServerApp` uses the real async contents manager (in-memory
+  signatures, fixed secret)
 - `tests/test_path_utils.py` - `normalize_path()`: notebooks only, inside the
   Jupyter root (relative, absolute, symlinks)
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
@@ -768,9 +773,12 @@ executions instead of everything appearing when the MCP tool call returns:
   are written, so outputs land in the right cell even if the user
   added/deleted cells in JupyterLab while the code ran. If the cell was
   deleted, the output update is skipped (the result is still returned).
-- Notebook I/O goes through the async contents manager (a sync one runs in
-  a thread), and kernelspec scans run via `asyncio.to_thread` — never block
-  the Jupyter server's event loop. Read-only operations
+- Notebook I/O goes through the contents manager on the event loop, as
+  jupyter_server's handlers call it: the default async manager reads and
+  writes files in worker threads itself; a sync one blocks the loop as it
+  does for JupyterLab (never call it from a worker thread: its notary's
+  SQLite connection is bound to the thread that opened it). Kernelspec
+  scans run via `asyncio.to_thread`. Read-only operations
   (`view_notebook`, `read_cell`, finders) never write the file back.
 - Editing a code cell resets its outputs/execution_count (both adapters), so
   stale outputs from the old source never linger.

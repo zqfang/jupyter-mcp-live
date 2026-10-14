@@ -37,6 +37,12 @@ def _check_position(nb: Any, position: int) -> None:
         raise IndexError(msg)
 
 
+def _metadata_without_trust(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    """Cell metadata from a caller, minus ``trusted``: only outputs of the
+    tools' own executions may be trusted (see ``_trust_outputs``)."""
+    return {k: v for k, v in (metadata or {}).items() if k != "trusted"}
+
+
 def _trust_outputs(cell: Any) -> None:
     """Trust outputs the tools' own executions produced, as JupyterLab trusts
     the outputs of cells it runs. Saving signs the notebook only if every
@@ -92,7 +98,10 @@ class NbformatAdapter(NotebookAdapter):
 
             source_str = cell_content.get_source_as_string()
             if cell_content.cell_type == "code":
-                cell = new_code_cell(source=source_str, metadata=cell_content.metadata)
+                cell = new_code_cell(
+                    source=source_str,
+                    metadata=_metadata_without_trust(cell_content.metadata),
+                )
                 if cell_content.execution_count is not None:
                     cell.execution_count = cell_content.execution_count
                 if cell_content.outputs:
@@ -101,7 +110,8 @@ class NbformatAdapter(NotebookAdapter):
                     )
             else:
                 cell = new_markdown_cell(
-                    source=source_str, metadata=cell_content.metadata
+                    source=source_str,
+                    metadata=_metadata_without_trust(cell_content.metadata),
                 )
 
             nb.cells.insert(pos, cell)
@@ -124,7 +134,7 @@ class NbformatAdapter(NotebookAdapter):
             cell.source = content.get_source_as_string()
 
             if content.metadata:
-                cell.metadata = content.metadata
+                cell.metadata = _metadata_without_trust(content.metadata)
 
             if cell.cell_type == "code":
                 cell.execution_count = content.execution_count
@@ -166,7 +176,9 @@ class NbformatAdapter(NotebookAdapter):
         """Append a single output to a cell in the notebook file.
 
         Closed notebooks have no live viewer, so the engine does not stream
-        through this path; it exists for protocol completeness.
+        through this path; it exists for protocol completeness. The cell's
+        trust is left as it is: trusting it would also trust the outputs it
+        already had.
         """
         async with editing_notebook(self._notebook_path) as nb:
             _check_position(nb, position)
@@ -174,7 +186,6 @@ class NbformatAdapter(NotebookAdapter):
             cell = nb.cells[position]
             existing = list(getattr(cell, "outputs", []) or [])
             cell.outputs = existing + convert_outputs_to_notebook_nodes([output])
-            _trust_outputs(cell)
 
     async def get_all_cells(self) -> list[CellContent]:
         """Get all cells from notebook file (read-only, no write-back)."""
