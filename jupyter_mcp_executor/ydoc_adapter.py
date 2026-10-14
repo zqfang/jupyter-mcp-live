@@ -1,5 +1,7 @@
 """YDoc-based adapter for collaborative notebook editing."""
 
+import copy
+import json
 import logging
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -19,6 +21,26 @@ if TYPE_CHECKING:
     from jupyter_mcp_executor.ydoc_helpers import NotebookRoom
 
 logger = logging.getLogger(__name__)
+
+
+def _canonical_json(value: Any) -> str:
+    """JSON text of a metadata value, with Yjs's integral floats as ints.
+
+    Yjs stores every number as a float (5 comes back as 5.0); JSON text also
+    keeps ``True`` and ``1`` apart, which ``==`` does not.
+    """
+    from jupyter_ydoc.utils import cast_all  # noqa: PLC0415 - YDoc is optional
+
+    if hasattr(value, "to_py"):  # a shared type another client nested here
+        value = value.to_py()
+    # The same normalization YNotebook.get_cell() applies
+    [normalized] = cast_all([copy.deepcopy(value)], float, int)
+    return json.dumps(normalized, sort_keys=True, default=repr)
+
+
+def _same_json(stored: Any, value: Any) -> bool:
+    """Whether a stored metadata value already equals ``value``."""
+    return _canonical_json(stored) == _canonical_json(value)
 
 
 class YDocAdapter(NotebookAdapter):
@@ -196,11 +218,9 @@ class YDocAdapter(NotebookAdapter):
             # Fall back to direct assignment
             ycell["source"] = YText(source_str) if YText else source_str
 
-        # Update metadata — must be a pycrdt Map, not a plain dict
+        # Empty metadata means "keep" (callers that did not read the cell)
         if content.metadata:
-            from pycrdt import Map  # noqa: PLC0415
-
-            ycell["metadata"] = Map(content.metadata)
+            self._update_cell_metadata(ycell, content.metadata)
 
         # Reset execution state for code cells so outputs from the previous
         # source don't linger on the edited cell
@@ -209,6 +229,27 @@ class YDocAdapter(NotebookAdapter):
             ycell["execution_count"] = content.execution_count
 
         logger.info(f"Edited {content.cell_type} cell via YDoc at position {position}")
+
+    def _update_cell_metadata(self, ycell: Any, metadata: dict[str, Any]) -> None:
+        """Make the cell's metadata Map equal ``metadata``, editing it in place.
+
+        Assigning a new Map would broadcast the whole map and orphan the old
+        one, losing edits other collaborators make to it concurrently. So only
+        changed keys are set and missing keys deleted, in one transaction.
+        Values are stored as plain JSON, as ``create_ycell`` does.
+        """
+        from pycrdt import Map  # noqa: PLC0415
+
+        with self.ydoc.ydoc.transaction():
+            ymeta = ycell.get("metadata")
+            if not isinstance(ymeta, Map):
+                ycell["metadata"] = Map(dict(metadata))
+                return
+            for key in [key for key in ymeta if key not in metadata]:
+                del ymeta[key]
+            for key, value in metadata.items():
+                if key not in ymeta or not _same_json(ymeta[key], value):
+                    ymeta[key] = value
 
     async def delete_cell(self, position: int) -> None:
         """Delete cell from YDoc."""

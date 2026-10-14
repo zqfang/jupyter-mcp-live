@@ -156,6 +156,213 @@ class TestEditCell:
             await adapter.edit_cell(99, CellContent(source="x", cell_type="code"))
 
 
+INITIAL_METADATA = {
+    "tags": ["keep"],
+    "collapsed": False,
+    "jupyter": {"source_hidden": True},
+    "scrolled": 3,
+}
+
+
+async def make_adapter_with_metadata(
+    metadata: dict | None = None,
+) -> tuple[YDocAdapter, int]:
+    """An adapter over a fresh YNotebook with one code cell carrying metadata."""
+    adapter = YDocAdapter(YNotebook(), "/tmp/test_ydoc_adapter.ipynb")
+    position, _cell_id = await adapter.add_cell(
+        CellContent(
+            source="print('x')",
+            cell_type="code",
+            metadata=dict(INITIAL_METADATA if metadata is None else metadata),
+        )
+    )
+    return adapter, position
+
+
+def observe_metadata_keys(ymeta) -> tuple[list, object]:
+    """Record the keys each change event on a metadata Map touched."""
+    events: list = []
+    subscription = ymeta.observe(lambda event: events.append(dict(event.keys)))
+    return events, subscription
+
+
+class TestEditCellMetadata:
+    """edit_cell updates the cell's metadata Map in place.
+
+    Assigning a new Map to ``ycell["metadata"]`` broadcasts the whole map to
+    every browser and orphans the old one: edits another collaborator makes
+    to it concurrently (tags, collapsed state) are lost on merge. The edit
+    must instead diff into the existing Map: set changed keys, delete keys
+    no longer present, leave equal keys alone, in one transaction.
+
+    The semantics stay "the cell's metadata becomes ``content.metadata``":
+    keys in the Map but not in ``content.metadata`` at the time of the edit
+    are deleted (as NbformatAdapter does). Callers pass the metadata they
+    just read, so this deletes only what they meant to. A concurrent edit
+    from another peer that has not reached this document yet is a different
+    matter: we never touch keys we did not diff, so it survives the merge.
+    """
+
+    @pytest.mark.asyncio
+    async def test_keeps_same_map_object(self):
+        adapter, pos = await make_adapter_with_metadata()
+        ymeta = adapter.ydoc.ycells[pos]["metadata"]
+        events, subscription = observe_metadata_keys(ymeta)
+        new_metadata = {**INITIAL_METADATA, "new": 1}
+        try:
+            await adapter.edit_cell(
+                pos, CellContent(source="y", cell_type="code", metadata=new_metadata)
+            )
+        finally:
+            ymeta.unobserve(subscription)
+
+        # The edit landed in the Map we held, which is still the cell's.
+        assert [set(e) for e in events] == [{"new"}]
+        assert ymeta.to_py() == adapter.ydoc.ycells[pos]["metadata"].to_py()
+        assert adapter.ydoc.get_cell(pos)["metadata"] == new_metadata
+
+    @pytest.mark.asyncio
+    async def test_only_changed_keys_emit_events(self):
+        """Unchanged keys (including nested dicts and Yjs float-vs-int
+        numbers) produce no CRDT ops; one event covers the whole edit."""
+        adapter, pos = await make_adapter_with_metadata()
+        ymeta = adapter.ydoc.ycells[pos]["metadata"]
+        events, subscription = observe_metadata_keys(ymeta)
+        new_metadata = {
+            k: v for k, v in INITIAL_METADATA.items() if k != "collapsed"
+        } | {"tags": ["keep", "added"], "new": {"a": 1}}
+        try:
+            await adapter.edit_cell(
+                pos, CellContent(source="y", cell_type="code", metadata=new_metadata)
+            )
+        finally:
+            ymeta.unobserve(subscription)
+
+        assert len(events) == 1
+        assert set(events[0]) == {"tags", "collapsed", "new"}
+        assert events[0]["collapsed"]["action"] == "delete"
+
+    @pytest.mark.asyncio
+    async def test_metadata_equal_to_current_emits_nothing(self):
+        """edit_code_cell passes the metadata it just read: a source-only edit
+        must not rewrite any metadata key."""
+        adapter, pos = await make_adapter_with_metadata()
+        current = (await adapter.read_cell(pos)).metadata
+        ycell = adapter.ydoc.ycells[pos]
+        ymeta = ycell["metadata"]
+        events, subscription = observe_metadata_keys(ymeta)
+        cell_events, cell_subscription = observe_metadata_keys(ycell)
+        try:
+            await adapter.edit_cell(
+                pos, CellContent(source="y", cell_type="code", metadata=current)
+            )
+        finally:
+            ymeta.unobserve(subscription)
+            ycell.unobserve(cell_subscription)
+
+        assert events == []
+        assert not any("metadata" in keys for keys in cell_events)
+
+    @pytest.mark.asyncio
+    async def test_bool_and_int_are_different_values(self):
+        """``True == 1`` in Python; the stored JSON value must still change."""
+        adapter, pos = await make_adapter_with_metadata({"flag": 1})
+
+        await adapter.edit_cell(
+            pos, CellContent(source="y", cell_type="code", metadata={"flag": True})
+        )
+
+        assert adapter.ydoc.ycells[pos]["metadata"]["flag"] is True
+
+    @pytest.mark.asyncio
+    async def test_removed_keys_disappear_and_round_trips(self):
+        adapter, pos = await make_adapter_with_metadata()
+        new_metadata = {"jupyter": {"source_hidden": False}, "scrolled": 3}
+
+        await adapter.edit_cell(
+            pos, CellContent(source="y", cell_type="code", metadata=new_metadata)
+        )
+
+        cell = await adapter.read_cell(pos)
+        assert cell.metadata == new_metadata
+        assert adapter.ydoc.get_cell(pos)["metadata"] == new_metadata
+
+    @pytest.mark.asyncio
+    async def test_nested_values_stored_as_create_ycell_does(self):
+        """create_ycell stores nested dicts/lists as plain JSON values in the
+        metadata Map, not as nested shared types; edits keep that shape."""
+        adapter, pos = await make_adapter_with_metadata()
+        from pycrdt import Map  # noqa: PLC0415
+
+        await adapter.edit_cell(
+            pos,
+            CellContent(
+                source="y",
+                cell_type="code",
+                metadata={"jupyter": {"outputs_hidden": True}, "tags": ["t"]},
+            ),
+        )
+
+        ymeta = adapter.ydoc.ycells[pos]["metadata"]
+        assert isinstance(ymeta, Map)
+        assert ymeta["jupyter"] == {"outputs_hidden": True}
+        assert type(ymeta["jupyter"]) is dict
+        assert ymeta["tags"] == ["t"]
+
+    @pytest.mark.asyncio
+    async def test_empty_metadata_keeps_existing(self):
+        """Empty metadata means "keep": callers that did not read the cell
+        pass none."""
+        adapter, pos = await make_adapter_with_metadata()
+
+        await adapter.edit_cell(pos, CellContent(source="y", cell_type="code"))
+
+        cell = await adapter.read_cell(pos)
+        assert cell.metadata == INITIAL_METADATA
+
+    @pytest.mark.asyncio
+    async def test_missing_metadata_map_is_created(self):
+        adapter, pos = await make_adapter_with_metadata()
+        ycell = adapter.ydoc.ycells[pos]
+        del ycell["metadata"]
+
+        await adapter.edit_cell(
+            pos, CellContent(source="y", cell_type="code", metadata={"tags": ["a"]})
+        )
+
+        from pycrdt import Map  # noqa: PLC0415
+
+        assert isinstance(ycell["metadata"], Map)
+        assert (await adapter.read_cell(pos)).metadata == {"tags": ["a"]}
+
+    @pytest.mark.asyncio
+    async def test_concurrent_edit_to_other_key_survives(self):
+        """A browser tags the cell while our edit (to another key) is in
+        flight: after both peers sync, both changes are there."""
+        from pycrdt import Doc  # noqa: PLC0415
+
+        adapter, pos = await make_adapter_with_metadata()
+        browser = YNotebook(Doc())
+        browser.ydoc.apply_update(adapter.ydoc.ydoc.get_update())
+        before = (await adapter.read_cell(pos)).metadata
+
+        browser.ycells[pos]["metadata"]["tags"] = ["from-browser"]
+        await adapter.edit_cell(
+            pos,
+            CellContent(
+                source="y", cell_type="code", metadata={**before, "collapsed": True}
+            ),
+        )
+        server_state = adapter.ydoc.ydoc.get_state()
+        browser_state = browser.ydoc.get_state()
+        adapter.ydoc.ydoc.apply_update(browser.ydoc.get_update(server_state))
+        browser.ydoc.apply_update(adapter.ydoc.ydoc.get_update(browser_state))
+
+        expected = {**INITIAL_METADATA, "tags": ["from-browser"], "collapsed": True}
+        assert (await adapter.read_cell(pos)).metadata == expected
+        assert browser.get_cell(pos)["metadata"] == expected
+
+
 class TestClearAndCountOnlyUpdate:
     """clear_cell_outputs and execution_count-only updates."""
 

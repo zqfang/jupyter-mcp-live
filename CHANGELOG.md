@@ -91,6 +91,11 @@
 
 ### Bugs fixed
 
+- Editing a cell of an open notebook no longer replaces its whole metadata
+  map: only changed keys are set and removed ones deleted, in one
+  transaction. Replacing the map broadcast all of it to every browser and
+  lost metadata changes other collaborators made at the same time (e.g. a
+  tag added in JupyterLab), and a source-only edit re-sent the metadata.
 - Notebooks that are not open in JupyterLab are now saved through Jupyter's
   contents manager, as JupyterLab saves them, instead of being written with
   nbformat directly:
