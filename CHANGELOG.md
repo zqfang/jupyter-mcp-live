@@ -31,6 +31,16 @@
 
 ### Changed
 
+- Dependency floors match what the code uses: `nbformat>=5.1` (cell ids),
+  `jupyter_ydoc>=3.4`, and `tornado>=6.5.9` is declared (imported directly;
+  fixes pre-authentication request-parsing DoS advisories). CI now fails if
+  `pip-audit` reports a known vulnerability in the installed dependencies.
+- The Code Mode sandbox keeps a 100 MB memory cap. Passing our own limits
+  had replaced fastmcp's defaults, and Monty treats an omitted key as "no
+  limit".
+- The example config no longer listens on `0.0.0.0` or hard-codes a token
+  (the published `BLOCK`); README and INSTALL take the token from
+  `JUPYTER_TOKEN` too.
 - **Requires fastmcp >= 4.1** (`fastmcp[code-mode]>=4.1,<5`). Support for
   fastmcp 3.x and 4.0.x is dropped; they still ship pydantic-monty 0.0.x. The
   old sandbox-limit code path is removed: there is no `max_duration_secs` and

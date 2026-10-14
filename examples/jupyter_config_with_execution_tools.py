@@ -7,7 +7,8 @@ Usage:
     jupyter lab --config=examples/jupyter_config_with_execution_tools.py
 
 The MCP endpoint is served by Jupyter itself at: http://localhost:8000/mcp
-(Jupyter's port and base_url), authenticated with the Jupyter token below.
+(Jupyter's port and base_url), authenticated with the Jupyter token
+(set JUPYTER_TOKEN before starting, see below).
 """
 
 from pathlib import Path
@@ -83,13 +84,13 @@ c.MCPExtensionApp.mcp_tools = [
 #   "jupyter-mcp": {
 #     "type": "http",
 #     "url": "http://localhost:8000/mcp",
-#     "headers": {"Authorization": "Bearer BLOCK"}
+#     "headers": {"Authorization": "Bearer <your Jupyter token>"}
 #   }
 # }
 #
 # Or use the claude CLI:
 #   claude mcp add --transport http jupyter-mcp http://localhost:8000/mcp \
-#     --header "Authorization: Bearer BLOCK"
+#     --header "Authorization: Bearer <your Jupyter token>"
 
 # ============================================================================
 # Example Usage with Gemini CLI
@@ -101,7 +102,7 @@ c.MCPExtensionApp.mcp_tools = [
 #   "mcpServers": {
 #     "jupyter-mcp": {
 #       "httpUrl": "http://localhost:8000/mcp",
-#       "headers": {"Authorization": "Bearer BLOCK"}
+#       "headers": {"Authorization": "Bearer <your Jupyter token>"}
 #     }
 #   }
 # }
@@ -123,9 +124,9 @@ c.MCPExtensionApp.mcp_tools = [
 # Optional: Jupyter Server Configuration
 # ============================================================================
 
-# Allow connections from any IP (useful for remote access)
-# WARNING: Only use this on trusted networks!
-c.ServerApp.ip = '0.0.0.0'
+# Listen on all interfaces (remote access). WARNING: anyone who can reach the
+# port and has the token can run code as you; only use on trusted networks.
+# c.ServerApp.ip = '0.0.0.0'
 
 # Disable browser auto-open (useful for headless servers)
 c.ServerApp.open_browser = False
@@ -137,9 +138,10 @@ c.ServerApp.port = 8000
 # must call the Jupyter API. '*' disables Jupyter's origin checks.
 # c.ServerApp.allow_origin = 'https://your-app.example.org'
 
-# Set a token for authentication. MCP clients send the same token
-# ("Authorization: Bearer <token>"). Use your own secret, not this example.
-c.IdentityProvider.token = 'BLOCK'
+# Authentication token. Jupyter reads it from the JUPYTER_TOKEN environment
+# variable, or generates one and prints it at startup. MCP clients send the
+# same token ("Authorization: Bearer <token>"). Do not hard-code it here:
+#   export JUPYTER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 
 # Enable debug logging for troubleshooting
 c.MCPExtensionApp.log_level = 'INFO'

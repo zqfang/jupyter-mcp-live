@@ -605,7 +605,10 @@ executions instead of everything appearing when the MCP tool call returns:
   waits on tool calls, so long cell executions do not count against it.
   Requires fastmcp >= 4.1 (pydantic-monty 1.x). Older Monty versions used a
   wall-clock `max_duration_secs` that kept ticking during tool calls, and
-  they reject the new key.
+  they reject the new key. It also sets `max_memory =
+  SANDBOX_MAX_MEMORY_BYTES` (100 MB, fastmcp's default): passing limits
+  replaces fastmcp's defaults wholesale, and Monty treats an omitted key as
+  unlimited.
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is

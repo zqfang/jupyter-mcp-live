@@ -59,8 +59,9 @@ c = get_config()
 # Basic MCP server settings
 c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
 
-# Jupyter's token also authenticates MCP clients (pick your own secret)
-c.IdentityProvider.token = "change-me"
+# Jupyter's token also authenticates MCP clients. Jupyter reads it from the
+# JUPYTER_TOKEN environment variable (or generates one and prints it at
+# startup), so it never has to be written into this file.
 
 # Register tools from existing packages
 c.MCPExtensionApp.mcp_tools = [
@@ -321,7 +322,8 @@ c.MCPExtensionApp.use_tool_discovery = False
 
 ```python
 c = get_config()
-c.IdentityProvider.token = "change-me"  # also authenticates MCP clients
+# Nothing else is required: start Jupyter with JUPYTER_TOKEN set (it also
+# authenticates MCP clients) and register tools as shown above.
 ```
 
 ### Full Configuration

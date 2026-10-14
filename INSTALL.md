@@ -77,8 +77,8 @@ c = get_config()
 # Basic MCP server settings
 c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
 
-# Jupyter's token also authenticates MCP clients
-c.IdentityProvider.token = "change-me"
+# Jupyter's token also authenticates MCP clients: set JUPYTER_TOKEN in the
+# environment before starting Jupyter instead of writing it here
 
 # Register the notebook tools
 c.MCPExtensionApp.mcp_tools = [

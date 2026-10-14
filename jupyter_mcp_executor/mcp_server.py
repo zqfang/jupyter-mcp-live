@@ -37,11 +37,17 @@ logger = logging.getLogger(__name__)
 # pauses its clock while the script waits on tool calls, so kernel
 # executions do not count against it; this only bounds the orchestration code.
 SANDBOX_EXECUTION_BUDGET_SECS = 60.0
+# Memory a Code Mode script may allocate; fastmcp's default. Passing limits
+# replaces fastmcp's defaults, and Monty treats an omitted key as unlimited.
+SANDBOX_MAX_MEMORY_BYTES = 100_000_000
 
 
 def build_sandbox_limits() -> ResourceLimits:
     """Return the Monty resource limits for the Code Mode sandbox."""
-    return {"max_feed_duration_secs": SANDBOX_EXECUTION_BUDGET_SECS}
+    return {
+        "max_feed_duration_secs": SANDBOX_EXECUTION_BUDGET_SECS,
+        "max_memory": SANDBOX_MAX_MEMORY_BYTES,
+    }
 
 
 def build_code_mode() -> CodeMode:
