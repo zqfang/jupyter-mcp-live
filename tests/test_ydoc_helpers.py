@@ -130,8 +130,9 @@ async def test_gets_or_creates_room_via_official_api():
 
 @pytest.mark.asyncio
 async def test_returns_none_if_document_wrong_type():
-    """If the room holds a non-YNotebook document, return None gracefully."""
+    """A non-YNotebook document and no room: use the file."""
     ext = _make_extension(document=_FakeOtherDoc())
+    ext.ywebsocket_server.rooms = {}
 
     assert await _ensure(ext) is None
 
@@ -139,8 +140,18 @@ async def test_returns_none_if_document_wrong_type():
 @pytest.mark.asyncio
 async def test_returns_none_if_get_document_returns_none():
     ext = _make_extension(document=None)
+    ext.ywebsocket_server.rooms = {}
 
     assert await _ensure(ext) is None
+
+
+@pytest.mark.asyncio
+async def test_no_document_while_a_room_exists_raises():
+    """None from get_document() is not proof the file is safe."""
+    ext = _make_extension(document=None)
+
+    with pytest.raises(RuntimeError, match="is open in JupyterLab"):
+        await _ensure(ext)
 
 
 @pytest.mark.asyncio
@@ -153,7 +164,8 @@ async def test_unexpected_error_without_a_room_is_logged_and_returns_none():
     log = MagicMock()
 
     assert await _ensure(ext, logger=log) is None
-    log.exception.assert_called_once()
+    log.error.assert_called_once()
+    assert isinstance(log.error.call_args.kwargs["exc_info"], RuntimeError)
 
 
 @pytest.mark.asyncio
@@ -291,6 +303,36 @@ async def test_room_removed_after_lookup_returns_none():
     ext.ywebsocket_server.rooms = {}
 
     assert await _ensure(ext) is None
+
+
+@pytest.mark.asyncio
+async def test_room_evicted_during_lookup_is_recreated():
+    """Eviction between get_document() and the room check is a race, not a
+    reason to use the file: the CRDT history exists, so look again."""
+    ext = _make_extension(document=_FakeYNotebook())
+    room = ext.ywebsocket_server.rooms.pop(_ROOM_ID)
+
+    async def get_document(**_kwargs):
+        if ext.get_document.await_count > 1:  # the room was recreated
+            ext.ywebsocket_server.rooms[_ROOM_ID] = room
+        return _FakeYNotebook()
+
+    ext.get_document.side_effect = get_document
+
+    assert await _ensure(ext) is not None
+    assert ext.get_document.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_ensure_ynotebook_keeps_the_room_alive_for_writes():
+    """Callers write to the returned document (e.g. the kernelspec on a
+    kernel switch); a pending cleanup would cancel the room's autosave."""
+    room = _make_room()
+    room.cleaner.done.return_value = False
+    ext = _make_extension(document=_FakeYNotebook(), room=room)
+
+    assert await _ensure(ext) is not None
+    room.cleaner.cancel.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

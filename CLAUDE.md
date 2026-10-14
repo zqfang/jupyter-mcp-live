@@ -340,7 +340,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-336 tests total across:
+339 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -450,7 +450,12 @@ print(tracker.get_all_tracked())
 ### YDoc vs Nbformat Selection
 
 The adapter is selected automatically in `get_notebook_adapter()` via
-`ensure_notebook_room()` (`ensure_ynotebook()` returns just its document):
+`ensure_notebook_room()`. `ensure_ynotebook()` returns just the document and
+keeps its room alive first, since its callers write to it (the kernelspec on
+a kernel switch). Attaching is retried (`_ATTACH_ATTEMPTS`) when the room is
+evicted between `get_document()` and our check; any lookup that ends without
+a document — `None`, a non-notebook document or an exception — goes through
+the same room check below:
 
 - If a YDoc room exists for the notebook → `YDocAdapter`
 - If the room was cleaned up (browser disconnected for >60s) → the room is

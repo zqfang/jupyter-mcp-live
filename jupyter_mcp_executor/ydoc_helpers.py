@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 # _has_room() answer even when the file ID lookup is what just failed.
 _known_room_ids: dict[str, str] = {}
 
+# Attempts to attach a notebook's room before giving up. A room can be
+# evicted between get_document() and our check; the next attempt recreates it.
+_ATTACH_ATTEMPTS = 3
+
 # Check if YDoc is available
 try:
     from jupyter_ydoc import YNotebook
@@ -236,6 +240,11 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
 
     See ``ensure_notebook_room()``.
 
+    The room is kept alive: callers write to the document (e.g. the
+    kernelspec on a kernel switch), and a pending cleanup would cancel the
+    room's autosave. Callers that hold the document across awaits should use
+    ``ensure_notebook_room()`` and follow a replaced room instead.
+
     Args:
         file_path: Normalized absolute path to notebook
 
@@ -246,7 +255,10 @@ async def ensure_ynotebook(file_path: str) -> Any | None:
         RuntimeError: If the notebook has a room but it cannot be attached
     """
     notebook_room = await ensure_notebook_room(file_path)
-    return notebook_room.ydoc if notebook_room else None
+    if notebook_room is None:
+        return None
+    notebook_room.keep_alive()
+    return notebook_room.ydoc
 
 
 async def ensure_notebook_room(file_path: str) -> NotebookRoom | None:
@@ -301,26 +313,37 @@ async def ensure_notebook_room(file_path: str) -> NotebookRoom | None:
         )
         return None
 
+    error: Exception | None = None
     try:
-        return await _attach_room(ydoc_extension, file_path, create=True)
-    except Exception as e:
-        has_room = _has_room(ydoc_extension, file_path)
-        if has_room is False:
-            # No room to conflict with: the file adapter is safe, but log the
-            # failure at ERROR so it is visible in production.
-            logger.exception(f"Failed to get or recreate YDoc room for {file_path}")
-            return None
-        state = (
-            "is open in JupyterLab"
-            if has_room
-            else "may be open in JupyterLab (its room could not be checked)"
+        for _ in range(_ATTACH_ATTEMPTS):
+            notebook_room = await _attach_room(ydoc_extension, file_path, create=True)
+            if notebook_room is not None:
+                return notebook_room
+            # No document, or the room was evicted right after get_document()
+            # returned it (a race): look again, which recreates the room.
+    except Exception as e:  # noqa: BLE001 - re-raised below unless no room
+        error = e
+
+    has_room = _has_room(ydoc_extension, file_path)
+    if has_room is False:
+        # No room to conflict with: the file adapter is safe, but log the
+        # failure at ERROR so it is visible in production.
+        logger.error(
+            f"No live document for {file_path}; using the file", exc_info=error
         )
-        msg = (
-            f"{file_path} {state}, but its live document could not be "
-            f"attached ({e!r}). Not editing the file instead: that would "
-            "discard unsaved changes in the browser."
-        )
-        raise RuntimeError(msg) from e
+        return None
+    state = (
+        "is open in JupyterLab"
+        if has_room
+        else "may be open in JupyterLab (its room could not be checked)"
+    )
+    reason = repr(error) if error else "no live document was returned"
+    msg = (
+        f"{file_path} {state}, but its live document could not be attached "
+        f"({reason}). Not editing the file instead: that would discard unsaved "
+        "changes in the browser."
+    )
+    raise RuntimeError(msg) from error
 
 
 def get_cell_index_by_id_ydoc(ydoc: Any, cell_id: str) -> int | None:
