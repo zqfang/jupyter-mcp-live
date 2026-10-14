@@ -8,14 +8,20 @@ latest content.
 """
 
 import asyncio
+import random
+import time
 from queue import Empty
 
 import pytest
+from jupyter_ydoc import YNotebook
 
 from jupyter_mcp_executor.execution_engine import _CellOutputStreamer
-from jupyter_mcp_executor.execution_utils import collect_outputs
+from jupyter_mcp_executor.execution_progress import ExecutionProgress
+from jupyter_mcp_executor.execution_utils import _CellOutputs, collect_outputs
 from jupyter_mcp_executor.notebook_config import OUTPUT_FILTER_CONFIG
+from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.output_filter import OutputFilter
+from jupyter_mcp_executor.ydoc_adapter import YDocAdapter
 
 MSG_ID = "exec-1"
 
@@ -242,7 +248,8 @@ def test_response_keeps_the_first_and_last_outputs_of_a_long_list():
         str(i) for i in range(limit * 10 - tail, limit * 10)
     ]
     marker = filtered[head]["data"]["text/plain"]
-    assert f"{limit * 10 - limit} outputs omitted" in marker
+    omitted = limit * 10 - limit
+    assert f"outputs {head}-{head + omitted - 1} ({omitted}) omitted" in marker
     assert outputs[head]["data"]["text/plain"] == str(head)  # input not mutated
 
 
@@ -250,3 +257,129 @@ def test_response_under_the_cap_is_unchanged():
     outputs = [{"output_type": "stream", "name": "stdout", "text": "x\n"}] * 3
 
     assert OutputFilter.filter_outputs(outputs) == outputs
+
+
+@pytest.mark.asyncio
+async def test_merging_many_chunks_stays_linear():
+    """Each print is a message; re-joining all text per chunk was quadratic
+    (6.6 s of event-loop time for 100k log lines)."""
+    line = "a typical log line of about sixty characters, e.g. step 123\n"
+    cell = _CellOutputs(None, None)
+    start = time.perf_counter()
+    for _ in range(100_000):
+        await cell.add({"output_type": "stream", "name": "stdout", "text": line}, None)
+    elapsed = time.perf_counter() - start
+
+    assert cell.outputs[0]["text"] == line * 100_000
+    assert elapsed < 2
+
+
+@pytest.mark.asyncio
+async def test_stream_text_given_as_a_list_is_joined():
+    outputs = await _collect(
+        [_msg("stream", {"name": "stdout", "text": ["a", "b\n"]}), _stream("c\n")]
+    )
+
+    assert _texts(outputs) == ["ab\nc\n"]
+
+
+@pytest.mark.asyncio
+async def test_progress_counts_outputs_that_replace_the_cell():
+    """A redrawn frame reaches progress too, not only appended outputs."""
+    reported = []
+
+    async def report(progress, total, message):
+        reported.append(message)
+
+    progress = ExecutionProgress(report, "nb.ipynb cell 0")
+    progress.mark_running()
+
+    await progress.on_reset(
+        [{"output_type": "stream", "name": "stdout", "text": "step 9\n"}]
+    )
+    await progress.on_reset([])  # clear_output: nothing new to report
+    await progress.send()  # past the throttle
+
+    assert reported
+    assert reported[-1].endswith("1 output · step 9")
+
+
+def test_response_shows_the_last_carriage_return_frame():
+    """tqdm writing to stderr redraws with \\r; the response shows the final
+    frame of each line, as a terminal would. The notebook keeps the text."""
+    output = {
+        "output_type": "stream",
+        "name": "stderr",
+        "text": "\r 10%|#   |\r 50%|##  |\r100%|####|\nnext line\r\n",
+    }
+
+    filtered = OutputFilter.filter_outputs([output])
+
+    assert filtered[0]["text"] == "100%|####|\nnext line\n"
+    assert output["text"].startswith("\r 10%")
+
+
+async def _run_on_ydoc(steps):
+    """Feed steps to _CellOutputs streaming into a real YNotebook cell."""
+    adapter = YDocAdapter(YNotebook(), "/tmp/x.ipynb")
+    position, _ = await adapter.add_cell(CellContent(source="x", cell_type="code"))
+
+    async def on_output(output):
+        await adapter.append_cell_output(position, output)
+
+    async def on_reset(outputs):
+        await adapter.update_cell_outputs(position, None, outputs)
+
+    cell = _CellOutputs(on_output, on_reset)
+    for n, step in enumerate(steps):
+        if step == "out":
+            await cell.add(
+                {"output_type": "stream", "name": "stdout", "text": f"o{n}\n"}, None
+            )
+        elif step == "err":
+            await cell.add(
+                {"output_type": "stream", "name": "stderr", "text": f"e{n}\n"}, None
+            )
+        elif step == "display":
+            data = {"text/plain": f"d{n}"}
+            await cell.add(
+                {"output_type": "display_data", "data": data, "metadata": {}}, "id1"
+            )
+        elif step == "update":
+            await cell.update("id1", {"text/plain": f"u{n}"}, {})
+        elif step == "clear":
+            await cell.clear(wait=False)
+        elif step == "clear_wait":
+            await cell.clear(wait=True)
+        elif step == "error":
+            error = {
+                "output_type": "error",
+                "ename": "E",
+                "evalue": "v",
+                "traceback": [],
+            }
+            await cell.add(error, None)
+    stored = (await adapter.read_cell(position)).outputs
+    return stored, cell.outputs
+
+
+def _visible(outputs):
+    return [
+        (
+            o["output_type"],
+            o.get("text") or o.get("data", {}).get("text/plain") or o.get("ename"),
+        )
+        for o in outputs
+    ]
+
+
+@pytest.mark.asyncio
+async def test_live_notebook_matches_the_returned_outputs():
+    """After a run whose outputs streamed completely, only the execution count
+    is written, so the streamed YDoc must equal the returned list."""
+    rng = random.Random(1)
+    steps = ["out", "err", "display", "update", "clear", "clear_wait", "error"]
+    for _ in range(300):
+        sequence = [rng.choice(steps) for _ in range(rng.randint(1, 10))]
+        stored, returned = await _run_on_ydoc(sequence)
+        assert _visible(stored) == _visible(returned), sequence

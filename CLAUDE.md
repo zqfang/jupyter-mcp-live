@@ -340,7 +340,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-352 tests total across:
+358 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -594,9 +594,16 @@ next output arrives, so a redrawn frame replaces the last); and
 `update_display_data` updates the outputs with that `transient.display_id`
 (only displays of the same execution are tracked). Live streaming gets
 `on_output(chunk)` for appends and `on_reset(outputs)` — the streamer then
-rewrites the cell — for clears and updates. `OutputFilter.filter_outputs()`
-caps a response at `OUTPUT_FILTER_CONFIG.max_outputs` (30) per cell: first
-and last half, with a marker.
+rewrites the cell in one CRDT transaction (no empty-output flash) — for
+clears and updates; progress gets both. Merged stream text is kept as chunks
+and joined when read (re-joining per chunk was quadratic: 6.6 s for 100k log
+lines). `OutputFilter.filter_outputs()` caps a response at
+`OUTPUT_FILTER_CONFIG.max_outputs` (30) per cell — first and last half, with
+a marker naming the omitted index range — and collapses `\r` redraws to the
+last frame of each line (response only; the notebook keeps raw text).
+`tests/test_output_messages.py` also replays 300 random message sequences
+into a real YNotebook: the streamed cell must equal the returned outputs,
+since a completely streamed run only writes the execution count.
 
 ### Live Output Streaming (open notebooks)
 

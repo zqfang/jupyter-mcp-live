@@ -114,6 +114,15 @@ class ExecutionProgress:
         if self._clock() - self._last_sent >= self._config.min_interval:
             await self.send()
 
+    async def on_reset(self, outputs: list[dict[str, Any]]) -> None:
+        """The cell's outputs were replaced (clear_output, a display update).
+
+        A redrawn frame (tqdm, live plots) arrives this way, not as an
+        append; count its newest output like one.
+        """
+        if outputs:
+            await self.on_output(outputs[-1])
+
     def _message(self, elapsed: float) -> str:
         parts = [self._label, f"{elapsed:.0f}s"]
         if self._waiting:

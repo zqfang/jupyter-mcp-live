@@ -291,6 +291,9 @@ class ExecutionEngine:
         callback = _combine_callbacks(
             on_output, progress.on_output if progress else None
         )
+        reset_callback = _combine_callbacks(
+            on_reset, progress.on_reset if progress else None
+        )
 
         # Serialize executions per kernel: the cached client's channels must
         # only be consumed by one coroutine at a time.
@@ -309,7 +312,7 @@ class ExecutionEngine:
                     kernel_id,
                     timeout,
                     on_output=callback,
-                    on_reset=on_reset,
+                    on_reset=reset_callback,
                     interrupt=lambda: ensure_async(
                         kernel_manager.interrupt_kernel(kernel_id)
                     ),

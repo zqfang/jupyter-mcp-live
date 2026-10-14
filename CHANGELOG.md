@@ -69,6 +69,9 @@
   - `update_display_data` was dropped, so a display updated through its
     handle kept its first content; now it shows the update.
   - Each print was its own output; consecutive stream chunks are now one.
+  - In the MCP response (not the notebook), lines redrawn with `\r` (tqdm
+    on stderr) show only their last frame.
+  - Progress notifications count redrawn frames too.
 - An MCP response carries at most 30 outputs per cell (the first and last
   15, with a marker for the rest); a cell calling `display()` in a loop
   returned thousands. The notebook keeps all of them.

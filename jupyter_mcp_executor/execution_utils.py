@@ -110,12 +110,24 @@ class _CellOutputs:
     def __init__(
         self, on_output: OutputCallback | None, on_reset: ResetCallback | None
     ) -> None:
-        self.outputs: list[dict[str, Any]] = []
+        self._outputs: list[dict[str, Any]] = []
+        # Text chunks of the last output while it is a merged stream; joined
+        # when the list is read, so merging stays linear in the text size.
+        self._tail_chunks: list[str] = []
         self._displays: dict[str, list[int]] = {}
         self._clear_pending = False
         self._on_output = on_output
         self._on_reset = on_reset
         self._live = True
+
+    @property
+    def outputs(self) -> list[dict[str, Any]]:
+        """The outputs so far, merged stream text joined."""
+        if len(self._tail_chunks) > 1:
+            text = "".join(self._tail_chunks)
+            self._outputs[-1] = {**self._outputs[-1], "text": text}
+            self._tail_chunks = [text]
+        return self._outputs
 
     async def add(self, output: dict[str, Any], display_id: str | None) -> None:
         if self._clear_pending:
@@ -138,34 +150,35 @@ class _CellOutputs:
     ) -> None:
         indexes = self._displays.get(display_id)
         if not indexes:
+            logger.debug(f"Ignoring update of display {display_id} (not shown here)")
             return
+        outputs = self.outputs
         for index in indexes:
-            self.outputs[index] = {
-                **self.outputs[index],
-                "data": data,
-                "metadata": metadata,
-            }
-        await self._notify(self._on_reset, list(self.outputs))
+            outputs[index] = {**outputs[index], "data": data, "metadata": metadata}
+        await self._notify(self._on_reset, list(outputs))
 
     def _clear(self) -> None:
-        self.outputs = []
+        self._outputs = []
+        self._tail_chunks = []
         self._displays = {}
         self._clear_pending = False
 
     def _append(self, output: dict[str, Any], display_id: str | None) -> None:
-        last = self.outputs[-1] if self.outputs else None
+        is_stream = output["output_type"] == "stream"
+        last = self._outputs[-1] if self._outputs else None
         if (
-            output["output_type"] == "stream"
+            is_stream
             and last is not None
             and last["output_type"] == "stream"
             and last["name"] == output["name"]
         ):
-            # A new dict: the previous one may already have been handed out.
-            self.outputs[-1] = {**last, "text": last["text"] + output["text"]}
+            self._tail_chunks.append(output["text"])
             return
+        outputs = self.outputs  # join the previous stream before moving on
         if display_id is not None:
-            self._displays.setdefault(display_id, []).append(len(self.outputs))
-        self.outputs.append(output)
+            self._displays.setdefault(display_id, []).append(len(outputs))
+        outputs.append(output)
+        self._tail_chunks = [output["text"]] if is_stream else []
 
     async def _notify(
         self, callback: Callable[[Any], Awaitable[None]] | None, arg: Any
@@ -277,11 +290,12 @@ async def collect_outputs(
             )
 
         elif msg_type == "stream":
+            text = content.get("text", "")
             await cell.add(
                 {
                     "output_type": "stream",
                     "name": content.get("name", "stdout"),
-                    "text": content.get("text", ""),
+                    "text": "".join(text) if isinstance(text, list) else text,
                 },
                 None,
             )
