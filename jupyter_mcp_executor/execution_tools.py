@@ -40,7 +40,8 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
     they're using (e.g., to debug kernel reuse).
 
     Returns:
-        List of session dicts, each containing:
+        {"result": [session, ...]} (a list result arrives wrapped; in an
+        execute script use result["result"]). Each session contains:
         - id: Session ID
         - path: Notebook path
         - name: Notebook filename
@@ -398,9 +399,11 @@ async def view_notebook(notebook_path: str) -> list[dict[str, Any]]:
         notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
 
     Returns:
-        list[dict]: One dict per cell, in notebook order, each containing
-            cell_type, source, metadata, execution_count, outputs (filtered
-            for token efficiency), and id. List index == position_index.
+        {"result": [cell, ...]} (a list result arrives wrapped; in an execute
+        script use result["result"]). One dict per cell, in notebook order,
+        each containing cell_type, source, metadata, execution_count, outputs
+        (filtered for token efficiency) and cell_id (also as id). List
+        index == position_index.
     """
     return await container.query_service.view_notebook(notebook_path)
 
@@ -433,7 +436,7 @@ async def read_cell(
             - source: Cell source code or markdown
             - execution_count: Execution count (code cells only)
             - outputs: Cell outputs (code cells only, filtered for token efficiency)
-            - id: Cell UUID
+            - cell_id: Cell id (pass it back as cell_id; also returned as id)
             - position: Cell position in notebook
 
     Note: Provide exactly ONE identifier (position_index, cell_id, or execution_count)

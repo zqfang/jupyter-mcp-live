@@ -12,7 +12,12 @@ import pytest
 from jupyter_ydoc import YNotebook
 from nbformat.v4 import new_code_cell, new_notebook
 
-from jupyter_mcp_executor.execution_tools import list_notebook_kernels
+from jupyter_mcp_executor.execution_tools import (
+    list_notebook_kernels,
+    list_notebook_sessions,
+    read_cell,
+    view_notebook,
+)
 from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
 from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.output_filter import OutputFilter
@@ -119,3 +124,27 @@ def test_filtered_content_the_model_cannot_view_does_not(mime):
 
     assert mime in text
     assert "view_cell_image" not in text
+
+
+@pytest.mark.asyncio
+async def test_cell_id_is_returned_under_the_name_tools_take_it(tmp_path):
+    """read_cell / view_notebook return the id as ``cell_id`` (the parameter
+    name of read_cell, view_cell_image), so it can be passed straight back;
+    ``id`` stays for compatibility."""
+    path = tmp_path / "nb.ipynb"
+    nbformat.write(new_notebook(cells=[new_code_cell("x = 1")]), path)
+
+    cells = await view_notebook(str(path))
+    cell_id = cells[0]["cell_id"]
+    by_id = await read_cell(str(path), cell_id=cell_id)
+
+    assert cells[0]["id"] == cell_id
+    assert by_id["cell_id"] == by_id["id"] == cell_id
+    assert by_id["position"] == 0
+
+
+def test_list_tools_document_their_result_wrapper():
+    """FastMCP returns a tool's list as {"result": [...]}; Code Mode scripts
+    see that dict, so the descriptions agents read must say so."""
+    for tool in (view_notebook, list_notebook_sessions):
+        assert '{"result": [' in tool.__doc__, tool.__name__

@@ -262,7 +262,11 @@ All functions in `execution_tools.py` (16 tools):
 
 14. **view_notebook(path)** - All cells in order (list index == position_index)
 15. **read_cell(path, position_index/cell_id/execution_count)** - One cell;
-    the returned dict includes `position`
+    the returned dict includes `position` and `cell_id` (also as `id`, like
+    `view_notebook`'s cells), so ids pass straight back as `cell_id`.
+    Tools returning a list (`view_notebook`, `list_notebook_sessions`) reach
+    clients as `{"result": [...]}` (FastMCP wraps non-object results); their
+    docstrings say so
 16. **view_cell_image(path, position_index/cell_id/execution_count)** - The
     cell's plots, or a markdown cell's embedded images, as MCP image content
     (works inside Code Mode scripts)
@@ -353,7 +357,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-447 tests total across:
+449 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)

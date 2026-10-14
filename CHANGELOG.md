@@ -31,6 +31,10 @@
 
 ### Changed
 
+- `read_cell` and `view_notebook` return each cell's id as `cell_id` (the
+  name `read_cell` and `view_cell_image` take it under), besides `id`. The
+  descriptions of `view_notebook` and `list_notebook_sessions` say their
+  list arrives as `{"result": [...]}`, as FastMCP wraps list results.
 - Tools are registered with FastMCP as they are. A wrapper rewrote `dict`
   parameters to also accept a JSON string (`anyOf [object, string]`),
   which made schemas ambiguous for Code Mode codegen; tools are only
