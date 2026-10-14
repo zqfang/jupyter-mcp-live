@@ -367,7 +367,6 @@ c.MCPExtensionApp.mcp_tools = [
   
     # Utility functions  
     "os:getcwd",
-    "json:dumps",
     "time:time",
     "platform:system",
 ]
