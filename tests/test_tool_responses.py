@@ -90,6 +90,7 @@ async def test_kernel_list_has_what_an_agent_needs_only(tmp_path):
         result = await list_notebook_kernels()
     finally:
         set_server_context(None)
+        app.close()
 
     assert result == {
         "default_kernel": "python3",

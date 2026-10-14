@@ -221,6 +221,12 @@
 
 ### Maintenance
 
+- CI: actions pinned by commit SHA (Dependabot proposes updates), Python
+  3.12 and 3.13 added to the matrix (3.11 oldest, 3.x newest), coverage
+  reported once per run (unit + integration; `pytest-cov` is now a test
+  extra), and warnings are errors: any warning from this package, and
+  resource leaks outside the real-server tests. Test fixtures now close the
+  signature stores they open.
 - Official APIs instead of hand-written equivalents: jupyter_server's
   `@authorized` for the MCP endpoint's permission check (GET, POST and
   DELETE all need `execute` on `kernels`), `kernel_id in kernel_manager` for
