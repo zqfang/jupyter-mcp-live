@@ -128,165 +128,246 @@ class KernelManager:
         exists = await notebook_exists(notebook_path)
         logger.info(f"Notebook exists: {exists} - {notebook_path}")
 
-        available_kernels = await self.list_notebook_kernels()
-        kernelspecs = available_kernels.get("kernelspecs", {})
+        kernelspecs = (await self.list_notebook_kernels()).get("kernelspecs", {})
 
-        # Step 2: Check for existing kernel session (unless force_new_kernel is True)
-        kernel_id = None
-        reused_kernel = False
+        # Step 2: Reuse the notebook's kernel, or replace it (force_new_kernel)
+        kernel_id, kernel_name = await self._choose_kernel(
+            notebook_path, kernel_name, kernelspecs, force_new_kernel=force_new_kernel
+        )
+        reused = kernel_id is not None
 
-        if force_new_kernel:
-            # "Force new" means REPLACE, not ADD. jupyter_server's
-            # SessionManager.create_session does not deduplicate by path -- it just
-            # mints a new session id -- so starting a kernel without tearing the old
-            # session down leaves N sessions and N kernels on one notebook. The agent
-            # and JupyterLab then pick different ones (see _find_session_for_notebook),
-            # which breaks the guarantee that both drive the same kernel, and every
-            # abandoned kernel keeps its memory (GPU included) until the server stops.
-            stale_id = await self._stop_notebook_kernel(notebook_path)
-            if stale_id:
-                logger.info(
-                    f"force_new_kernel: replaced kernel {stale_id} for {notebook_path}"
-                )
-
-        if not force_new_kernel:
-            serverapp = get_server_context()
-            existing_session = await self._find_session_for_notebook(notebook_path)
-
-            if existing_session:
-                kernel_info = existing_session.get("kernel", {})
-                kernel_id = kernel_info.get("id")
-                existing_kernel_name = kernel_info.get("name", kernel_name)
-
-                # Verify kernel is still alive
-                if is_kernel_alive(serverapp, kernel_id):
-                    self.kernel_tracker.track(notebook_path, kernel_id)
-                    reused_kernel = True
-                    kernel_name = existing_kernel_name
-                    logger.info(
-                        f"Reusing existing kernel {kernel_id} ({kernel_name}) "
-                        f"for {notebook_path}"
-                    )
-                elif serverapp and kernel_id:
-                    # Kernel died, reset to start new one
-                    logger.info(
-                        f"Existing kernel {kernel_id} not found, will start new kernel"
-                    )
-                    kernel_id = None
-
-            if not reused_kernel and serverapp:
-                # Fallback: a kernel may be tracked without a Jupyter session
-                # (e.g., auto-started by an execute call). Reuse it instead of
-                # starting a new kernel and losing its state.
-                tracked_id = self.kernel_tracker.get(notebook_path)
-                if tracked_id and is_kernel_alive(serverapp, tracked_id):
-                    kernel = serverapp.kernel_manager.get_kernel(tracked_id)
-                    kernel_id = tracked_id
-                    kernel_name = getattr(kernel, "kernel_name", kernel_name)
-                    reused_kernel = True
-                    logger.info(
-                        f"Reusing tracked kernel {kernel_id} ({kernel_name}) "
-                        f"for {notebook_path} (no session found)"
-                    )
-                elif tracked_id:
-                    self.kernel_tracker.untrack(notebook_path)
-
-        if not reused_kernel:
-            # Resolve the requested kernel name strictly only when a kernel
-            # will actually be started: an unknown kernel raises (listing the
-            # available ones) instead of silently running code on python3.
-            # Reusing an existing kernel never needs the name resolved.
-            kernel_name = resolve_kernel_name(kernel_name, kernelspecs)
-
-        # Step 3: Handle notebook creation/setup based on existence and kernel state
+        # Step 3: Create the notebook if needed, then start a kernel unless one
+        # is reused
         if not exists:
-            # Step 3a: Create new notebook and start new kernel
-            logger.info(f"Creating new notebook: {notebook_path}")
-
-            await ensure_directory(str(Path(notebook_path).parent))
-
-            # Determine language info
-            language_name, display_name = self._get_kernel_display_info(
-                kernel_name, kernelspecs
+            await self._create_notebook(notebook_path, kernel_name, kernelspecs)
+        if not reused:
+            kernel_id = await self._start_kernel_for_notebook(
+                notebook_path, kernel_name
             )
 
-            # Create empty notebook in memory
-            nb = new_notebook(
-                cells=[],
-                metadata={
-                    "kernelspec": {
-                        "name": kernel_name,
-                        "display_name": display_name,
-                        "language": language_name,
-                    },
-                    "language_info": {"name": language_name},
-                },
-            )
-
-            await save_notebook(notebook_path, nb)
-
-            # Create the notebook "through the YDoc": seed the empty file on
-            # disk above (so file_id_manager / file loaders can resolve it),
-            # then immediately bring the YDoc room online and initialize it
-            # from that baseline. Establishing ystore ownership at creation
-            # time — instead of lazily on the first cell edit — means every
-            # later edit is recorded as CRDT history in the ystore. Without
-            # this, the disk-only baseline lives outside the ystore and gets
-            # reconciled against replayed CRDT ops when the room is torn down
-            # and recreated, which materialized early cells twice (duplicated
-            # cells). If YDoc infrastructure is unavailable we keep the
-            # disk-only notebook, preserving the NbformatAdapter fallback.
-            try:
-                from jupyter_mcp_executor.ydoc_helpers import (  # noqa: PLC0415
-                    ensure_ynotebook,
-                )
-
-                ydoc = await ensure_ynotebook(notebook_path)
-                if ydoc is not None:
-                    logger.info(
-                        f"YDoc room established at creation for {notebook_path}"
-                    )
-                else:
-                    logger.info(
-                        f"YDoc unavailable; {notebook_path} created on disk only"
-                    )
-            except Exception as e:  # noqa: BLE001  # pragma: no cover - defensive
-                logger.warning(
-                    f"Could not establish YDoc room at creation for "
-                    f"{notebook_path}: {e}"
-                )
-
-            # Start new kernel for the new notebook
-            if kernel_id is None:
-                kernel_id = await self._start_kernel_for_notebook(
-                    notebook_path, kernel_name
-                )
-
+        if not exists:
             logger.info(f"Notebook {notebook_path} created with kernel {kernel_name}")
         else:
-            # Step 3b/3c: Notebook exists
-            if reused_kernel:
-                # Step 3b: Reusing existing kernel
-                logger.info(
-                    f"Notebook {notebook_path} exists (reused existing kernel {kernel_name})"
-                )
-            else:
-                # Step 3c: Start new kernel for existing notebook
-                if kernel_id is None:
-                    kernel_id = await self._start_kernel_for_notebook(
-                        notebook_path, kernel_name
-                    )
-                logger.info(
-                    f"Notebook {notebook_path} exists (started new kernel {kernel_name})"
-                )
+            how = "reused existing" if reused else "started new"
+            logger.info(f"Notebook {notebook_path} exists ({how} kernel {kernel_name})")
 
-        # Return notebook info
         return NotebookSetupResult(
             path=notebook_path,
             exists=exists,
             kernel_name=kernel_name,
             kernel_id=kernel_id,
         )
+
+    async def _choose_kernel(
+        self,
+        notebook_path: str,
+        kernel_name: str,
+        kernelspecs: dict[str, Any],
+        *,
+        force_new_kernel: bool,
+    ) -> tuple[str | None, str]:
+        """Pick setup_notebook's kernel: an existing one, or a new one's name.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+            kernel_name: Requested kernel name (not yet resolved)
+            kernelspecs: Available kernelspecs
+            force_new_kernel: Stop the notebook's kernel instead of reusing it
+
+        Returns:
+            (kernel_id, kernel_name) of the kernel to reuse, or (None, the
+            resolved requested name) when a new kernel must be started.
+
+        Raises:
+            ValueError: If a kernel must be started and kernel_name is unknown.
+        """
+        if force_new_kernel:
+            await self._replace_notebook_kernel(notebook_path)
+        else:
+            reused = await self._find_reusable_kernel(notebook_path, kernel_name)
+            if reused is not None:
+                return reused
+
+        # Resolve the requested kernel name strictly only when a kernel
+        # will actually be started: an unknown kernel raises (listing the
+        # available ones) instead of silently running code on python3.
+        # Reusing an existing kernel never needs the name resolved.
+        return None, resolve_kernel_name(kernel_name, kernelspecs)
+
+    async def _replace_notebook_kernel(self, notebook_path: str) -> None:
+        """Stop the notebook's session and kernel before force_new_kernel starts one.
+
+        "Force new" means REPLACE, not ADD. jupyter_server's
+        SessionManager.create_session does not deduplicate by path -- it just
+        mints a new session id -- so starting a kernel without tearing the old
+        session down leaves N sessions and N kernels on one notebook. The agent
+        and JupyterLab then pick different ones (see _find_session_for_notebook),
+        which breaks the guarantee that both drive the same kernel, and every
+        abandoned kernel keeps its memory (GPU included) until the server stops.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+        """
+        stale_id = await self._stop_notebook_kernel(notebook_path)
+        if stale_id:
+            logger.info(
+                f"force_new_kernel: replaced kernel {stale_id} for {notebook_path}"
+            )
+
+    async def _find_reusable_kernel(
+        self, notebook_path: str, kernel_name: str
+    ) -> tuple[str, str] | None:
+        """Find a live kernel the notebook already uses, and track it.
+
+        Checks the notebook's Jupyter session first, then a locally tracked
+        kernel without a session.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+            kernel_name: Name to report if the kernel's own is unknown
+
+        Returns:
+            (kernel_id, kernel_name) of the kernel to reuse, or None if a new
+            kernel must be started.
+        """
+        serverapp = get_server_context()
+        reused = await self._reuse_session_kernel(notebook_path, kernel_name, serverapp)
+        if reused is None and serverapp:
+            reused = self._reuse_tracked_kernel(notebook_path, kernel_name, serverapp)
+        return reused
+
+    async def _reuse_session_kernel(
+        self, notebook_path: str, kernel_name: str, serverapp: Any
+    ) -> tuple[str, str] | None:
+        """Return the live kernel of the notebook's Jupyter session, if any.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+            kernel_name: Name to report if the session does not name its kernel
+            serverapp: The Jupyter server app (may be None)
+
+        Returns:
+            (kernel_id, kernel_name), or None if there is no live session kernel.
+        """
+        existing_session = await self._find_session_for_notebook(notebook_path)
+        if not existing_session:
+            return None
+
+        kernel_info = existing_session.get("kernel", {})
+        kernel_id = kernel_info.get("id")
+
+        # Verify kernel is still alive
+        if not is_kernel_alive(serverapp, kernel_id):
+            # Kernel died; the caller starts a new one
+            logger.info(f"Existing kernel {kernel_id} not found, will start new kernel")
+            return None
+
+        self.kernel_tracker.track(notebook_path, kernel_id)
+        existing_kernel_name = kernel_info.get("name", kernel_name)
+        logger.info(
+            f"Reusing existing kernel {kernel_id} ({existing_kernel_name}) "
+            f"for {notebook_path}"
+        )
+        return kernel_id, existing_kernel_name
+
+    def _reuse_tracked_kernel(
+        self, notebook_path: str, kernel_name: str, serverapp: Any
+    ) -> tuple[str, str] | None:
+        """Return the notebook's tracked kernel if it is still alive.
+
+        Fallback: a kernel may be tracked without a Jupyter session (e.g.,
+        auto-started by an execute call). Reuse it instead of starting a new
+        kernel and losing its state. A dead tracked kernel is untracked.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+            kernel_name: Name to report if the kernel does not name itself
+            serverapp: The Jupyter server app
+
+        Returns:
+            (kernel_id, kernel_name), or None if no live kernel is tracked.
+        """
+        tracked_id = self.kernel_tracker.get(notebook_path)
+        if not tracked_id:
+            return None
+        if not is_kernel_alive(serverapp, tracked_id):
+            self.kernel_tracker.untrack(notebook_path)
+            return None
+
+        kernel = serverapp.kernel_manager.get_kernel(tracked_id)
+        tracked_kernel_name = getattr(kernel, "kernel_name", kernel_name)
+        logger.info(
+            f"Reusing tracked kernel {tracked_id} ({tracked_kernel_name}) "
+            f"for {notebook_path} (no session found)"
+        )
+        return tracked_id, tracked_kernel_name
+
+    async def _create_notebook(
+        self, notebook_path: str, kernel_name: str, kernelspecs: dict[str, Any]
+    ) -> None:
+        """Create an empty notebook for a kernel, then bring its YDoc room online.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+            kernel_name: Resolved kernel name, written as the kernelspec
+            kernelspecs: Available kernelspecs, for display name and language
+        """
+        logger.info(f"Creating new notebook: {notebook_path}")
+
+        await ensure_directory(str(Path(notebook_path).parent))
+
+        # Determine language info
+        language_name, display_name = self._get_kernel_display_info(
+            kernel_name, kernelspecs
+        )
+
+        # Create empty notebook in memory
+        nb = new_notebook(
+            cells=[],
+            metadata={
+                "kernelspec": {
+                    "name": kernel_name,
+                    "display_name": display_name,
+                    "language": language_name,
+                },
+                "language_info": {"name": language_name},
+            },
+        )
+
+        await save_notebook(notebook_path, nb)
+        await self._establish_ydoc_room(notebook_path)
+
+    async def _establish_ydoc_room(self, notebook_path: str) -> None:
+        """Bring a just-created notebook's YDoc room online.
+
+        Create the notebook "through the YDoc": seed the empty file on disk
+        first (so file_id_manager / file loaders can resolve it), then
+        immediately bring the YDoc room online and initialize it from that
+        baseline. Establishing ystore ownership at creation time — instead of
+        lazily on the first cell edit — means every later edit is recorded as
+        CRDT history in the ystore. Without this, the disk-only baseline lives
+        outside the ystore and gets reconciled against replayed CRDT ops when
+        the room is torn down and recreated, which materialized early cells
+        twice (duplicated cells). If YDoc infrastructure is unavailable we keep
+        the disk-only notebook, preserving the NbformatAdapter fallback.
+
+        Args:
+            notebook_path: Path to notebook (already normalized and on disk)
+        """
+        try:
+            from jupyter_mcp_executor.ydoc_helpers import (  # noqa: PLC0415
+                ensure_ynotebook,
+            )
+
+            ydoc = await ensure_ynotebook(notebook_path)
+            if ydoc is not None:
+                logger.info(f"YDoc room established at creation for {notebook_path}")
+            else:
+                logger.info(f"YDoc unavailable; {notebook_path} created on disk only")
+        except Exception as e:  # noqa: BLE001  # pragma: no cover - defensive
+            logger.warning(
+                f"Could not establish YDoc room at creation for {notebook_path}: {e}"
+            )
 
     async def get_kernel_for_notebook(
         self, notebook_path: str, kernel_name: str | None = None
