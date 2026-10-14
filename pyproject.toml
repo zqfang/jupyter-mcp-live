@@ -31,9 +31,6 @@ dependencies = [
     # during tool calls (see build_sandbox_limits) and that propagates MCP
     # cancellation into tools called from Code Mode
     "fastmcp[code-mode]>=4.1,<5",
-    "jupyter-ai-tools>=0.1.0",
-    "jupyterlab_commands_toolkit",
-    "jupyterlab_notebook_awareness",
     # >=5.1: cell ids (NbformatAdapter returns new cells' ids)
     "nbformat>=5.1",
     # >=4.4 (jupyter-server-ydoc >=2.4): YDocExtension.get_document(create=True),

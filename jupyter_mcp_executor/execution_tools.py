@@ -11,7 +11,6 @@ import json
 from typing import Any
 
 from fastmcp.tools.base import ToolResult
-from jupyter_ai_tools.utils import collaborative_tool
 from mcp.types import TextContent
 
 from jupyter_mcp_executor.notebook_models import CellIdentifier
@@ -19,19 +18,10 @@ from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.server_context import get_server_context, set_server_context
 from jupyter_mcp_executor.service_container import container
 
+
 # ============================================================================
 # MCP-Exported Functions (Public API)
 # ============================================================================
-# Define user information
-user_info = {
-    "name": "Jupyter AI User",
-    "color": "var(--jp-collaborator-color1)",
-    "display_name": "Jupyter AI User",
-}
-
-
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def list_notebook_kernels() -> dict[str, Any]:
     """List the kernels notebooks can use, and the server's default.
 
@@ -43,8 +33,6 @@ async def list_notebook_kernels() -> dict[str, Any]:
     return await container.kernel_manager.describe_kernels()
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def list_notebook_sessions() -> list[dict[str, Any]]:
     """List all active notebook sessions with their kernels.
 
@@ -62,8 +50,6 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
     return await container.query_service.list_sessions()
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def setup_notebook(
     notebook_path: str,
     kernel_name: str | None = None,
@@ -117,8 +103,6 @@ async def setup_notebook(
     return result.model_dump(exclude_none=True)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def switch_notebook_kernel(
     notebook_path: str, kernel_name: str
 ) -> dict[str, Any]:
@@ -141,8 +125,6 @@ async def switch_notebook_kernel(
     return result.model_dump(exclude_none=True)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def shutdown_notebook(
     notebook_path: str, shutdown_kernel: bool = True
 ) -> dict[str, Any]:
@@ -168,8 +150,6 @@ async def shutdown_notebook(
     return result.model_dump(exclude_none=True)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def interrupt_notebook_kernel(notebook_path: str) -> dict[str, Any]:
     """Interrupt the cell currently running in a notebook's kernel.
 
@@ -192,8 +172,6 @@ async def interrupt_notebook_kernel(notebook_path: str) -> dict[str, Any]:
     return result.model_dump()
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def restart_notebook_kernel(notebook_path: str) -> dict[str, Any]:
     """Restart a notebook's kernel, clearing ALL variables and imports.
 
@@ -216,8 +194,6 @@ async def restart_notebook_kernel(notebook_path: str) -> dict[str, Any]:
     return result.model_dump()
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def execute_cell(
     notebook_path: str,
     position_index: int,
@@ -265,8 +241,6 @@ def _cell_result_to_dict(result: Any) -> dict[str, Any]:
     return result.model_dump(exclude_none=True)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def add_code_cell(
     notebook_path: str,
     source: str,
@@ -297,8 +271,6 @@ async def add_code_cell(
     return _cell_result_to_dict(result)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def edit_code_cell(
     notebook_path: str,
     position_index: int,
@@ -335,8 +307,6 @@ async def edit_code_cell(
     return _cell_result_to_dict(result)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def add_markdown_cell(
     notebook_path: str,
     source: str,
@@ -359,8 +329,6 @@ async def add_markdown_cell(
     return _cell_result_to_dict(result)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def edit_markdown_cell(
     notebook_path: str,
     position_index: int,
@@ -390,8 +358,6 @@ async def edit_markdown_cell(
     return _cell_result_to_dict(result)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def delete_cell(
     notebook_path: str,
     position_index: int,
@@ -415,8 +381,6 @@ async def delete_cell(
     return _cell_result_to_dict(result)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def view_notebook(notebook_path: str) -> list[dict[str, Any]]:
     """View all cells of a notebook in order (read-only).
 
@@ -441,8 +405,6 @@ async def view_notebook(notebook_path: str) -> list[dict[str, Any]]:
     return await container.query_service.view_notebook(notebook_path)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def read_cell(
     notebook_path: str,
     position_index: int | None = None,
@@ -489,8 +451,6 @@ async def read_cell(
     return result.model_dump(exclude_none=True)
 
 
-# Apply collaborative awareness
-@collaborative_tool(user=user_info)
 async def view_cell_image(
     notebook_path: str,
     position_index: int | None = None,

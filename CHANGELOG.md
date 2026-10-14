@@ -31,6 +31,13 @@
 
 ### Changed
 
+- **`jupyter-ai-tools`, `jupyterlab_commands_toolkit` and
+  `jupyterlab_notebook_awareness` are no longer installed.** They provided
+  `@collaborative_tool`, whose per-notebook "AI is editing" indicator never
+  ran (it looks for a `file_path` parameter; the tools take
+  `notebook_path`); it only set a global "Jupyter AI User" awareness entry.
+  Tools from those packages can still be listed in `mcp_tools`; install the
+  packages yourself.
 - **The MCP endpoint also requires `read` and `write` permission on
   `contents`**, besides `execute` on `kernels`: the tools read and modify
   notebooks, and a user the authorizer keeps from modifying files (e.g. a

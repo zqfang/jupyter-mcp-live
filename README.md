@@ -279,6 +279,7 @@ Specify tools directly in your Jupyter configuration using `module:function` for
 ```python
 c.MCPExtensionApp.mcp_tools = [
     "os:getcwd",
+    # from another package, installed separately (pip install jupyter-ai-tools)
     "jupyter_ai_tools.toolkits.notebook:read_notebook",
 ]
 ```
@@ -335,6 +336,8 @@ c = get_config()
 # MCP Server Configuration
 c.MCPExtensionApp.mcp_name = "Advanced Jupyter MCP Server"
 c.MCPExtensionApp.mcp_endpoint_path = "mcp"  # served at {base_url}mcp
+# Third-party toolkits are not dependencies of this package; install the ones
+# you list: pip install jupyter-ai-tools jupyterlab-commands-toolkit
 c.MCPExtensionApp.mcp_tools = [
     # File system operations (jupyter-ai-tools)
     "jupyter_ai_tools.toolkits.file_system:read",
