@@ -31,6 +31,10 @@ from jupyter_mcp_executor.server_context import (
 logger = logging.getLogger(__name__)
 
 
+class KernelStartError(RuntimeError):
+    """A kernel (with its Jupyter session) could not be started for a notebook."""
+
+
 class KernelManager:
     """Service for managing Jupyter kernel lifecycle.
 
@@ -283,9 +287,12 @@ class KernelManager:
                 defaults to the notebook's kernelspec metadata, then "python3"
 
         Returns:
-            Tuple of (kernel_id, started_new). kernel_id is None if no server
-            context is available or kernel startup failed. started_new is True
-            only when a brand-new kernel was started (no prior state preserved).
+            Tuple of (kernel_id, started_new). kernel_id is None only if no
+            server context is available. started_new is True only when a
+            brand-new kernel was started (no prior state preserved).
+
+        Raises:
+            KernelStartError: If a new kernel was needed but could not start.
         """
         notebook_path = normalize_path(notebook_path)
         serverapp = get_server_context()
@@ -310,7 +317,7 @@ class KernelManager:
             kernel_name, available_kernels.get("kernelspecs", {}), fallback="python3"
         )
         kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
-        return kernel_id, kernel_id is not None
+        return kernel_id, True
 
     async def find_kernel_for_notebook(self, notebook_path: str) -> str | None:
         """Return the notebook's running kernel without ever starting one.
@@ -445,8 +452,17 @@ class KernelManager:
 
         Returns:
             KernelSwitchResult with status and new kernel info
+
+        Raises:
+            ValueError: If kernel_name matches no installed kernel (checked
+                before the old kernel is touched)
+            KernelStartError: If the new kernel could not be started
         """
         notebook_path = normalize_path(notebook_path)
+        available_kernels = await self.list_notebook_kernels()
+        kernel_name = resolve_kernel_name(
+            kernel_name, available_kernels.get("kernelspecs", {})
+        )
 
         # Delete the old session first
         await self._delete_session_for_notebook(notebook_path)
@@ -694,7 +710,7 @@ class KernelManager:
 
     async def _start_kernel_for_notebook(
         self, notebook_path: str, kernel_name: str
-    ) -> str | None:
+    ) -> str:
         """Start a kernel and track it for a notebook.
 
         Creates a Jupyter session which automatically creates and links a kernel
@@ -708,12 +724,17 @@ class KernelManager:
             kernel_name: Kernel name
 
         Returns:
-            Kernel ID or None if failed
+            Kernel ID
+
+        Raises:
+            KernelStartError: With the reason, e.g. a path Jupyter's contents
+                manager cannot open (outside root_dir, hidden) or a failed
+                session/kernel start
         """
         serverapp = get_server_context()
         if not serverapp:
-            logger.warning("No server context available, cannot start kernel")
-            return None
+            msg = "Jupyter server context not available; cannot start a kernel"
+            raise KernelStartError(msg)
 
         try:
             session_manager = serverapp.session_manager
@@ -738,12 +759,14 @@ class KernelManager:
                 await ensure_async(
                     contents_manager.get(api_path, content=False, type="notebook")
                 )
-            except Exception as e:  # noqa: BLE001 - reported to the caller as None
-                logger.error(
-                    f"Contents manager cannot resolve path '{api_path}' "
-                    f"(root_dir='{root_dir}'). Error: {e}"
+            except Exception as e:
+                msg = (
+                    f"Cannot start a kernel for {notebook_path}: Jupyter's "
+                    f"contents manager cannot open it ({e}). Jupyter sessions "
+                    f"only exist for notebooks inside the server root "
+                    f"({root_dir}) and outside hidden directories."
                 )
-                return None
+                raise KernelStartError(msg) from e
 
             # Create session this lets SessionManager create the kernel
             # This avoids race conditions where we create a kernel but session manager
@@ -778,9 +801,12 @@ class KernelManager:
 
             return kernel_id
 
-        except Exception:
-            logger.exception(f"❌ Session/kernel creation FAILED for {notebook_path}!")
-            return None
+        except KernelStartError:
+            raise
+        except Exception as e:
+            logger.exception(f"Session/kernel creation failed for {notebook_path}")
+            msg = f"Cannot start a {kernel_name} kernel for {notebook_path}: {e}"
+            raise KernelStartError(msg) from e
 
     async def _shutdown_kernel(self, kernel_id: str) -> None:
         """Shutdown a kernel.

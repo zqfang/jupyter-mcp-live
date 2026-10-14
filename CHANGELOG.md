@@ -50,6 +50,14 @@
 
 ### Bugs fixed
 
+- When no kernel could be started for a notebook (e.g. a path outside the
+  Jupyter root directory, which Jupyter's contents manager cannot open),
+  `setup_notebook` and `switch_notebook_kernel` failed with a pydantic
+  `ValidationError` ("kernel_id: Input should be a valid string"), and the
+  execution tools started a bare kernel with no Jupyter session that
+  JupyterLab could not see. All of them now fail with `KernelStartError`
+  and the reason. `switch_notebook_kernel` also checks the new kernel name
+  before it shuts the old kernel down.
 - A cell that called `input()` blocked until the execution timeout (10 hours
   by default): it was executed with stdin allowed, and nobody answers the
   kernel's input request. Executions now refuse stdin, so `input()` raises

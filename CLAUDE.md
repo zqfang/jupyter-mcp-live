@@ -517,7 +517,11 @@ creating, in this order:
 Execution tools (`execute_cell`, `add_code_cell`, `edit_code_cell`) resolve
 through this path automatically — they never fork a bare, sessionless kernel
 when the tracker has no entry (that used to silently lose user state on
-"reconnect"). Symmetrically, `setup_notebook` falls back to the tracked kernel
+"reconnect"). If no session-backed kernel can be started (the
+contents manager cannot open the path — outside `root_dir`, hidden — or
+`create_session` fails), `_start_kernel_for_notebook()` raises
+`KernelStartError` with the reason; nothing falls back to a bare kernel.
+`switch_kernel()` resolves the kernel name before it stops the old kernel. Symmetrically, `setup_notebook` falls back to the tracked kernel
 when no session exists, so reconnecting to a notebook always reattaches to the
 running kernel unless `force_new_kernel=True`.
 

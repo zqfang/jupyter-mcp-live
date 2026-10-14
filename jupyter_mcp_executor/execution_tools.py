@@ -95,6 +95,9 @@ async def setup_notebook(
           list_notebook_kernels first and pick the closest matching kernelspec key.
         - If setup fails due to an unknown kernel, surface the list from
           list_notebook_kernels in your error message.
+        - Kernels only start for notebooks Jupyter itself can open: inside the
+          server's root directory and not in a hidden directory. The error
+          says which; do not retry the same path.
 
     Returns:
         dict with:
