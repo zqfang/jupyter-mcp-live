@@ -364,8 +364,8 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/integration/test_kernel_outputs.py` - The same against a real kernel
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
-- `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
-  real YNotebook (edit_cell, append/coalesce/clear)
+- `tests/test_ydoc_adapter.py` - YDocAdapter source/output/metadata operations
+  against a real YNotebook (edit_cell, in-place metadata, append/coalesce/clear)
 - `tests/test_ydoc_helpers.py` - YDoc room recreation (`ensure_ynotebook`) tests
 - `tests/integration/test_ydoc_room_identity.py` - With a symlinked
   `root_dir`: finding JupyterLab's room, keeping it alive, following a
@@ -794,6 +794,11 @@ executions instead of everything appearing when the MCP tool call returns:
   (`view_notebook`, `read_cell`, finders) never write the file back.
 - Editing a code cell resets its outputs/execution_count (both adapters), so
   stale outputs from the old source never linger.
+- In an open notebook, `edit_cell` updates the cell's metadata Map **in
+  place** (one transaction: set changed keys, delete missing ones, values as
+  plain JSON like `create_ycell`), never assigns a new Map: that would
+  broadcast the whole map and drop other collaborators' concurrent metadata
+  edits. Empty metadata in the edit means "keep".
 - `switch_notebook_kernel` updates kernelspec metadata through the live YDoc
   when the notebook is open (disk write only for closed notebooks).
 
