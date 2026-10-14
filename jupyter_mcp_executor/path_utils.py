@@ -95,17 +95,14 @@ def to_api_path(absolute_path: str) -> str:
 
     serverapp = get_server_context()
     if serverapp and hasattr(serverapp, "root_dir"):
-        root_dir = Path(serverapp.root_dir)
-
-        try:
-            # If path is under root_dir, make it relative
-            if abs_path.is_relative_to(root_dir):
-                relative = abs_path.relative_to(root_dir)
-                # Use forward slashes for API paths (Jupyter convention)
-                return str(relative).replace("\\", "/")
-        except (ValueError, AttributeError):
-            # is_relative_to not available in Python 3.8, or path not relative
-            pass
+        # Compare resolved paths: normalize_path() resolves symlinks, while
+        # Jupyter keeps root_dir as configured (it may go through a symlink,
+        # e.g. macOS /tmp or a symlinked home).
+        root_dir = Path(serverapp.root_dir).resolve()
+        resolved = abs_path.resolve()
+        if resolved.is_relative_to(root_dir):
+            # Forward slashes for API paths (Jupyter convention)
+            return resolved.relative_to(root_dir).as_posix()
 
     # For paths outside root_dir: use absolute path
     # This ensures session matching works correctly when notebooks are

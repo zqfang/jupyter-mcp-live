@@ -18,6 +18,7 @@ import pytest
 from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_path
 
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_executor.path_utils import normalize_path
 from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
 _HELPERS = "jupyter_mcp_executor.ydoc_helpers"
@@ -37,6 +38,7 @@ _ROOM_ID = room_id_from_encoded_path(encode_file_path("json", "notebook", "fid")
 def _make_room(*, ready: bool = True):
     """A DocumentRoom mock; initialize() marks it ready."""
     room = MagicMock()
+    room.room_id = _ROOM_ID
     room.ready = ready
 
     async def initialize():
@@ -128,8 +130,9 @@ async def test_gets_or_creates_room_via_official_api():
 
 @pytest.mark.asyncio
 async def test_returns_none_if_document_wrong_type():
-    """If the room holds a non-YNotebook document, return None gracefully."""
+    """A non-YNotebook document and no room: use the file."""
     ext = _make_extension(document=_FakeOtherDoc())
+    ext.ywebsocket_server.rooms = {}
 
     assert await _ensure(ext) is None
 
@@ -137,32 +140,94 @@ async def test_returns_none_if_document_wrong_type():
 @pytest.mark.asyncio
 async def test_returns_none_if_get_document_returns_none():
     ext = _make_extension(document=None)
+    ext.ywebsocket_server.rooms = {}
 
     assert await _ensure(ext) is None
 
 
 @pytest.mark.asyncio
-async def test_unexpected_error_is_logged_and_returns_none():
-    """A failure to create the room is visible at ERROR, never silent: falling
-    back to the file would reintroduce the ystore/disk desync."""
+async def test_no_document_while_a_room_exists_raises():
+    """None from get_document() is not proof the file is safe."""
+    ext = _make_extension(document=None)
+
+    with pytest.raises(RuntimeError, match="is open in JupyterLab"):
+        await _ensure(ext)
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_without_a_room_is_logged_and_returns_none():
+    """No room to conflict with: the file is safe, but the failure is visible
+    at ERROR, never silent."""
     ext = _make_extension()
+    ext.ywebsocket_server.rooms = {}
     ext.get_document.side_effect = RuntimeError("boom")
     log = MagicMock()
 
     assert await _ensure(ext, logger=log) is None
-    log.exception.assert_called_once()
+    log.error.assert_called_once()
+    assert isinstance(log.error.call_args.kwargs["exc_info"], RuntimeError)
 
 
 @pytest.mark.asyncio
-async def test_missing_infrastructure_is_a_warning():
-    """No file_id_manager (KeyError) means the YDoc stack is not set up."""
+async def test_unexpected_error_with_a_room_raises_instead_of_using_the_file():
+    """The room's file watcher would load our file writes over the live
+    document, discarding the browser's unsaved changes."""
     ext = _make_extension()
-    ext.get_document.side_effect = KeyError("file_id_manager")
+    ext.get_document.side_effect = RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="open in JupyterLab"):
+        await _ensure(ext)
+
+
+@pytest.mark.asyncio
+async def test_missing_websocket_server_is_a_warning():
+    """No websocket server means the YDoc stack is not set up: use the file."""
+    ext = _make_extension()
+    del ext.ywebsocket_server
     log = MagicMock()
 
     assert await _ensure(ext, logger=log) is None
     log.warning.assert_called_once()
-    log.exception.assert_not_called()
+    ext.get_document.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_key_error_with_a_room_raises_instead_of_using_the_file():
+    """KeyError is not proof that YDoc is absent (e.g. a file loader removed
+    by a concurrent room cleanup), so it gets the same room check."""
+    ext = _make_extension()
+    ext.get_document.side_effect = KeyError("fid")
+
+    with pytest.raises(RuntimeError, match="is open in JupyterLab"):
+        await _ensure(ext)
+
+
+@pytest.mark.asyncio
+async def test_unknown_room_state_raises_instead_of_using_the_file():
+    """If the file ID lookup itself fails, whether a room exists is unknown:
+    assume it may, rather than write the file behind a live room."""
+    ext = _make_extension()
+    index = ext.serverapp.web_app.settings["file_id_manager"].index
+    index.side_effect = RuntimeError("database is locked")
+    ext.get_document.side_effect = RuntimeError("database is locked")
+
+    with pytest.raises(RuntimeError, match="may be open in JupyterLab"):
+        await _ensure(ext, "/tmp/never-attached.ipynb")
+
+
+@pytest.mark.asyncio
+async def test_room_attached_before_is_known_without_a_file_id_lookup():
+    """A notebook we attached to before is known to have a room even when
+    the file ID lookup is what fails now."""
+    ext = _make_extension(document=_FakeYNotebook())
+    assert await _ensure(ext, "/tmp/known.ipynb") is not None
+
+    index = ext.serverapp.web_app.settings["file_id_manager"].index
+    index.side_effect = RuntimeError("database is locked")
+    ext.get_document.side_effect = RuntimeError("database is locked")
+
+    with pytest.raises(RuntimeError, match="is open in JupyterLab"):
+        await _ensure(ext, "/tmp/known.ipynb")
 
 
 @pytest.mark.asyncio
@@ -219,15 +284,15 @@ async def test_unopened_room_is_initialized_under_the_handler_lock():
 
 
 @pytest.mark.asyncio
-async def test_room_initialization_failure_is_logged_and_returns_none():
-    """Never hand out the empty document of a room that failed to load."""
+async def test_room_initialization_failure_raises():
+    """Never hand out the empty document of a room that failed to load, and
+    never write the file behind it either."""
     room = _make_room(ready=False)
     room.initialize.side_effect = RuntimeError("cannot load")
     ext = _make_extension(document=_FakeYNotebook(), room=room)
-    log = MagicMock()
 
-    assert await _ensure(ext, logger=log) is None
-    log.exception.assert_called_once()
+    with pytest.raises(RuntimeError, match="cannot load"):
+        await _ensure(ext)
 
 
 @pytest.mark.asyncio
@@ -238,6 +303,36 @@ async def test_room_removed_after_lookup_returns_none():
     ext.ywebsocket_server.rooms = {}
 
     assert await _ensure(ext) is None
+
+
+@pytest.mark.asyncio
+async def test_room_evicted_during_lookup_is_recreated():
+    """Eviction between get_document() and the room check is a race, not a
+    reason to use the file: the CRDT history exists, so look again."""
+    ext = _make_extension(document=_FakeYNotebook())
+    room = ext.ywebsocket_server.rooms.pop(_ROOM_ID)
+
+    async def get_document(**_kwargs):
+        if ext.get_document.await_count > 1:  # the room was recreated
+            ext.ywebsocket_server.rooms[_ROOM_ID] = room
+        return _FakeYNotebook()
+
+    ext.get_document.side_effect = get_document
+
+    assert await _ensure(ext) is not None
+    assert ext.get_document.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_ensure_ynotebook_keeps_the_room_alive_for_writes():
+    """Callers write to the returned document (e.g. the kernelspec on a
+    kernel switch); a pending cleanup would cancel the room's autosave."""
+    room = _make_room()
+    room.cleaner.done.return_value = False
+    ext = _make_extension(document=_FakeYNotebook(), room=room)
+
+    assert await _ensure(ext) is not None
+    room.cleaner.cancel.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -277,24 +372,27 @@ async def test_get_ynotebook_initializes_unopened_room():
 
 
 @pytest.mark.asyncio
-async def test_get_notebook_adapter_calls_ensure_ynotebook():
-    """get_notebook_adapter() must call ensure_ynotebook(), NOT get_ynotebook().
+async def test_get_notebook_adapter_uses_the_room_it_recreates():
+    """get_notebook_adapter() must use ensure_notebook_room() (recreating a
+    cleaned-up room), not a lookup that falls back to the file, and hand the
+    room to the adapter so it can follow a replaced room.
 
-    This confirms room recreation is wired into the adapter factory — the
-    guarantee that NbformatAdapter is never used while an active CRDT session
-    exists in the ystore.
+    This is the guarantee that NbformatAdapter is never used while an active
+    CRDT session exists in the ystore.
     """
-    fake_ynb = _FakeYNotebook()
+    notebook_room = MagicMock()
 
     # YDocAdapter is a local import inside get_notebook_adapter(); patch at source.
     with (
         patch(
-            "jupyter_mcp_executor.notebook_adapter.ensure_ynotebook",
-            new=AsyncMock(return_value=fake_ynb),
+            "jupyter_mcp_executor.notebook_adapter.ensure_notebook_room",
+            new=AsyncMock(return_value=notebook_room),
         ) as mock_ensure,
         patch("jupyter_mcp_executor.ydoc_adapter.YDocAdapter") as mock_ydoc_cls,
     ):
         await get_notebook_adapter("/tmp/nb.ipynb")
 
     mock_ensure.assert_awaited_once()
-    mock_ydoc_cls.assert_called_once()
+    mock_ydoc_cls.assert_called_once_with(
+        notebook_room.ydoc, normalize_path("/tmp/nb.ipynb"), room=notebook_room
+    )

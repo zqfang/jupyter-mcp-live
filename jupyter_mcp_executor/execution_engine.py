@@ -35,6 +35,20 @@ def _combine_callbacks(*callbacks: OutputCallback | None) -> OutputCallback | No
     return combined
 
 
+async def _keep_room_alive(adapter: NotebookAdapter) -> None:
+    """Keep the adapter's YDoc room alive until cancelled.
+
+    A silent cell makes no adapter calls, so without this the room could be
+    deleted (the browser left) while the cell runs. Errors only stop it.
+    """
+    try:
+        while True:
+            adapter.keep_alive()
+            await asyncio.sleep(EXECUTION_CONFIG.room_keepalive_interval)
+    except Exception:
+        logger.debug("Keeping the YDoc room alive failed; stopped", exc_info=True)
+
+
 class _CellOutputStreamer:
     """Mirrors outputs into the notebook as the kernel emits them.
 
@@ -49,7 +63,19 @@ class _CellOutputStreamer:
         self._adapter = adapter
         self._cell_id = cell_id
         self._position = position
+        self._generation = getattr(adapter, "generation", 0)
         self.streamed_ok = True
+
+    @property
+    def complete(self) -> bool:
+        """Whether every output is in the cell, so only the count is left.
+
+        Not if streaming failed, or if the adapter moved to a recreated YDoc
+        room meanwhile: the old room's last outputs may never have reached it.
+        """
+        return self.streamed_ok and (
+            getattr(self._adapter, "generation", 0) == self._generation
+        )
 
     async def _locate_cell(self) -> int:
         """Resolve the cell's current position by ID (positions can shift)."""
@@ -336,14 +362,23 @@ class ExecutionEngine:
             streamer = _CellOutputStreamer(adapter, cell_id, cell_position)
             await streamer.clear_outputs()
 
-        # Execute code
-        exec_result = await self.execute_cell_code(
-            code,
-            kernel_id=kernel_id,
-            timeout=timeout,
-            on_output=streamer.on_output if streamer else None,
-            progress_label=f"{Path(adapter.notebook_path).name} cell {cell_position}",
-        )
+        # Execute code, keeping an open notebook's room alive meanwhile.  The
+        # task is only cancelled, never awaited, so a cancelled call does not
+        # wait on it (anyio re-delivers cancellation at every await).
+        keepalive = asyncio.create_task(_keep_room_alive(adapter)) if streamer else None
+        try:
+            exec_result = await self.execute_cell_code(
+                code,
+                kernel_id=kernel_id,
+                timeout=timeout,
+                on_output=streamer.on_output if streamer else None,
+                progress_label=(
+                    f"{Path(adapter.notebook_path).name} cell {cell_position}"
+                ),
+            )
+        finally:
+            if keepalive is not None:
+                keepalive.cancel()
 
         if started_new:
             exec_result = exec_result.model_copy(update={"started_new_kernel": True})
@@ -373,7 +408,7 @@ class ExecutionEngine:
         #   autosave handles disk persistence.  A direct nbformat.write() here
         #   would trigger JupyterLab's external-file-change detector and cause
         #   the notebook viewport to scroll back to the top on every execution.
-        if streamer is not None and streamer.streamed_ok:
+        if streamer is not None and streamer.complete:
             # Outputs already live in the cell via streaming; only record the
             # execution_count.  Skipping the clear+rewrite of identical
             # content avoids a re-render flash of plots/images in JupyterLab.

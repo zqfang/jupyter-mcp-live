@@ -1,6 +1,7 @@
 """Test notebook execution tools functionality - refactored for modular architecture."""
 
 import asyncio
+import dataclasses
 from datetime import datetime
 from pathlib import Path
 from queue import Empty
@@ -31,7 +32,7 @@ from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 # Import from new modular structure
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
-from jupyter_mcp_executor.notebook_config import ProgressConfig
+from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG, ProgressConfig
 from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.output_filter import OutputFilter
@@ -328,6 +329,27 @@ class TestHelperFunctions:
         outside_path = "/tmp/external.ipynb"
         api_path = to_api_path(outside_path)
         assert Path(api_path).name == "external.ipynb"
+
+    def test_to_api_path_under_symlinked_root(self, mock_serverapp, tmp_path):
+        """normalize_path() resolves symlinks; Jupyter keeps root_dir as given.
+
+        Comparing the two unresolved made every notebook look outside the
+        root: no Jupyter session, and another YDoc room than JupyterLab's.
+        """
+        real = tmp_path / "real"
+        (real / "sub").mkdir(parents=True)
+        link = tmp_path / "link"
+        try:
+            link.symlink_to(real, target_is_directory=True)
+        except OSError:
+            pytest.skip("cannot create symlinks here")
+        mock_serverapp.root_dir = str(link)
+        set_server_context(mock_serverapp)
+
+        resolved = normalize_path("sub/nb.ipynb")
+
+        assert resolved == str((real / "sub" / "nb.ipynb").resolve())
+        assert to_api_path(resolved) == "sub/nb.ipynb"
 
     def test_read_write_notebook(self, temp_notebook):
         """Test reading and writing notebooks."""
@@ -1889,6 +1911,70 @@ class TestLiveOutputStreaming:
         assert adapter.appended == []
         assert len(adapter.updated) == 1
         assert adapter.updated[0][2] is not None  # full batch write
+
+    @pytest.mark.asyncio
+    async def test_room_is_kept_alive_while_a_silent_cell_runs(
+        self, mock_serverapp, monkeypatch
+    ):
+        """A cell without output makes no adapter calls, yet the browser may
+        have left: the room must be kept alive for the whole execution."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_engine.EXECUTION_CONFIG",
+            dataclasses.replace(EXECUTION_CONFIG, room_keepalive_interval=0.01),
+        )
+
+        async def silent_execute(*_args, **_kwargs):
+            await asyncio.sleep(0.2)
+            return {"execution_count": 1, "outputs": [], "status": "ok"}
+
+        monkeypatch.setattr(
+            "jupyter_mcp_executor.execution_engine.execute_code_on_kernel",
+            silent_execute,
+        )
+
+        class KeptAliveAdapter(RecordingCollabAdapter):
+            kept_alive = 0
+
+            def keep_alive(self):
+                self.kept_alive += 1
+
+        adapter = KeptAliveAdapter()
+        await container.execution_engine.execute_and_update_cell(
+            adapter,
+            0,
+            "import time; time.sleep(600)",
+            kernel_id="kernel-live",
+            cell_id="cell-1",
+        )
+        kept_alive_during_run = adapter.kept_alive
+        await asyncio.sleep(0.05)
+
+        assert kept_alive_during_run >= 3
+        assert adapter.kept_alive == kept_alive_during_run  # stopped afterwards
+
+    @pytest.mark.asyncio
+    async def test_replaced_room_gets_the_full_outputs(self, mock_serverapp):
+        """The room was recreated mid-run: what was streamed into the old one
+        may be missing from the new one, so all outputs are written again."""
+        set_server_context(mock_serverapp)
+        mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
+
+        class ReplacedRoomAdapter(RecordingCollabAdapter):
+            generation = 0
+
+            async def append_cell_output(self, position, output):
+                self.generation += 1  # the adapter followed a recreated room
+                await super().append_cell_output(position, output)
+
+        adapter = ReplacedRoomAdapter()
+        result = await container.execution_engine.execute_and_update_cell(
+            adapter, 0, "print('tick')", kernel_id="kernel-live", cell_id="cell-1"
+        )
+
+        assert adapter.appended  # streaming itself still worked
+        assert adapter.updated[-1][2] == result.outputs
 
     @pytest.mark.asyncio
     async def test_nbformat_append_cell_output_persists(self, temp_notebook):
