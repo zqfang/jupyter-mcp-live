@@ -1,8 +1,11 @@
 """YDoc collaborative editing helper utilities."""
 
+import asyncio
 import logging
+import weakref
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from jupyter_mcp_executor.path_utils import to_api_path
 
@@ -15,6 +18,48 @@ _known_room_ids: dict[str, str] = {}
 # Attempts to attach a notebook's room before giving up. A room can be
 # evicted between get_document() and our check; the next attempt recreates it.
 _ATTACH_ATTEMPTS = 3
+
+# Seconds a room's cleanup waits beyond its autosave delay: deleting a room
+# cancels its pending save, so the save must have finished first. Also how
+# long the cleanup is put off while a save is still in progress.
+CLEANUP_SAVE_MARGIN = 1.0
+
+_T = TypeVar("_T")
+
+
+@dataclass
+class _Cleanup:
+    """Our pending cleanup of one room, shared by every NotebookRoom of it."""
+
+    task: asyncio.Task
+    deadline: float  # event loop time
+
+
+_cleanups: "weakref.WeakKeyDictionary[Any, _Cleanup]" = weakref.WeakKeyDictionary()
+
+
+async def _run_to_completion(aw: Awaitable[_T]) -> _T:
+    """Await ``aw``, finishing it even if the caller is cancelled meanwhile.
+
+    The cancellation is re-raised once ``aw`` is done.
+    """
+    task = asyncio.ensure_future(aw)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
+    return task.result()
+
+
+def _is_saving(room: Any) -> bool:
+    """Whether the room has an autosave pending or in progress."""
+    saving = getattr(room, "_saving_document", None)
+    return saving is not None and not saving.done()
+
 
 # Check if YDoc is available
 try:
@@ -66,16 +111,117 @@ class NotebookRoom:
         return rooms.get(self.room.room_id) is self.room
 
     def keep_alive(self) -> None:
-        """Cancel the room's pending cleanup, as a reconnecting browser does.
+        """Postpone the room's cleanup while the tools are using it.
 
         Deleting a room cancels its pending save, so edits from the last save
-        delay would never reach the disk a recreated room loads from. The
-        room stays until a browser connects and leaves again.
+        delay would never reach the disk a recreated room loads from. A
+        pending cleanup by the handler (the last browser left) is cancelled,
+        as a reconnecting browser does, and replaced by ours. Cheap enough to
+        call for every streamed output: it only moves our deadline.
         """
         cleaner = self.room.cleaner
-        if cleaner is not None and not cleaner.done():
-            cleaner.cancel()
-            logger.debug(f"Kept the YDoc room of {self.file_path} alive")
+        if cleaner is None or cleaner.done() or self._is_ours(cleaner):
+            self._schedule_cleanup()
+            return
+        cleaner.cancel()
+        logger.debug(f"Kept the YDoc room of {self.file_path} alive")
+        # The handler schedules its cleanup while the leaving websocket is
+        # still in room.clients; ours must replace it all the same.
+        self._schedule_cleanup(replacing=True)
+
+    def clean_up_if_unused(self) -> None:
+        """Schedule the cleanup of a room no browser uses and none will clean.
+
+        jupyter_server_ydoc schedules a cleanup only when a browser's
+        websocket closes, so a room created without a browser would stay for
+        the server's lifetime. A pending cleanup is left as is: reads must not
+        postpone it.
+        """
+        cleaner = self.room.cleaner
+        if cleaner is None or cleaner.done():
+            self._schedule_cleanup()
+
+    def _is_ours(self, cleaner: asyncio.Task) -> bool:
+        pending = _cleanups.get(self.room)
+        return pending is not None and pending.task is cleaner
+
+    def _schedule_cleanup(self, *, replacing: bool = False) -> None:
+        """Delete the room once it has been unused for the cleanup delay.
+
+        Uses the room's ``cleaner`` slot, so a browser joining in the meantime
+        cancels it like the handler's own cleanup. Nothing is scheduled while
+        a browser is connected (it schedules one when it leaves), when the
+        server never cleans rooms, or when autosave is off: the room's edits
+        would then be lost with it.
+
+        Args:
+            replacing: Replace the handler's cleanup, even if the leaving
+                browser's websocket is still listed
+        """
+        cleanup_delay = self.extension.document_cleanup_delay
+        save_delay = self.extension.document_save_delay
+        if cleanup_delay is None or save_delay is None:
+            return
+        if self.room.clients and not replacing:
+            return
+        delay = max(cleanup_delay, save_delay + CLEANUP_SAVE_MARGIN)
+        deadline = asyncio.get_running_loop().time() + delay
+        pending = _cleanups.get(self.room)
+        if (
+            pending is not None
+            and self.room.cleaner is pending.task
+            and not pending.task.done()
+        ):
+            pending.deadline = deadline
+            return
+        task = asyncio.create_task(self._clean_up_when_due())
+        _cleanups[self.room] = _Cleanup(task, deadline)
+        self.room.cleaner = task
+
+    async def _clean_up_when_due(self) -> None:
+        """Wait for the (movable) deadline and any save, then delete the room."""
+        loop = asyncio.get_running_loop()
+        while True:
+            pending = _cleanups.get(self.room)
+            if pending is None or pending.task is not asyncio.current_task():
+                return
+            remaining = pending.deadline - loop.time()
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            elif _is_saving(self.room):
+                pending.deadline = loop.time() + CLEANUP_SAVE_MARGIN
+            else:
+                break
+        try:
+            await self._delete_if_unused()
+        except Exception:  # a task nobody awaits: log it
+            logger.exception(f"Failed to clean up the YDoc room of {self.file_path}")
+
+    async def _delete_if_unused(self) -> None:
+        """What the websocket handler does after the last browser left.
+
+        Once started, the deletion is finished even if a joining browser
+        cancels us meanwhile: a half-stopped room would be gone from the
+        server but keep its file watcher, and the lock would be released
+        before the browser's open() could see the room was gone.
+        """
+        async with self.extension._room_locks[self.room.room_id]:
+            if self.room.clients or not self.is_attached():
+                return
+            logger.info(f"Deleting the unused YDoc room of {self.file_path}")
+            await _run_to_completion(self._delete())
+
+    async def _delete(self) -> None:
+        from jupyter_server_ydoc.utils import decode_file_path  # noqa: PLC0415
+
+        try:
+            await self.extension.ywebsocket_server.delete_room(room=self.room)
+        finally:
+            _known_room_ids.pop(self.file_path, None)
+            file_id = decode_file_path(self.room.room_id)[2]
+            loaders = self.extension.file_loaders
+            if file_id in loaders and loaders[file_id].number_of_subscriptions == 0:
+                await loaders.remove(file_id)
 
     async def reattach(self) -> "NotebookRoom | None":
         """Return the notebook's current room, recreating it if needed."""
@@ -118,7 +264,9 @@ async def _attach_room(
     if room is None:
         return None
     _known_room_ids[file_path] = room.room_id
-    return NotebookRoom(ydoc, room, ydoc_extension, file_path)
+    notebook_room = NotebookRoom(ydoc, room, ydoc_extension, file_path)
+    notebook_room.clean_up_if_unused()
+    return notebook_room
 
 
 def _room_id(ydoc_extension: Any, api_path: str) -> str:
@@ -299,8 +447,7 @@ async def ensure_notebook_room(file_path: str) -> NotebookRoom | None:
 
     # jupyter_server_ydoc starts its websocket server when the first browser
     # connects.  Until then no client holds CRDT state for any document, so
-    # the file adapter is safe.  Creating rooms here would also leak them:
-    # rooms are only cleaned up when a websocket closes.
+    # the file adapter is safe, and cheaper than loading a room.
     try:
         started = ydoc_extension.ywebsocket_server.started.is_set()
     except AttributeError as e:
