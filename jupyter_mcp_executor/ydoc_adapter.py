@@ -4,7 +4,10 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from jupyter_mcp_executor.notebook_adapter import NotebookAdapter
+from jupyter_mcp_executor.notebook_adapter import (
+    NotebookAdapter,
+    resolve_insert_position,
+)
 from jupyter_mcp_executor.notebook_models import CellContent
 from jupyter_mcp_executor.ydoc_helpers import (
     YDOC_AVAILABLE,
@@ -157,13 +160,7 @@ class YDocAdapter(NotebookAdapter):
             cell_dict["outputs"] = list(cell_content.outputs)
             cell_dict["execution_count"] = cell_content.execution_count
 
-        # Determine position
-        if position is None:
-            position = self.ydoc.cell_number
-
-        # Validate position
-        if position < 0 or position > self.ydoc.cell_number:
-            position = self.ydoc.cell_number
+        position = resolve_insert_position(position, self.ydoc.cell_number)
 
         # Convert to proper pycrdt Map before inserting into the YDoc Array
         ycell = self.ydoc.create_ycell(cell_dict)

@@ -3,7 +3,7 @@
 import logging
 from typing import Any, ClassVar
 
-from jupyter_mcp_executor.notebook_config import OUTPUT_FILTER_CONFIG
+from jupyter_mcp_executor.notebook_config import IMAGE_CONFIG, OUTPUT_FILTER_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +99,11 @@ class OutputFilter:
         Returns:
             Placeholder output dict
         """
+        viewable = any(mt in IMAGE_CONFIG.viewable_mime_types for mt in mime_types)
+        hint = "call view_cell_image to see it" if viewable else "available in notebook"
         return {
             "output_type": "execute_result",
-            "data": {
-                "text/plain": f"[Filtered {', '.join(mime_types)} - available in notebook]"
-            },
+            "data": {"text/plain": f"[Filtered {', '.join(mime_types)} - {hint}]"},
             "metadata": {},
             "execution_count": None,
         }

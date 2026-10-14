@@ -145,7 +145,8 @@ Filtering applies to MCP responses only (the notebook keeps full outputs; the
 filter never mutates the original dicts):
 
 - Large images/HTML (>1KB, `OUTPUT_FILTER_CONFIG.filter_threshold`) are
-  replaced by a placeholder.
+  replaced by a placeholder. For images the model can view
+  (`IMAGE_CONFIG.viewable_mime_types`) it says to call `view_cell_image`.
 - Large plain text — stream output, error tracebacks, and `text/plain`
   results over `OUTPUT_FILTER_CONFIG.max_text_length` (4000 chars) — is
   truncated head+tail with an omission marker.
@@ -236,7 +237,9 @@ All functions in `execution_tools.py` (16 tools):
 
 **Kernel/session management:**
 
-1. **list_notebook_kernels()** - Get available kernel specs (the ONLY way to list kernels)
+1. **list_notebook_kernels()** - Available kernels (`display_name`, `language`
+   only — no argv/env) and the server's `default_kernel` (the ONLY way to list
+   kernels; `KernelManager.describe_kernels()`)
 2. **list_notebook_sessions()** - List active kernel sessions (the ONLY way to list sessions)
 3. **setup_notebook(path, kernel_name, force_new_kernel)** - Create notebook and start/reuse kernel
 4. **switch_notebook_kernel(path, kernel_name)** - Switch to different kernel
@@ -246,7 +249,9 @@ All functions in `execution_tools.py` (16 tools):
 
 **Cell operations (fine-grained, one tool per operation):**
 
-8. **add_code_cell(path, source, position_index, execute)** - Add code cell (executes by default)
+8. **add_code_cell(path, source, position_index, execute)** - Add code cell (executes by default).
+   Both add tools: `position_index` 0..cell count or omitted (append); other
+   values raise `IndexError` (`resolve_insert_position`), never a silent append
 9. **edit_code_cell(path, position_index, source, execute)** - Edit code cell (re-executes by default)
 10. **add_markdown_cell(path, source, position_index)** - Add markdown cell
 11. **edit_markdown_cell(path, position_index, source)** - Edit markdown cell
@@ -349,7 +354,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-426 tests total across:
+438 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -399,6 +404,9 @@ position_index), and include a recovery hint for the common failure mode.
   limits)
 - `tests/test_extension.py` - Extension tests (endpoint traits, both serving modes)
 - `tests/test_cell_images.py` - Image extraction and the `view_cell_image` tool
+- `tests/test_tool_responses.py` - Out-of-range insert positions raise (both
+  adapters); `list_notebook_kernels` has no argv/env; image placeholders
+  point to `view_cell_image`
 - `tests/test_code_mode_images.py` - Image forwarding through Code Mode
   `execute` (real FastMCP client)
 - `tests/test_asgi_bridge.py` - ASGI bridge (scope, streaming flushes, disconnects,
