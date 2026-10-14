@@ -69,6 +69,27 @@
 
 ### Bugs fixed
 
+- Kernel output messages are handled as JupyterLab handles them, in the
+  notebook and in the MCP response:
+  - `clear_output` was ignored, so every frame of a progress loop
+    (`clear_output(wait=True)` + redraw: tqdm, live plots) piled up; now the
+    cell keeps the last frame. `wait=True` clears when the next output
+    arrives.
+  - `update_display_data` was dropped, so a display updated through its
+    handle kept its first content; now it shows the update.
+  - Each print was its own output; consecutive stream chunks are now one.
+  - In the MCP response (not the notebook), lines redrawn with `\r` (tqdm
+    on stderr) show only their last frame.
+  - Progress notifications count redrawn frames too.
+- An MCP response carries at most 30 outputs per cell (the first and last
+  15, with a marker for the rest); a cell calling `display()` in a loop
+  returned thousands. The notebook keeps all of them.
+- If another server-side client connected to a notebook's kernel after
+  ours (e.g. an extension calling `km.client()`), cells sent by the MCP
+  tools never ran: they timed out and the error advised restarting the
+  kernel. Both clients cloned the kernel manager's session, so they shared
+  one socket identity, and ipykernel hands an identity over to its newest
+  connection. The tools' kernel client now has its own session.
 - With the Jupyter root directory behind a symlink (macOS `/tmp` and
   `/var`, symlinked home or project directories, container volumes), the
   tools never found the notebook's YDoc room: they looked it up by the

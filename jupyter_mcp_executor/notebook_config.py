@@ -28,6 +28,9 @@ class OutputFilterConfig:
     max_text_length: int = 4000
     truncation_head: int = 3000  # chars kept from the start when truncating
     truncation_tail: int = 500  # chars kept from the end when truncating
+    # Outputs of one cell in an MCP response: the first half and the last
+    # half are kept, with a marker for the omitted ones in between.
+    max_outputs: int = 30
 
 
 @dataclass(frozen=True)

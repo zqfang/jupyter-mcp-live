@@ -340,12 +340,15 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-345 tests total across:
+364 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
 - `tests/test_kernel_control.py` - Interrupt/restart tools and the lookup-only
   `find_kernel_for_notebook`
+- `tests/test_output_messages.py` - Stream merging, clear_output,
+  update_display_data and the response cap (`collect_outputs`, `OutputFilter`)
+- `tests/integration/test_kernel_outputs.py` - The same against a real kernel
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
 - `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
@@ -584,6 +587,26 @@ two notebooks with the same name in different folders must never share a
 kernel. Non-notebook sessions (e.g., consoles) are skipped per-session, not
 allowed to abort the scan.
 
+### Output Messages
+
+`collect_outputs()` keeps an execution's outputs as JupyterLab shows them
+(`_CellOutputs` in `execution_utils.py`): consecutive stream chunks of one
+name are one output; `clear_output` empties the list (`wait=True`: when the
+next output arrives, so a redrawn frame replaces the last); and
+`update_display_data` updates the outputs with that `transient.display_id`
+(only displays of the same execution are tracked). Live streaming gets
+`on_output(chunk)` for appends and `on_reset(outputs)` — the streamer then
+rewrites the cell in one CRDT transaction (no empty-output flash) — for
+clears and updates; progress gets both. Merged stream text is kept as chunks
+and joined when read (re-joining per chunk was quadratic: 6.6 s for 100k log
+lines). `OutputFilter.filter_outputs()` caps a response at
+`OUTPUT_FILTER_CONFIG.max_outputs` (30) per cell — first and last half, with
+a marker naming the omitted index range — and collapses `\r` redraws to the
+last frame of each line (response only; the notebook keeps raw text).
+`tests/test_output_messages.py` also replays 300 random message sequences
+into a real YNotebook: the streamed cell must equal the returned outputs,
+since a completely streamed run only writes the execution count.
+
 ### Live Output Streaming (open notebooks)
 
 For collaborative (YDoc) notebooks, outputs are **streamed into the cell as
@@ -662,6 +685,12 @@ executions instead of everything appearing when the MCP tool call returns:
   SANDBOX_MAX_MEMORY_BYTES` (100 MB, fastmcp's default): passing limits
   replaces fastmcp's defaults wholesale, and Monty treats an omitted key as
   unlimited.
+- The engine's kernel client gets its **own `Session`** (the kernel's key and
+  signature scheme): `kernel.client()` alone clones the manager's session,
+  i.e. the same shell DEALER identity as every other server-side client, and
+  ipykernel's `ROUTER_HANDOVER` gives the identity to the newest connection —
+  our requests were then dropped and timed out
+  (`tests/integration/test_kernel_client_identity.py`).
 - Kernel clients are cached per kernel in `ExecutionEngine`, and executions
   on the same kernel are serialized with a per-kernel asyncio lock (a shared
   client's iopub channel must have a single consumer). The cached client is
