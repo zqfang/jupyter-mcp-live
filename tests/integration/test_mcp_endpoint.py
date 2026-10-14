@@ -198,6 +198,17 @@ class TestAuthorizerDenial:
 
         assert response.code == 403
 
+    @pytest.mark.parametrize("method", ["GET", "DELETE"])
+    @pytest.mark.usefixtures("mcp_extension")
+    async def test_sse_stream_and_session_end_are_forbidden_too(self, jp_fetch, method):
+        """GET would otherwise only need "read" permission (the decorator's
+        default for GET), letting a read-only user watch tool output."""
+        response = await jp_fetch(
+            "mcp", method=method, headers=_mcp_headers(), raise_error=False
+        )
+
+        assert response.code == 403
+
 
 class TestCustomEndpointPath:
     """mcp_endpoint_path moves the endpoint (e.g. to avoid other /mcp users)."""

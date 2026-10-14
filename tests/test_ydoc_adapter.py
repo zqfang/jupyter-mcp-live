@@ -217,6 +217,36 @@ class TestReadCellAttachments:
         assert cell.attachments == {}
 
 
+class TestReadCellNormalization:
+    """read_cell returns cells as jupyter_ydoc saves them (YNotebook.get_cell)."""
+
+    @pytest.mark.asyncio
+    async def test_numbers_from_yjs_are_ints(self):
+        """Yjs stores numbers as floats: a cell run in JupyterLab must not
+        report execution_count 5.0."""
+        adapter, pos = await make_adapter_with_code_cell()
+        ycell = adapter.ydoc.ycells[pos]
+        ycell["execution_count"] = 5.0
+
+        cell = await adapter.read_cell(pos)
+
+        assert cell.execution_count == 5
+        assert isinstance(cell.execution_count, int)
+
+    @pytest.mark.asyncio
+    async def test_cell_id_is_kept_for_nbformat_4_4(self):
+        """get_cell() drops ids of nbformat <= 4.4 notebooks, as saving does;
+        the tools still need them to find the cell again."""
+        adapter, pos = await make_adapter_with_code_cell()
+        adapter.ydoc._ymeta["nbformat"] = 4
+        adapter.ydoc._ymeta["nbformat_minor"] = 4
+        cell_id = str(adapter.ydoc.ycells[pos]["id"])
+
+        cell = await adapter.read_cell(pos)
+
+        assert cell.cell_id == cell_id
+
+
 @pytest.mark.asyncio
 async def test_rewriting_outputs_is_one_transaction():
     """clear + extend as two transactions shows browsers an empty output area

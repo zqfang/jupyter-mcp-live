@@ -111,20 +111,21 @@ class YDocAdapter(NotebookAdapter):
             msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
             raise IndexError(msg)
 
-        ycell = self.ydoc.ycells[position]
-
-        # Use to_py() to recursively convert all pycrdt types (YText→str,
-        # Map→dict, Array→list) into plain Python objects.
-        ycell_py = ycell.to_py()
+        # The cell as jupyter_ydoc saves it: plain Python objects, numbers
+        # from Yjs (floats) back to ints, no transient execution_state.
+        cell = self.ydoc.get_cell(position)
+        # get_cell() drops the ids of nbformat <= 4.4 notebooks, as saving
+        # does; the tools need them to find the cell again.
+        cell_id = self.ydoc.ycells[position].get("id", "")
 
         return CellContent(
-            source=str(ycell_py.get("source", "")),
-            cell_type=str(ycell_py.get("cell_type", "code")),
-            metadata=dict(ycell_py.get("metadata", {})),
-            execution_count=ycell_py.get("execution_count"),
-            outputs=list(ycell_py.get("outputs", [])),
-            cell_id=str(ycell_py.get("id", "")),
-            attachments=dict(ycell_py.get("attachments") or {}),
+            source=str(cell.get("source", "")),
+            cell_type=str(cell.get("cell_type", "code")),
+            metadata=dict(cell.get("metadata", {})),
+            execution_count=cell.get("execution_count"),
+            outputs=list(cell.get("outputs", [])),
+            cell_id=str(cell_id),
+            attachments=dict(cell.get("attachments") or {}),
         )
 
     async def add_cell(
@@ -170,10 +171,6 @@ class YDocAdapter(NotebookAdapter):
         logger.info(
             f"Added {cell_content.cell_type} cell via YDoc at position {position}"
         )
-
-        # Set activeCellIndex in YDoc metadata (instant, no browser needed)
-        self._set_active_cell_index(position)
-
         return position, cell_id
 
     async def edit_cell(self, position: int, content: CellContent) -> None:
@@ -215,26 +212,6 @@ class YDocAdapter(NotebookAdapter):
             ycell["execution_count"] = content.execution_count
 
         logger.info(f"Edited {content.cell_type} cell via YDoc at position {position}")
-
-        # Set activeCellIndex in YDoc metadata (instant, no browser needed)
-        self._set_active_cell_index(position)
-
-    def _set_active_cell_index(self, position: int) -> None:
-        """Set activeCellIndex in YDoc metadata so JupyterLab activates the cell.
-
-        Instant, in-memory hint — no browser required.
-
-        Best-effort; jupyter_ydoc exposes the meta map as ``ymeta`` in some
-        versions and ``_ymeta`` in others (e.g. 3.4.x).
-        """
-        try:
-            ymeta = getattr(self.ydoc, "ymeta", None) or getattr(
-                self.ydoc, "_ymeta", None
-            )
-            if ymeta is not None:
-                ymeta["activeCellIndex"] = position
-        except Exception:  # non-critical: scroll hint only
-            logger.debug("Could not set activeCellIndex scroll hint", exc_info=True)
 
     async def delete_cell(self, position: int) -> None:
         """Delete cell from YDoc."""

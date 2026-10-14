@@ -11,6 +11,7 @@ from nbformat.v4 import new_notebook
 
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import (
+    default_kernel_name,
     get_kernel_info,
     is_kernel_alive,
     resolve_kernel_name,
@@ -68,7 +69,7 @@ class KernelManager:
     async def setup_notebook(
         self,
         notebook_path: str,
-        kernel_name: str = "python3",
+        kernel_name: str | None = None,
         force_new_kernel: bool = False,
     ) -> NotebookSetupResult:
         """Setup a notebook (create if needed) and start or reuse kernel.
@@ -88,13 +89,16 @@ class KernelManager:
 
         Args:
             notebook_path: Path to notebook
-            kernel_name: Name of kernel to use (only used if starting new kernel)
+            kernel_name: Name of kernel to use (only used if starting new
+                kernel); None means the server's default kernel
             force_new_kernel: If True, always start a new kernel even if one exists
 
         Returns:
             NotebookSetupResult with notebook info and kernel details
         """
         notebook_path = normalize_path(notebook_path)
+        if kernel_name is None:
+            kernel_name = default_kernel_name(get_server_context())
 
         # Step 1: Check if notebook file exists
         notebook_exists = Path(notebook_path).exists()
@@ -278,7 +282,8 @@ class KernelManager:
         Args:
             notebook_path: Path to notebook
             kernel_name: Kernel to use only if a new kernel must be started;
-                defaults to the notebook's kernelspec metadata, then "python3"
+                defaults to the notebook's kernelspec metadata, then the
+                server's default kernel
 
         Returns:
             Tuple of (kernel_id, started_new). kernel_id is None only if no
@@ -300,15 +305,16 @@ class KernelManager:
 
         # 3. Start a new session-backed kernel.  The name comes from notebook
         # metadata here (not an explicit user request), so resolution stays
-        # lenient: an alien kernelspec name falls back to python3 with a
-        # warning instead of making every execution fail.
+        # lenient: an alien kernelspec name falls back to the server's default
+        # kernel with a warning instead of making every execution fail.
+        default_name = default_kernel_name(serverapp)
         if kernel_name is None:
             kernel_name = (
-                await self._read_notebook_kernel_name(notebook_path) or "python3"
+                await self._read_notebook_kernel_name(notebook_path) or default_name
             )
         available_kernels = await self.list_notebook_kernels()
         kernel_name = resolve_kernel_name(
-            kernel_name, available_kernels.get("kernelspecs", {}), fallback="python3"
+            kernel_name, available_kernels.get("kernelspecs", {}), fallback=default_name
         )
         kernel_id = await self._start_kernel_for_notebook(notebook_path, kernel_name)
         return kernel_id, True
@@ -904,22 +910,23 @@ class KernelManager:
     def _set_ydoc_kernelspec(ydoc: Any, kernelspec: dict[str, str]) -> bool:
         """Set the kernelspec in a live YNotebook's metadata map.
 
-        jupyter_ydoc exposes the meta map as ``ymeta`` in some versions and
-        ``_ymeta`` in others (e.g. 3.4.x).  Returns False when the structure
-        is not available so the caller can fall back to a disk write.
+        jupyter_ydoc has no public setter for one metadata key (``set()``
+        replaces the whole document), so this writes its meta map ``_ymeta``.
+        Returns False when that fails so the caller can fall back to a disk
+        write.
         """
         try:
             from pycrdt import Map  # noqa: PLC0415
 
-            ymeta = getattr(ydoc, "ymeta", None) or getattr(ydoc, "_ymeta", None)
-            if ymeta is None:
-                return False
+            ymeta = ydoc._ymeta
             metadata = ymeta.get("metadata")
             if metadata is None:
                 ymeta["metadata"] = Map({"kernelspec": kernelspec})
             else:
                 metadata["kernelspec"] = kernelspec
         except Exception as e:  # noqa: BLE001 - caller falls back to disk write
-            logger.debug(f"Could not set kernelspec via YDoc: {e}")
+            # Loud on purpose: the disk write lands behind the open notebook,
+            # and JupyterLab reloads it from the file.
+            logger.warning(f"Could not set kernelspec via YDoc: {e!r}")
             return False
         return True

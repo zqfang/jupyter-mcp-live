@@ -63,7 +63,9 @@ async def list_notebook_sessions() -> list[dict[str, Any]]:
 # Apply collaborative awareness
 @collaborative_tool(user=user_info)
 async def setup_notebook(
-    notebook_path: str, kernel_name: str = "python3", force_new_kernel: bool = False
+    notebook_path: str,
+    kernel_name: str | None = None,
+    force_new_kernel: bool = False,
 ) -> dict[str, Any]:
     """Setup a notebook and start/reuse its kernel — CALL THIS FIRST, before executing code or modifying cells.
 
@@ -83,7 +85,8 @@ async def setup_notebook(
 
     Args:
         notebook_path: Path to the notebook (relative to the Jupyter root, or absolute inside it)
-        kernel_name: Kernel spec name (default: "python3").
+        kernel_name: Kernel spec name (default: the server's default kernel,
+            normally "python3").
             Examples: "python3", "ir" (R), "julia-1.10". For R, "r"/"ir"/"irkernel"
             all auto-detect the available R kernel. Ignored when reusing an
             existing kernel.

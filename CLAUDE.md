@@ -171,7 +171,14 @@ through unchanged.
 `resolve_kernel_name()` raises `ValueError` (listing available kernels) when
 an explicitly requested kernel can't be resolved — it no longer silently
 falls back to python3. The lenient fallback is only used for names read from
-notebook metadata (auto-start path), via `fallback="python3"`.
+notebook metadata (auto-start path), via `fallback=default_kernel_name(...)`.
+
+**No kernel name means the server's default kernel**:
+`kernel_utils.default_kernel_name(serverapp)` returns
+`MappingKernelManager.default_kernel_name` (what JupyterLab offers for a new
+notebook; jupyter_client's `NATIVE_KERNEL_NAME`, python3, without a server).
+`setup_notebook(kernel_name=None)` and the auto-start path use it; there is
+no `"python3"` literal in the code paths.
 
 ## Module Structure
 
@@ -340,7 +347,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-374 tests total across:
+384 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -372,6 +379,8 @@ position_index), and include a recovery hint for the common failure mode.
   that reproduce jupyter_server's 404-for-dead-kernel contract
 - `tests/test_imports.py` - Import validation tests
 - `tests/test_kernel_utils.py` - Kernel utilities tests
+- `tests/test_default_kernel.py` - Without a kernel name, the server's
+  `default_kernel_name` is started (setup_notebook and auto-start)
 - `tests/test_path_utils.py` - `normalize_path()`: notebooks only, inside the
   Jupyter root (relative, absolute, symlinks)
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
@@ -439,8 +448,12 @@ print(tracker.get_all_tracked())
 - By default the MCP app is served **in-process** by `MCPHandler` at
   `{base_url}<mcp_endpoint_path>` (default `mcp`) on the Jupyter port. Under
   JupyterHub that is `/user/<name>/mcp` through the Hub proxy.
-- `MCPHandler.prepare()` requires a Jupyter-authenticated user (403 otherwise,
-  never a login redirect) and `execute` permission on `kernels`. Jupyter's
+- `MCPHandler` requires a Jupyter-authenticated user (403 otherwise, never a
+  login redirect: `prepare(_redirect_to_login=False)`) and `execute`
+  permission on `kernels`, via jupyter_server's `@authorized` on `get`/`post`/
+  `delete`. The action is passed explicitly: the decorator's default derives
+  it from the HTTP method (GET -> `read`), which would let a read-only user
+  open the SSE stream. Jupyter's
   `check_host` and XSRF rules still apply: a server with auth disabled treats
   requests as anonymous and rejects MCP `POST`s for missing XSRF — by design.
 - FastMCP still implements the whole transport (sessions, SSE, protocol

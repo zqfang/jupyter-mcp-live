@@ -3,29 +3,36 @@
 import logging
 from typing import Any
 
+from jupyter_client.kernelspec import NATIVE_KERNEL_NAME
+
 logger = logging.getLogger(__name__)
 
 
 def is_kernel_alive(serverapp: Any, kernel_id: str | None) -> bool:
     """Return True if `kernel_id` is still running on this server.
 
-    Do not inline this as `except KeyError`. jupyter_client's MultiKernelManager
-    raises KeyError for an unknown id, but jupyter_server's MappingKernelManager
-    overrides _check_kernel_id to raise ``tornado.web.HTTPError(404)`` instead
-    (kernelmanager.py: 'Kernel does not exist: %s'). A KeyError-only guard therefore
-    never fires under a real server: the 404 escapes to the MCP caller as a tool
-    error, every "kernel died -> fall back" branch becomes dead code, and the caller
-    is pushed into force_new_kernel, which is how one notebook ends up with several
-    kernels.
+    Membership is the kernel manager's own check (``MultiKernelManager``
+    ``__contains__``; ``get_kernel`` uses it too). Do not replace it with
+    ``get_kernel`` + ``except KeyError``: jupyter_server's MappingKernelManager
+    raises ``tornado.web.HTTPError(404)`` for an unknown id, not KeyError, so
+    the 404 would escape to the MCP caller and every "kernel died -> fall
+    back" branch would be dead code.
     """
     if not serverapp or not kernel_id:
         return False
-    try:
-        serverapp.kernel_manager.get_kernel(kernel_id)
-    # KeyError (jupyter_client) or web.HTTPError 404 (jupyter_server)
-    except Exception:  # noqa: BLE001
-        return False
-    return True
+    return kernel_id in serverapp.kernel_manager
+
+
+def default_kernel_name(serverapp: Any) -> str:
+    """The kernel to start when none was requested: the server's default.
+
+    ``MappingKernelManager.default_kernel_name`` is what JupyterLab offers for
+    a new notebook (python3 unless configured); jupyter_client's native
+    kernel without a server.
+    """
+    kernel_manager = getattr(serverapp, "kernel_manager", None)
+    name = getattr(kernel_manager, "default_kernel_name", None)
+    return name if isinstance(name, str) and name else NATIVE_KERNEL_NAME
 
 
 def detect_kernel_language_from_spec(kernel_spec: dict[str, Any]) -> str | None:
@@ -176,16 +183,16 @@ def resolve_kernel_name(
     Args:
         requested_name: Requested kernel name or language
         kernelspecs: Available kernel specifications
-        fallback: Fallback kernel name if resolution fails. When None
-            (default), an unresolvable name raises ValueError instead of
-            silently running code on the wrong kernel.
+        fallback: Fallback kernel name if resolution fails, used only if it
+            is installed. When None (default), an unresolvable name raises
+            ValueError instead of silently running code on the wrong kernel.
 
     Returns:
         Resolved kernel name
 
     Raises:
-        ValueError: If the name cannot be resolved and no fallback is given.
-            The message lists the available kernels.
+        ValueError: If the name cannot be resolved and there is no installed
+            fallback. The message lists the available kernels.
 
     Example:
         >>> specs = {
@@ -233,9 +240,10 @@ def resolve_kernel_name(
             )
             return language_match
 
-    # 4. Fallback or fail loudly
+    # 4. Fallback or fail loudly. An uninstalled fallback (e.g. a misconfigured
+    # default kernel) would only fail later, at kernel start, less helpfully.
     available = list(kernelspecs.keys())
-    if fallback is not None:
+    if fallback is not None and fallback in kernelspecs:
         logger.warning(
             f"Kernel '{requested_name}' not found. "
             f"Available: {available}. Using fallback: {fallback}"

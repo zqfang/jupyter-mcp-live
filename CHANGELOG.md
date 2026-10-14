@@ -69,6 +69,24 @@
 
 ### Bugs fixed
 
+- Without a kernel name, `setup_notebook` (and executing in a notebook whose
+  metadata names no kernel) now starts the server's default kernel
+  (`MappingKernelManager.default_kernel_name`, as JupyterLab does) instead
+  of always `python3`. `setup_notebook`'s `kernel_name` defaults to `None`.
+  If the configured default kernel is not installed, both paths fail with
+  an error listing the available kernels: the lenient fallback for kernel
+  names from notebook metadata is now used only if it is installed (the
+  old `python3` fallback was not checked either, and failed later at
+  kernel start).
+- `read_cell` / `view_notebook` on an open notebook reported numbers as
+  JupyterLab's Yjs stores them: a cell run there had `execution_count: 5.0`.
+  Cells are now read with `YNotebook.get_cell()`, as jupyter_ydoc saves them
+  (integral floats in outputs and metadata, e.g. a JSON output's `1.0`, read
+  as `1`, as they are written to disk).
+- Adding or editing a cell in an open notebook no longer writes an
+  `activeCellIndex` key to the shared notebook metadata. Nothing in
+  JupyterLab reads it (the active cell is a widget property), so every
+  edit only cost an extra broadcast and autosave.
 - YDoc rooms the tools used without a browser are now cleaned up. A room
   created while the notebook was not open in JupyterLab, or one edited after
   the last browser left, stayed in memory with a file watcher polling every
@@ -166,6 +184,16 @@
   single-user server's internal address.
 - `pytest.ini` used the setup.cfg header `[tool:pytest]` and was ignored by
   pytest; it now takes effect (see the file for the kept settings).
+
+### Maintenance
+
+- Official APIs instead of hand-written equivalents: jupyter_server's
+  `@authorized` for the MCP endpoint's permission check (GET, POST and
+  DELETE all need `execute` on `kernels`), `kernel_id in kernel_manager` for
+  kernel liveness, `YNotebook.get_cell()` for reading cells. Kernel output
+  messages are still converted by hand: `nbformat.v4.output_from_msg`
+  raises on fields some kernels omit and validates every output against
+  the JSON schema, too slow for chatty cells.
 
 ## 0.5.0 (Unreleased)
 
