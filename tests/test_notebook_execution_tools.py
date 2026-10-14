@@ -726,6 +726,115 @@ class TestSetupNotebook:
         assert result["kernel_id"] is not None
         assert len(mock_serverapp.kernel_manager.kernels) == 1
 
+    @pytest.mark.asyncio
+    async def test_setup_notebook_reused_session_kernel_keeps_its_name(
+        self, temp_notebook, mock_serverapp
+    ):
+        """A reused session kernel reports its own name, not the requested one.
+
+        The requested name is resolved only when a kernel is started, so even an
+        unknown name does not raise while an existing kernel is reused.
+        """
+        set_server_context(mock_serverapp)
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("ir")
+        mock_serverapp.session_manager.add_session(
+            normalize_path(temp_notebook), kernel_id, "ir"
+        )
+
+        result = await setup_notebook(temp_notebook, kernel_name="nonexistent_kernel")
+
+        assert result["kernel_id"] == kernel_id
+        assert result["kernel_name"] == "ir"
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_reused_tracked_kernel_keeps_its_name(
+        self, temp_notebook, mock_serverapp
+    ):
+        """A reused tracked kernel (no session) reports the kernel's own name."""
+        set_server_context(mock_serverapp)
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("ir")
+        get_kernel_tracker().track(normalize_path(temp_notebook), kernel_id)
+
+        result = await setup_notebook(temp_notebook, kernel_name="python3")
+
+        assert result["kernel_id"] == kernel_id
+        assert result["kernel_name"] == "ir"
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_missing_file_reuses_live_kernel(
+        self, tmp_path, mock_serverapp
+    ):
+        """A missing notebook is created for its still-running kernel.
+
+        No second kernel is started, and the new file's kernelspec names the
+        reused kernel rather than the requested one.
+        """
+        set_server_context(mock_serverapp)
+        nb_path = tmp_path / "gone.ipynb"
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("ir")
+        get_kernel_tracker().track(normalize_path(str(nb_path)), kernel_id)
+
+        result = await setup_notebook(str(nb_path), kernel_name="python3")
+
+        assert result["exists"] is False
+        assert result["kernel_id"] == kernel_id
+        assert result["kernel_name"] == "ir"
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+        kernelspec = read_notebook(nb_path).metadata["kernelspec"]
+        assert kernelspec["name"] == "ir"
+        assert kernelspec["display_name"] == "R"
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_force_new_kernel_without_running_kernel(
+        self, temp_notebook, mock_serverapp
+    ):
+        """force_new_kernel with nothing to replace simply starts a kernel."""
+        set_server_context(mock_serverapp)
+
+        result = await setup_notebook(
+            temp_notebook, kernel_name="python3", force_new_kernel=True
+        )
+
+        assert result["kernel_id"] is not None
+        assert len(mock_serverapp.kernel_manager.kernels) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_force_new_kernel_stops_old_one_first(
+        self, temp_notebook, mock_serverapp
+    ):
+        """The old kernel is stopped before the requested name is resolved.
+
+        So an unknown kernel name still raises, but only after the replaced
+        session and kernel are gone.
+        """
+        set_server_context(mock_serverapp)
+        kernel_id = await mock_serverapp.kernel_manager.start_kernel("python3")
+        mock_serverapp.session_manager.add_session(
+            normalize_path(temp_notebook), kernel_id, "python3"
+        )
+
+        with pytest.raises(ValueError, match="nonexistent_kernel"):
+            await setup_notebook(
+                temp_notebook, kernel_name="nonexistent_kernel", force_new_kernel=True
+            )
+
+        assert mock_serverapp.kernel_manager.kernels == {}
+        assert await mock_serverapp.session_manager.list_sessions() == []
+
+    @pytest.mark.asyncio
+    async def test_setup_notebook_unknown_kernel_creates_no_file(
+        self, tmp_path, mock_serverapp
+    ):
+        """An unknown kernel name fails before the new notebook is written."""
+        set_server_context(mock_serverapp)
+        nb_path = tmp_path / "never.ipynb"
+
+        with pytest.raises(ValueError, match="nonexistent_kernel"):
+            await setup_notebook(str(nb_path), kernel_name="nonexistent_kernel")
+
+        assert not nb_path.exists()
+
 
 class TestSwitchNotebookKernel:
     """Test switch_notebook_kernel function."""
