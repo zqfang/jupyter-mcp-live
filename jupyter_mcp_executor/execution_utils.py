@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 # Async callback fired once per collected output (live streaming hook)
 OutputCallback = Callable[[dict[str, Any]], Awaitable[None]]
+# Async callback fired with the full output list after a clear or an update
+ResetCallback = Callable[[list[dict[str, Any]]], Awaitable[None]]
 # Best-effort kernel interrupt (SIGINT to the running cell)
 InterruptFn = Callable[[], Awaitable[None]]
 
@@ -90,12 +92,104 @@ async def wait_for_execute_reply(
         return reply_content
 
 
+class _CellOutputs:
+    """The outputs of one execution, kept as JupyterLab would show them.
+
+    - Consecutive stream chunks of the same name are one output (each print
+      is its own iopub message).
+    - ``clear_output`` empties the list; with ``wait=True`` only when the next
+      output arrives, so a redrawn frame replaces the previous one.
+    - ``update_display_data`` updates the outputs shown with that display_id
+      (displays of other cells are not tracked here).
+
+    Live streaming gets ``on_output(chunk)`` for appends and
+    ``on_reset(outputs)`` when the list changed otherwise. A failing callback
+    disables both for the rest of the execution; it never aborts it.
+    """
+
+    def __init__(
+        self, on_output: OutputCallback | None, on_reset: ResetCallback | None
+    ) -> None:
+        self.outputs: list[dict[str, Any]] = []
+        self._displays: dict[str, list[int]] = {}
+        self._clear_pending = False
+        self._on_output = on_output
+        self._on_reset = on_reset
+        self._live = True
+
+    async def add(self, output: dict[str, Any], display_id: str | None) -> None:
+        if self._clear_pending:
+            self._clear()
+            self._append(output, display_id)
+            await self._notify(self._on_reset, list(self.outputs))
+            return
+        self._append(output, display_id)
+        await self._notify(self._on_output, output)
+
+    async def clear(self, *, wait: bool) -> None:
+        if wait:
+            self._clear_pending = True
+            return
+        self._clear()
+        await self._notify(self._on_reset, [])
+
+    async def update(
+        self, display_id: str, data: dict[str, Any], metadata: dict[str, Any]
+    ) -> None:
+        indexes = self._displays.get(display_id)
+        if not indexes:
+            return
+        for index in indexes:
+            self.outputs[index] = {
+                **self.outputs[index],
+                "data": data,
+                "metadata": metadata,
+            }
+        await self._notify(self._on_reset, list(self.outputs))
+
+    def _clear(self) -> None:
+        self.outputs = []
+        self._displays = {}
+        self._clear_pending = False
+
+    def _append(self, output: dict[str, Any], display_id: str | None) -> None:
+        last = self.outputs[-1] if self.outputs else None
+        if (
+            output["output_type"] == "stream"
+            and last is not None
+            and last["output_type"] == "stream"
+            and last["name"] == output["name"]
+        ):
+            # A new dict: the previous one may already have been handed out.
+            self.outputs[-1] = {**last, "text": last["text"] + output["text"]}
+            return
+        if display_id is not None:
+            self._displays.setdefault(display_id, []).append(len(self.outputs))
+        self.outputs.append(output)
+
+    async def _notify(
+        self, callback: Callable[[Any], Awaitable[None]] | None, arg: Any
+    ) -> None:
+        if callback is None or not self._live:
+            return
+        try:
+            await callback(arg)
+        except Exception:
+            logger.warning(
+                "Output streaming callback failed; live updates disabled for "
+                "the rest of this execution",
+                exc_info=True,
+            )
+            self._live = False
+
+
 async def collect_outputs(
     client: Any,
     msg_id: str,
     execution_count: int | None,
     deadline: float | Callable[[], float],
     on_output: OutputCallback | None = None,
+    on_reset: ResetCallback | None = None,
 ) -> tuple[list[dict], str, str | None]:
     """Collect outputs from iopub channel until the kernel reports idle.
 
@@ -108,14 +202,18 @@ async def collect_outputs(
         deadline: Absolute event-loop time after which collection times out,
             or a function returning it (re-read every poll, so a caller can
             extend it, e.g. to drain output after interrupting the kernel)
-        on_output: Optional async callback fired once per collected output as
-            it arrives (live streaming). Callback errors are logged and
-            disable further callbacks; they never abort execution.
+        on_output: Optional async callback fired once per output as it
+            arrives (live streaming). Stream chunks are passed one by one,
+            although the returned list merges consecutive ones.
+        on_reset: Optional async callback fired with the full output list
+            when it changed other than by an append (clear_output,
+            update_display_data). Callback errors are logged and disable
+            both callbacks; they never abort execution.
 
     Returns:
         Tuple of (outputs, status, error_msg)
     """
-    outputs = []
+    cell = _CellOutputs(on_output, on_reset)
     status = "ok"
     error_msg = None
 
@@ -156,8 +254,7 @@ async def collect_outputs(
         if msg["parent_header"].get("msg_id") != msg_id:
             continue
 
-        # Handle different message types
-        output: dict[str, Any] | None = None
+        display_id = (content.get("transient") or {}).get("display_id")
 
         if msg_type == "execute_result":
             # Validate execution_count when the caller already knows it.
@@ -169,56 +266,63 @@ async def collect_outputs(
                     f"execution_count mismatch: shell={execution_count}, "
                     f"execute_result={result_exec_count}"
                 )
-
-            output = {
-                "output_type": "execute_result",
-                "data": content.get("data", {}),
-                "metadata": content.get("metadata", {}),
-                "execution_count": execution_count or result_exec_count,
-            }
+            await cell.add(
+                {
+                    "output_type": "execute_result",
+                    "data": content.get("data", {}),
+                    "metadata": content.get("metadata", {}),
+                    "execution_count": execution_count or result_exec_count,
+                },
+                display_id,
+            )
 
         elif msg_type == "stream":
-            output = {
-                "output_type": "stream",
-                "name": content.get("name", "stdout"),
-                "text": content.get("text", ""),
-            }
+            await cell.add(
+                {
+                    "output_type": "stream",
+                    "name": content.get("name", "stdout"),
+                    "text": content.get("text", ""),
+                },
+                None,
+            )
 
         elif msg_type == "display_data":
-            output = {
-                "output_type": "display_data",
-                "data": content.get("data", {}),
-                "metadata": content.get("metadata", {}),
-            }
+            await cell.add(
+                {
+                    "output_type": "display_data",
+                    "data": content.get("data", {}),
+                    "metadata": content.get("metadata", {}),
+                },
+                display_id,
+            )
+
+        elif msg_type == "update_display_data":
+            if display_id is not None:
+                await cell.update(
+                    display_id, content.get("data", {}), content.get("metadata", {})
+                )
+
+        elif msg_type == "clear_output":
+            await cell.clear(wait=bool(content.get("wait", False)))
 
         elif msg_type == "error":
             status = "error"
             error_msg = "\n".join(content.get("traceback", []))
-            output = {
-                "output_type": "error",
-                "ename": content.get("ename", ""),
-                "evalue": content.get("evalue", ""),
-                "traceback": content.get("traceback", []),
-            }
+            await cell.add(
+                {
+                    "output_type": "error",
+                    "ename": content.get("ename", ""),
+                    "evalue": content.get("evalue", ""),
+                    "traceback": content.get("traceback", []),
+                },
+                None,
+            )
 
         elif msg_type == "status" and content.get("execution_state") == "idle":
             # Execution complete
             break
 
-        if output is not None:
-            outputs.append(output)
-            if on_output is not None:
-                try:
-                    await on_output(output)
-                except Exception:
-                    logger.warning(
-                        "Output streaming callback failed; live updates "
-                        "disabled for the rest of this execution",
-                        exc_info=True,
-                    )
-                    on_output = None
-
-    return outputs, status, error_msg
+    return cell.outputs, status, error_msg
 
 
 async def execute_code_on_kernel(
@@ -228,6 +332,7 @@ async def execute_code_on_kernel(
     timeout: float,
     on_output: OutputCallback | None = None,
     interrupt: InterruptFn | None = None,
+    on_reset: ResetCallback | None = None,
     interrupt_grace: float | None = None,
     cancel_cleanup: list[asyncio.Task[None]] | None = None,
 ) -> dict[str, Any]:
@@ -260,6 +365,8 @@ async def execute_code_on_kernel(
         timeout: Execution timeout in seconds (total budget)
         on_output: Optional async callback fired per collected output
             (live streaming); see collect_outputs
+        on_reset: Optional async callback fired with the full output list
+            after a clear_output or update_display_data; see collect_outputs
         interrupt: Optional best-effort kernel interrupt
         interrupt_grace: Seconds to wait for idle after an interrupt;
             defaults to ``EXECUTION_CONFIG.interrupt_grace_secs``
@@ -295,7 +402,12 @@ async def execute_code_on_kernel(
     shell_task = asyncio.create_task(wait_for_execute_reply(client, msg_id, deadline))
     iopub_task = asyncio.create_task(
         collect_outputs(
-            client, msg_id, None, lambda: iopub_deadline, on_output=on_output
+            client,
+            msg_id,
+            None,
+            lambda: iopub_deadline,
+            on_output=on_output,
+            on_reset=on_reset,
         )
     )
     interrupted = False

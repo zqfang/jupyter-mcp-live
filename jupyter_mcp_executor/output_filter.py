@@ -181,6 +181,11 @@ class OutputFilter:
     def filter_outputs(outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter a list of outputs.
 
+        At most ``OUTPUT_FILTER_CONFIG.max_outputs`` are kept (the first and
+        the last ones, with a marker for those omitted), so a cell with
+        thousands of outputs (a display() per loop iteration) cannot flood
+        the response.
+
         Args:
             outputs: List of output dicts
 
@@ -190,7 +195,31 @@ class OutputFilter:
         if not outputs:
             return outputs
 
-        return [OutputFilter.filter_single_output(out) for out in outputs]
+        return [
+            OutputFilter.filter_single_output(out)
+            for out in OutputFilter._cap_count(outputs)
+        ]
+
+    @staticmethod
+    def _cap_count(outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep the first and last outputs of a long list, marking the gap."""
+        limit = OUTPUT_FILTER_CONFIG.max_outputs
+        if len(outputs) <= limit:
+            return outputs
+        head = limit // 2
+        tail = limit - head
+        omitted = len(outputs) - limit
+        marker = {
+            "output_type": "display_data",
+            "data": {
+                "text/plain": (
+                    f"[{omitted} outputs omitted from this response; "
+                    "the notebook keeps all of them]"
+                )
+            },
+            "metadata": {},
+        }
+        return [*outputs[:head], marker, *outputs[-tail:]]
 
     @staticmethod
     def filter_cells(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:

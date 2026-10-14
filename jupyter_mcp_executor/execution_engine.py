@@ -10,7 +10,11 @@ from jupyter_client.session import Session
 from jupyter_core.utils import ensure_async
 
 from jupyter_mcp_executor.execution_progress import ExecutionProgress
-from jupyter_mcp_executor.execution_utils import OutputCallback, execute_code_on_kernel
+from jupyter_mcp_executor.execution_utils import (
+    OutputCallback,
+    ResetCallback,
+    execute_code_on_kernel,
+)
 from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import is_kernel_alive
@@ -103,6 +107,17 @@ class _CellOutputStreamer:
         try:
             position = await self._locate_cell()
             await self._adapter.append_cell_output(position, output)
+        except Exception as e:  # noqa: BLE001 - streaming must never abort execution
+            logger.warning(f"Live output streaming disabled for this run: {e}")
+            self.streamed_ok = False
+
+    async def on_reset(self, outputs: list[dict[str, Any]]) -> None:
+        """Replace the cell's outputs (after clear_output or a display update)."""
+        if not self.streamed_ok:
+            return
+        try:
+            position = await self._locate_cell()
+            await self._adapter.update_cell_outputs(position, None, outputs)
         except Exception as e:  # noqa: BLE001 - streaming must never abort execution
             logger.warning(f"Live output streaming disabled for this run: {e}")
             self.streamed_ok = False
@@ -207,6 +222,7 @@ class ExecutionEngine:
         timeout: int | None = None,
         on_output: OutputCallback | None = None,
         progress_label: str | None = None,
+        on_reset: ResetCallback | None = None,
     ) -> ExecutionResult:
         """Execute code in a Jupyter kernel.
 
@@ -219,6 +235,9 @@ class ExecutionEngine:
             timeout: Maximum time in seconds to wait for execution
             on_output: Optional async callback fired per output as it arrives
                 (live streaming into the notebook)
+            on_reset: Optional async callback fired with the full output list
+                when it changed other than by an append (clear_output,
+                update_display_data)
             progress_label: Names the execution in MCP progress notifications
                 (e.g. "analysis.ipynb cell 3"); progress is sent only while
                 serving an MCP request.
@@ -290,6 +309,7 @@ class ExecutionEngine:
                     kernel_id,
                     timeout,
                     on_output=callback,
+                    on_reset=on_reset,
                     interrupt=lambda: ensure_async(
                         kernel_manager.interrupt_kernel(kernel_id)
                     ),
@@ -385,6 +405,7 @@ class ExecutionEngine:
                 kernel_id=kernel_id,
                 timeout=timeout,
                 on_output=streamer.on_output if streamer else None,
+                on_reset=streamer.on_reset if streamer else None,
                 progress_label=(
                     f"{Path(adapter.notebook_path).name} cell {cell_position}"
                 ),

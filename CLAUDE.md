@@ -340,12 +340,15 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-340 tests total across:
+352 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
 - `tests/test_kernel_control.py` - Interrupt/restart tools and the lookup-only
   `find_kernel_for_notebook`
+- `tests/test_output_messages.py` - Stream merging, clear_output,
+  update_display_data and the response cap (`collect_outputs`, `OutputFilter`)
+- `tests/integration/test_kernel_outputs.py` - The same against a real kernel
 - `tests/test_notebook_execution_tools.py` - Main test suite (MCP tool functions,
   including live output streaming)
 - `tests/test_ydoc_adapter.py` - YDocAdapter source/output operations against a
@@ -581,6 +584,19 @@ normalized, and `samefile` paths — deliberately **no filename-only matching**:
 two notebooks with the same name in different folders must never share a
 kernel. Non-notebook sessions (e.g., consoles) are skipped per-session, not
 allowed to abort the scan.
+
+### Output Messages
+
+`collect_outputs()` keeps an execution's outputs as JupyterLab shows them
+(`_CellOutputs` in `execution_utils.py`): consecutive stream chunks of one
+name are one output; `clear_output` empties the list (`wait=True`: when the
+next output arrives, so a redrawn frame replaces the last); and
+`update_display_data` updates the outputs with that `transient.display_id`
+(only displays of the same execution are tracked). Live streaming gets
+`on_output(chunk)` for appends and `on_reset(outputs)` — the streamer then
+rewrites the cell — for clears and updates. `OutputFilter.filter_outputs()`
+caps a response at `OUTPUT_FILTER_CONFIG.max_outputs` (30) per cell: first
+and last half, with a marker.
 
 ### Live Output Streaming (open notebooks)
 

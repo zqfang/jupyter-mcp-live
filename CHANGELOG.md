@@ -60,6 +60,18 @@
 
 ### Bugs fixed
 
+- Kernel output messages are handled as JupyterLab handles them, in the
+  notebook and in the MCP response:
+  - `clear_output` was ignored, so every frame of a progress loop
+    (`clear_output(wait=True)` + redraw: tqdm, live plots) piled up; now the
+    cell keeps the last frame. `wait=True` clears when the next output
+    arrives.
+  - `update_display_data` was dropped, so a display updated through its
+    handle kept its first content; now it shows the update.
+  - Each print was its own output; consecutive stream chunks are now one.
+- An MCP response carries at most 30 outputs per cell (the first and last
+  15, with a marker for the rest); a cell calling `display()` in a loop
+  returned thousands. The notebook keeps all of them.
 - If another server-side client connected to a notebook's kernel after
   ours (e.g. an extension calling `km.client()`), cells sent by the MCP
   tools never ran: they timed out and the error advised restarting the
