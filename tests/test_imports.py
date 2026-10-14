@@ -88,10 +88,10 @@ def test_import_models():
 
 def test_import_utilities():
     """Test that utility modules import correctly."""
-    from jupyter_mcp_executor.notebook_io import (  # noqa: PLC0415
-        NotebookContext,
-        read_notebook,
-        write_notebook,
+    from jupyter_mcp_executor.notebook_store import (  # noqa: PLC0415
+        editing_notebook,
+        load_notebook,
+        save_notebook,
     )
     from jupyter_mcp_executor.output_converter import (  # noqa: PLC0415
         convert_outputs_to_notebook_nodes,
@@ -103,9 +103,9 @@ def test_import_utilities():
     assert normalize_path is not None
     assert OutputFilter is not None
     assert convert_outputs_to_notebook_nodes is not None
-    assert NotebookContext is not None
-    assert read_notebook is not None
-    assert write_notebook is not None
+    assert editing_notebook is not None
+    assert load_notebook is not None
+    assert save_notebook is not None
 
 
 def test_import_config():

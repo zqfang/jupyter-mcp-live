@@ -102,7 +102,7 @@ Jupyter Server Infrastructure (kernels, YDoc, .ipynb files)
 **1. Adapter Pattern** - Automatically switches between:
 
 - `YDocAdapter`: For notebooks open in JupyterLab (real-time collaborative editing)
-- `NbformatAdapter`: For closed notebooks (file-based editing)
+- `NbformatAdapter`: For closed notebooks (saved through Jupyter's contents manager)
 
 **2. Service Layer** - Business logic separated into focused services:
 
@@ -223,7 +223,9 @@ no `"python3"` literal in the code paths.
 - `execution_progress.py` - MCP progress notifications during cell execution
   (`ExecutionProgress`)
 - `output_converter.py` - Output format conversion
-- `notebook_io.py` - File I/O operations
+- `notebook_store.py` - Load/save closed notebooks through the contents manager
+  (`load_notebook`, `save_notebook`, `editing_notebook`, `notebook_exists`,
+  `ensure_directory`); plain nbformat files without a server
 - `path_utils.py` - Path normalization utilities
 - `server_context.py` - Server context management
 - `execution_utils.py` - Low-level kernel execution primitives
@@ -347,7 +349,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-384 tests total across:
+420 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -381,6 +383,16 @@ position_index), and include a recovery hint for the common failure mode.
 - `tests/test_kernel_utils.py` - Kernel utilities tests
 - `tests/test_default_kernel.py` - Without a kernel name, the server's
   `default_kernel_name` is started (setup_notebook and auto-start)
+- `tests/test_notebook_store.py` - Closed notebooks through real contents
+  managers, each test against the async default and a sync one with a
+  file-backed signature DB: tool outputs signed as trusted; untrusted
+  outputs never laundered (other cells, appended outputs, caller-supplied
+  `metadata.trusted`, replacement outputs of a signed cell); trust marks never in reads or on disk; checkpoint;
+  save hooks; concurrent edits serialized; failed edits not saved; missing
+  or hidden notebooks are `FileNotFoundError`; paths outside the root
+  refused; `notebook_exists`, `ensure_directory`. The unit tests'
+  `MockServerApp` uses the real async contents manager (in-memory
+  signatures, fixed secret)
 - `tests/test_path_utils.py` - `normalize_path()`: notebooks only, inside the
   Jupyter root (relative, absolute, symlinks)
 - `tests/test_mcp_server.py` - MCP server tests (including Code Mode sandbox
@@ -600,7 +612,20 @@ When using `YDocAdapter` (notebook is open):
 - Direct backend disk writes while the notebook is open cause JupyterLab to reload from the stale file, so they are intentionally avoided
 
 When using `NbformatAdapter` (notebook is closed):
-- Changes are written directly to the .ipynb file on disk
+- Changes are saved immediately through Jupyter's contents manager
+  (`notebook_store.py`), as a JupyterLab save: the notebook is signed when
+  every risky output is trusted, the first checkpoint is created, pre/post-
+  save hooks run (e.g. jupytext pairing), the write is atomic, and
+  `allow_hidden` / non-filesystem contents managers apply. Without a server
+  context, plain nbformat file I/O.
+- Outputs from the tools' own executions are marked `trusted` (as JupyterLab
+  trusts cells it runs); outputs already in the notebook keep the trust the
+  contents manager gave them on load (valid signature or not), so an edit
+  never signs outputs nobody trusted. `edit_cell` drops the loaded trust
+  mark when it replaces a cell's outputs, and callers' `metadata.trusted`
+  is ignored. Reads strip the in-memory `trusted` marks.
+- Edits of one notebook are serialized (`editing_notebook`, a per-path
+  lock): concurrent read-modify-write calls would otherwise lose changes.
 
 ### Kernel Tracking and Reuse
 
@@ -749,8 +774,12 @@ executions instead of everything appearing when the MCP tool call returns:
   are written, so outputs land in the right cell even if the user
   added/deleted cells in JupyterLab while the code ran. If the cell was
   deleted, the output update is skipped (the result is still returned).
-- All nbformat disk I/O and kernelspec scans run via `asyncio.to_thread` —
-  never block the Jupyter server's event loop. Read-only operations
+- Notebook I/O goes through the contents manager on the event loop, as
+  jupyter_server's handlers call it: the default async manager reads and
+  writes files in worker threads itself; a sync one blocks the loop as it
+  does for JupyterLab (never call it from a worker thread: its notary's
+  SQLite connection is bound to the thread that opened it). Kernelspec
+  scans run via `asyncio.to_thread`. Read-only operations
   (`view_notebook`, `read_cell`, finders) never write the file back.
 - Editing a code cell resets its outputs/execution_count (both adapters), so
   stale outputs from the old source never linger.
