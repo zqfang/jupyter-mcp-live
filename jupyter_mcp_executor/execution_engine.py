@@ -6,10 +6,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from jupyter_client.session import Session
 from jupyter_core.utils import ensure_async
 
 from jupyter_mcp_executor.execution_progress import ExecutionProgress
-from jupyter_mcp_executor.execution_utils import OutputCallback, execute_code_on_kernel
+from jupyter_mcp_executor.execution_utils import (
+    OutputCallback,
+    ResetCallback,
+    execute_code_on_kernel,
+)
 from jupyter_mcp_executor.kernel_manager import KernelManager
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.kernel_utils import is_kernel_alive
@@ -106,6 +111,17 @@ class _CellOutputStreamer:
             logger.warning(f"Live output streaming disabled for this run: {e}")
             self.streamed_ok = False
 
+    async def on_reset(self, outputs: list[dict[str, Any]]) -> None:
+        """Replace the cell's outputs (after clear_output or a display update)."""
+        if not self.streamed_ok:
+            return
+        try:
+            position = await self._locate_cell()
+            await self._adapter.update_cell_outputs(position, None, outputs)
+        except Exception as e:  # noqa: BLE001 - streaming must never abort execution
+            logger.warning(f"Live output streaming disabled for this run: {e}")
+            self.streamed_ok = False
+
 
 class ExecutionEngine:
     """Engine for executing code and updating cell outputs.
@@ -171,12 +187,24 @@ class ExecutionEngine:
 
         Reusing the client avoids per-execution ZMQ channel setup and the
         kernel_info round-trip of wait_for_ready.
+
+        The client gets its own Session (same key and signature scheme):
+        kernel.client() alone clones the manager's Session, so every such
+        client shares one shell socket identity, and with ipykernel's
+        ROUTER_HANDOVER the last one to connect takes it over. Another
+        server-side client of the kernel connecting after us then swallowed
+        our execute requests: the cell never ran and timed out.
         """
         client = self._clients.get(kernel_id)
         if client is not None:
             return client
 
-        client = kernel.client()
+        client = kernel.client(
+            session=Session(
+                key=kernel.session.key,
+                signature_scheme=kernel.session.signature_scheme,
+            )
+        )
         client.start_channels()
         try:
             await client.wait_for_ready(timeout=EXECUTION_CONFIG.kernel_ready_timeout)
@@ -194,6 +222,7 @@ class ExecutionEngine:
         timeout: int | None = None,
         on_output: OutputCallback | None = None,
         progress_label: str | None = None,
+        on_reset: ResetCallback | None = None,
     ) -> ExecutionResult:
         """Execute code in a Jupyter kernel.
 
@@ -206,6 +235,9 @@ class ExecutionEngine:
             timeout: Maximum time in seconds to wait for execution
             on_output: Optional async callback fired per output as it arrives
                 (live streaming into the notebook)
+            on_reset: Optional async callback fired with the full output list
+                when it changed other than by an append (clear_output,
+                update_display_data)
             progress_label: Names the execution in MCP progress notifications
                 (e.g. "analysis.ipynb cell 3"); progress is sent only while
                 serving an MCP request.
@@ -259,6 +291,9 @@ class ExecutionEngine:
         callback = _combine_callbacks(
             on_output, progress.on_output if progress else None
         )
+        reset_callback = _combine_callbacks(
+            on_reset, progress.on_reset if progress else None
+        )
 
         # Serialize executions per kernel: the cached client's channels must
         # only be consumed by one coroutine at a time.
@@ -277,6 +312,7 @@ class ExecutionEngine:
                     kernel_id,
                     timeout,
                     on_output=callback,
+                    on_reset=reset_callback,
                     interrupt=lambda: ensure_async(
                         kernel_manager.interrupt_kernel(kernel_id)
                     ),
@@ -372,6 +408,7 @@ class ExecutionEngine:
                 kernel_id=kernel_id,
                 timeout=timeout,
                 on_output=streamer.on_output if streamer else None,
+                on_reset=streamer.on_reset if streamer else None,
                 progress_label=(
                     f"{Path(adapter.notebook_path).name} cell {cell_position}"
                 ),

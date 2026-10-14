@@ -275,21 +275,24 @@ class YDocAdapter(NotebookAdapter):
 
         ycell = self.ydoc.ycells[position]
 
-        if execution_count is not None:
-            ycell["execution_count"] = execution_count
+        # One transaction: browsers would otherwise render the cleared output
+        # area before the new outputs (a flash per redrawn progress frame).
+        with self.ydoc.ydoc.transaction():
+            if execution_count is not None:
+                ycell["execution_count"] = execution_count
 
-        if outputs is not None:
-            from pycrdt import Array  # noqa: PLC0415
+            if outputs is not None:
+                from pycrdt import Array  # noqa: PLC0415
 
-            output_maps = [self._make_output_map(output) for output in outputs]
+                output_maps = [self._make_output_map(output) for output in outputs]
 
-            youtputs = ycell.get("outputs")
-            if isinstance(youtputs, Array):
-                youtputs.clear()
-                if output_maps:
-                    youtputs.extend(output_maps)
-            else:
-                ycell["outputs"] = Array(output_maps)
+                youtputs = ycell.get("outputs")
+                if isinstance(youtputs, Array):
+                    youtputs.clear()
+                    if output_maps:
+                        youtputs.extend(output_maps)
+                else:
+                    ycell["outputs"] = Array(output_maps)
 
         logger.debug(
             f"Updated cell {position} outputs in YDoc (execution_count={execution_count})"

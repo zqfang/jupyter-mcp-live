@@ -18,7 +18,7 @@ import pytest
 from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_path
 
 from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
-from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
 from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
 _HELPERS = "jupyter_mcp_executor.ydoc_helpers"
@@ -120,7 +120,9 @@ async def test_gets_or_creates_room_via_official_api():
 
     assert result is fake_ynb
     ext.get_document.assert_awaited_once_with(
-        path="/some/path/notebook.ipynb",
+        # The API path; without a server root it is the path as given (with
+        # the OS separator: backslashes on Windows).
+        path=to_api_path("/some/path/notebook.ipynb"),
         content_type="notebook",
         file_format="json",
         copy=False,

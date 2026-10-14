@@ -15,6 +15,21 @@ def _as_text(value: Any) -> str:
     return value if isinstance(value, str) else str(value)
 
 
+def _collapse_carriage_returns(text: str) -> str:
+    """Show each line as a terminal would after ``\\r`` redraws.
+
+    Progress bars writing to a stream (tqdm on stderr) redraw a line with
+    ``\\r``; keep the last non-empty frame of each line.
+    """
+    if "\r" not in text:
+        return text
+    lines = text.replace("\r\n", "\n").split("\n")
+    return "\n".join(
+        next((frame for frame in reversed(line.split("\r")) if frame), "")
+        for line in lines
+    )
+
+
 def _truncate_text(text: str) -> str:
     """Truncate oversized text, preserving the head and tail.
 
@@ -133,13 +148,14 @@ class OutputFilter:
 
     @staticmethod
     def _filter_stream_output(output: dict[str, Any]) -> dict[str, Any]:
-        """Truncate an oversized stream output (stdout/stderr)."""
-        text = _as_text(output.get("text", ""))
-        if len(text) <= OUTPUT_FILTER_CONFIG.max_text_length:
+        """Collapse ``\\r`` redraws and truncate an oversized stream output."""
+        original = _as_text(output.get("text", ""))
+        text = _truncate_text(_collapse_carriage_returns(original))
+        if text == original:
             return output
 
         filtered = dict(output)
-        filtered["text"] = _truncate_text(text)
+        filtered["text"] = text
         return filtered
 
     @staticmethod
@@ -181,6 +197,11 @@ class OutputFilter:
     def filter_outputs(outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter a list of outputs.
 
+        At most ``OUTPUT_FILTER_CONFIG.max_outputs`` are kept (the first and
+        the last ones, with a marker for those omitted), so a cell with
+        thousands of outputs (a display() per loop iteration) cannot flood
+        the response.
+
         Args:
             outputs: List of output dicts
 
@@ -190,7 +211,31 @@ class OutputFilter:
         if not outputs:
             return outputs
 
-        return [OutputFilter.filter_single_output(out) for out in outputs]
+        return [
+            OutputFilter.filter_single_output(out)
+            for out in OutputFilter._cap_count(outputs)
+        ]
+
+    @staticmethod
+    def _cap_count(outputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep the first and last outputs of a long list, marking the gap."""
+        limit = OUTPUT_FILTER_CONFIG.max_outputs
+        if len(outputs) <= limit:
+            return outputs
+        head = limit // 2
+        tail = limit - head
+        omitted = len(outputs) - limit
+        marker = {
+            "output_type": "display_data",
+            "data": {
+                "text/plain": (
+                    f"[outputs {head}-{head + omitted - 1} ({omitted}) omitted "
+                    "from this response; the notebook keeps all of them]"
+                )
+            },
+            "metadata": {},
+        }
+        return [*outputs[:head], marker, *outputs[-tail:]]
 
     @staticmethod
     def filter_cells(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:

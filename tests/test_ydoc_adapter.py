@@ -215,3 +215,23 @@ class TestReadCellAttachments:
         cell = await adapter.read_cell(pos)
 
         assert cell.attachments == {}
+
+
+@pytest.mark.asyncio
+async def test_rewriting_outputs_is_one_transaction():
+    """clear + extend as two transactions shows browsers an empty output area
+    between them: a flash on every frame of a redrawn progress display."""
+    adapter, position = await make_adapter_with_code_cell()
+    await adapter.append_cell_output(
+        position, {"output_type": "stream", "name": "stdout", "text": "old\n"}
+    )
+    transactions = []
+    subscription = adapter.ydoc.ydoc.observe(transactions.append)
+    try:
+        await adapter.update_cell_outputs(
+            position, 3, [{"output_type": "stream", "name": "stdout", "text": "new\n"}]
+        )
+    finally:
+        adapter.ydoc.ydoc.unobserve(subscription)
+
+    assert len(transactions) == 1
