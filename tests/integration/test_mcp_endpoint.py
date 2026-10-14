@@ -210,6 +210,36 @@ class TestAuthorizerDenial:
         assert response.code == 403
 
 
+class TestContentsPermission:
+    """The tools read and modify notebooks: users the authorizer keeps from
+    doing that through the contents API cannot do it through MCP either."""
+
+    @pytest.fixture(
+        params=["ReadOnlyContentsAuthorizer", "NoContentsReadAuthorizer"],
+        ids=["no-write", "no-read"],
+    )
+    def jp_server_config(self, request):
+        config = _config()
+        config["ServerApp"]["authorizer_class"] = (
+            f"tests.integration.toy_tools.{request.param}"
+        )
+        return config
+
+    @pytest.mark.parametrize("method", ["POST", "GET", "DELETE"])
+    @pytest.mark.usefixtures("mcp_extension")
+    async def test_user_who_cannot_modify_notebooks_is_forbidden(
+        self, jp_fetch, method
+    ):
+        if method == "POST":
+            response = await _initialize(jp_fetch)
+        else:
+            response = await jp_fetch(
+                "mcp", method=method, headers=_mcp_headers(), raise_error=False
+            )
+
+        assert response.code == 403
+
+
 class TestCustomEndpointPath:
     """mcp_endpoint_path moves the endpoint (e.g. to avoid other /mcp users)."""
 

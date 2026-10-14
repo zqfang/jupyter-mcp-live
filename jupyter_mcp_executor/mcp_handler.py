@@ -18,6 +18,7 @@ forwards through the in-process ASGI bridge.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from jupyter_server.auth.decorator import authorized
@@ -34,6 +35,26 @@ if TYPE_CHECKING:
 MCP_AUTH_ACTION = "execute"
 MCP_AUTH_RESOURCE = "kernels"
 MCP_AUTH_MESSAGE = "Not authorized to execute code in kernels"
+
+# They also read and modify notebooks: a user the authorizer keeps from doing
+# that through the contents API (e.g. a read-only collaborator) must not do
+# it through MCP. Checked for the whole endpoint, not per tool.
+MCP_CONTENTS_PERMISSIONS = (
+    ("read", "Not authorized to read notebooks"),
+    ("write", "Not authorized to modify notebooks"),
+)
+
+
+def _mcp_authorized(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Every permission the MCP tools need, as jupyter_server's @authorized.
+
+    Each action is explicit: the decorator's default derives it from the
+    HTTP method (GET -> "read"), which would let a read-only user open the
+    SSE stream.
+    """
+    for action, message in MCP_CONTENTS_PERMISSIONS:
+        method = authorized(action, "contents", message)(method)
+    return authorized(MCP_AUTH_ACTION, MCP_AUTH_RESOURCE, MCP_AUTH_MESSAGE)(method)
 
 
 class MCPHandler(JupyterHandler):
@@ -63,19 +84,17 @@ class MCPHandler(JupyterHandler):
         """Let the MCP app see the client disconnect."""
         self._disconnected.set()
 
-    # Every method needs the same permission (the decorator would otherwise
-    # derive the action from the HTTP method: GET -> "read").
-    @authorized(MCP_AUTH_ACTION, MCP_AUTH_RESOURCE, MCP_AUTH_MESSAGE)
+    @_mcp_authorized
     async def get(self) -> None:
         """Server-to-client SSE stream of a streamable-HTTP session."""
         await self._forward()
 
-    @authorized(MCP_AUTH_ACTION, MCP_AUTH_RESOURCE, MCP_AUTH_MESSAGE)
+    @_mcp_authorized
     async def post(self) -> None:
         """Client JSON-RPC messages."""
         await self._forward()
 
-    @authorized(MCP_AUTH_ACTION, MCP_AUTH_RESOURCE, MCP_AUTH_MESSAGE)
+    @_mcp_authorized
     async def delete(self) -> None:
         """Session termination."""
         await self._forward()
