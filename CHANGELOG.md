@@ -69,6 +69,15 @@
 
 ### Bugs fixed
 
+- YDoc rooms the tools used without a browser are now cleaned up. A room
+  created while the notebook was not open in JupyterLab, or one edited after
+  the last browser left, stayed in memory with a file watcher polling every
+  second until the server stopped. Such rooms are now deleted
+  `document_cleanup_delay` after the tools last wrote to them (and after
+  their autosave), as jupyter_server_ydoc does once the last browser leaves.
+  A running cell keeps its room, and a browser opening the notebook cancels
+  the cleanup. With autosave off (`document_save_delay = None`) rooms are
+  kept, since deleting them would discard the edits.
 - Kernel output messages are handled as JupyterLab handles them, in the
   notebook and in the MCP response:
   - `clear_output` was ignored, so every frame of a progress loop
