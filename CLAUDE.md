@@ -192,7 +192,7 @@ no `"python3"` literal in the code paths.
 - `mcp_handler.py` - Authenticated `{base_url}mcp` Tornado handler (`MCPHandler`)
 - `asgi_bridge.py` - Runs the FastMCP Starlette app inside Tornado
   (`run_asgi`, `EmbeddedASGIApp` lifespan owner)
-- `execution_tools.py` - Public MCP interface (16 tool functions, decorated with `@collaborative_tool`)
+- `execution_tools.py` - Public MCP interface (16 plain async tool functions)
 
 ### Service Layer
 
@@ -321,8 +321,8 @@ adapter = await get_notebook_adapter(notebook_path)
 ### Adding New MCP Tools
 
 1. Add service method in appropriate service module (e.g., `query_service.py`)
-2. Add public function to `execution_tools.py` (decorate with `@collaborative_tool(user=user_info)`
-   and add it to `__all__`)
+2. Add a public async function to `execution_tools.py` (no decorator) and
+   add it to `__all__`
 3. Register it: tools are loaded from the `c.MCPExtensionApp.mcp_tools` config list
    (`"module:function"` strings — see `examples/jupyter_config_with_execution_tools.py`)
    or via `jupyter_mcp_executor.tools` entrypoints
@@ -338,7 +338,6 @@ async def get_notebook_metadata(self, notebook_path: str) -> dict:
     return await adapter.get_metadata()
 
 # 2. In execution_tools.py
-@collaborative_tool(user=user_info)
 async def get_notebook_metadata(notebook_path: str) -> dict:
     """Get notebook metadata."""
     return await container.query_service.get_notebook_metadata(notebook_path)
