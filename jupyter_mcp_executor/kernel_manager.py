@@ -925,6 +925,8 @@ class KernelManager:
             else:
                 metadata["kernelspec"] = kernelspec
         except Exception as e:  # noqa: BLE001 - caller falls back to disk write
-            logger.debug(f"Could not set kernelspec via YDoc: {e}")
+            # Loud on purpose: the disk write lands behind the open notebook,
+            # and JupyterLab reloads it from the file.
+            logger.warning(f"Could not set kernelspec via YDoc: {e!r}")
             return False
         return True

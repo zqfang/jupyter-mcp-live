@@ -72,10 +72,14 @@
 - Without a kernel name, `setup_notebook` (and executing in a notebook whose
   metadata names no kernel) now starts the server's default kernel
   (`MappingKernelManager.default_kernel_name`, as JupyterLab does) instead
-  of always `python3`. `setup_notebook`'s `kernel_name` defaults to `None`.
+  of always `python3`. `setup_notebook`'s `kernel_name` defaults to `None`;
+  if the configured default kernel is not installed, the error lists the
+  available kernels.
 - `read_cell` / `view_notebook` on an open notebook reported numbers as
   JupyterLab's Yjs stores them: a cell run there had `execution_count: 5.0`.
-  Cells are now read with `YNotebook.get_cell()`, as jupyter_ydoc saves them.
+  Cells are now read with `YNotebook.get_cell()`, as jupyter_ydoc saves them
+  (integral floats in outputs and metadata, e.g. a JSON output's `1.0`, read
+  as `1`, as they are written to disk).
 - Adding or editing a cell in an open notebook no longer writes an
   `activeCellIndex` key to the shared notebook metadata. Nothing in
   JupyterLab reads it (the active cell is a widget property), so every
