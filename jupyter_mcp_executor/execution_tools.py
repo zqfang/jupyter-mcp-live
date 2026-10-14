@@ -82,7 +82,7 @@ async def setup_notebook(
     Only set force_new_kernel=True if the user explicitly wants a clean state.
 
     Args:
-        notebook_path: Path to the notebook (relative or absolute)
+        notebook_path: Path to the notebook (relative to the Jupyter root, or absolute inside it)
         kernel_name: Kernel spec name (default: "python3").
             Examples: "python3", "ir" (R), "julia-1.10". For R, "r"/"ir"/"irkernel"
             all auto-detect the available R kernel. Ignored when reusing an
@@ -123,7 +123,7 @@ async def switch_notebook_kernel(
     and starts a new kernel session. Kernel state from the previous kernel is lost.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         kernel_name: Kernel to switch to (e.g., "python3", "ir", "julia-1.10")
 
     Returns:
@@ -147,7 +147,7 @@ async def shutdown_notebook(
     when the notebook is open in JupyterLab, whose kernel this is.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         shutdown_kernel: If False, nothing is shut down: Jupyter cannot close
             a session without stopping its kernel, so the kernel and session
             keep running (default: True)
@@ -175,7 +175,7 @@ async def interrupt_notebook_kernel(notebook_path: str) -> dict[str, Any]:
     restart_notebook_kernel.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
 
     Returns:
         dict with kernel_id and message
@@ -197,7 +197,7 @@ async def restart_notebook_kernel(notebook_path: str) -> dict[str, Any]:
     interrupt_notebook_kernel did not stop a cell or the kernel is wedged.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
 
     Returns:
         dict with kernel_id and message
@@ -225,7 +225,7 @@ async def execute_cell(
     unexpected, the previous kernel died; re-run setup cells.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         position_index: Positional index of cell to execute (0-based)
 
     Returns:
@@ -276,7 +276,7 @@ async def add_code_cell(
     (started_new_kernel=True in the result means prior variables were lost).
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         source: Code for the new cell
         position_index: Where to insert (0-indexed); appends at end if omitted
         execute: Whether to execute the cell after adding (default: True)
@@ -305,7 +305,7 @@ async def edit_code_cell(
     is started only if none is running.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         position_index: Which cell to edit (0-indexed)
         source: New code for the cell
         execute: Whether to execute the cell after editing (default: True)
@@ -339,7 +339,7 @@ async def add_markdown_cell(
     """Add a markdown cell.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         source: Markdown content for the new cell
         position_index: Where to insert (0-indexed); appends at end if omitted
 
@@ -362,7 +362,7 @@ async def edit_markdown_cell(
     """Replace a markdown cell's content.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         position_index: Which cell to edit (0-indexed)
         source: New markdown content
 
@@ -392,7 +392,7 @@ async def delete_cell(
     """Delete a cell; all later cells shift down by one position.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         position_index: Which cell to delete (0-indexed)
 
     Returns:
@@ -424,7 +424,7 @@ async def view_notebook(notebook_path: str) -> list[dict[str, Any]]:
     (use list_notebook_kernels / list_notebook_sessions).
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
 
     Returns:
         list[dict]: One dict per cell, in notebook order, each containing
@@ -453,7 +453,7 @@ async def read_cell(
     Supports multiple ways to identify cells: position index, cell UUID, or execution count.
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         position_index: Positional index of cell (0-indexed)
         cell_id: Cell UUID
         execution_count: Execution count of code cell
@@ -504,7 +504,7 @@ async def view_cell_image(
     as PNG).
 
     Args:
-        notebook_path: Path to the notebook file (relative or absolute)
+        notebook_path: Path to the notebook file (relative to the Jupyter root, or absolute inside it)
         position_index: Positional index of cell (0-indexed)
         cell_id: Cell UUID
         execution_count: The cell's [n] execution label (not its position)
