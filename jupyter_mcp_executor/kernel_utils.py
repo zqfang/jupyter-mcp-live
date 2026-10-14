@@ -183,16 +183,16 @@ def resolve_kernel_name(
     Args:
         requested_name: Requested kernel name or language
         kernelspecs: Available kernel specifications
-        fallback: Fallback kernel name if resolution fails. When None
-            (default), an unresolvable name raises ValueError instead of
-            silently running code on the wrong kernel.
+        fallback: Fallback kernel name if resolution fails, used only if it
+            is installed. When None (default), an unresolvable name raises
+            ValueError instead of silently running code on the wrong kernel.
 
     Returns:
         Resolved kernel name
 
     Raises:
-        ValueError: If the name cannot be resolved and no fallback is given.
-            The message lists the available kernels.
+        ValueError: If the name cannot be resolved and there is no installed
+            fallback. The message lists the available kernels.
 
     Example:
         >>> specs = {
@@ -240,9 +240,10 @@ def resolve_kernel_name(
             )
             return language_match
 
-    # 4. Fallback or fail loudly
+    # 4. Fallback or fail loudly. An uninstalled fallback (e.g. a misconfigured
+    # default kernel) would only fail later, at kernel start, less helpfully.
     available = list(kernelspecs.keys())
-    if fallback is not None:
+    if fallback is not None and fallback in kernelspecs:
         logger.warning(
             f"Kernel '{requested_name}' not found. "
             f"Available: {available}. Using fallback: {fallback}"

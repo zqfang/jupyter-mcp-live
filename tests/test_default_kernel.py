@@ -79,3 +79,24 @@ async def test_auto_start_without_kernelspec_uses_the_servers_default(tmp_path):
         await mgr.get_kernel_for_notebook(str(nb))
 
     start.assert_awaited_once_with(str(nb), "ir")
+
+
+@pytest.mark.asyncio
+async def test_auto_start_with_an_uninstalled_default_lists_the_kernels(tmp_path):
+    nb = tmp_path / "nb.ipynb"
+    nb.write_text('{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}')
+    app = FakeServerApp()  # python3 only
+    app.kernel_manager.default_kernel_name = "ir"
+    mgr = KernelManager()
+    start = AsyncMock(return_value="k1")
+
+    first, second = _patched(app)
+    with (
+        first,
+        second,
+        patch.object(mgr, "_start_kernel_for_notebook", start),
+        pytest.raises(ValueError, match="Available kernels"),
+    ):
+        await mgr.get_kernel_for_notebook(str(nb))
+
+    start.assert_not_awaited()

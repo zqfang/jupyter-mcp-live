@@ -72,9 +72,12 @@
 - Without a kernel name, `setup_notebook` (and executing in a notebook whose
   metadata names no kernel) now starts the server's default kernel
   (`MappingKernelManager.default_kernel_name`, as JupyterLab does) instead
-  of always `python3`. `setup_notebook`'s `kernel_name` defaults to `None`;
-  if the configured default kernel is not installed, the error lists the
-  available kernels.
+  of always `python3`. `setup_notebook`'s `kernel_name` defaults to `None`.
+  If the configured default kernel is not installed, both paths fail with
+  an error listing the available kernels: the lenient fallback for kernel
+  names from notebook metadata is now used only if it is installed (the
+  old `python3` fallback was not checked either, and failed later at
+  kernel start).
 - `read_cell` / `view_notebook` on an open notebook reported numbers as
   JupyterLab's Yjs stores them: a cell run there had `execution_count: 5.0`.
   Cells are now read with `YNotebook.get_cell()`, as jupyter_ydoc saves them

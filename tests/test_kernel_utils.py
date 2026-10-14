@@ -182,6 +182,15 @@ class TestResolveKernelName:
         result = resolve_kernel_name("nonexistent", specs, fallback="rapids")
         assert result == "rapids"
 
+    def test_uninstalled_fallback_raises_listing_kernels(self):
+        """A fallback that is not installed (a misconfigured default kernel)
+        must not reach kernel start, which fails with a less useful error."""
+        specs = {
+            "python3": {"spec": {"language": "python"}},
+        }
+        with pytest.raises(ValueError, match=r"Available kernels: \['python3'\]"):
+            resolve_kernel_name("nonexistent", specs, fallback="ir")
+
 
 class TestGetKernelInfo:
     """Test getting kernel information."""
