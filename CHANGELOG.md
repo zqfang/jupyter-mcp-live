@@ -228,6 +228,10 @@
   messages are still converted by hand: `nbformat.v4.output_from_msg`
   raises on fields some kernels omit and validates every output against
   the JSON schema, too slow for chatty cells.
+- `KernelManager.setup_notebook` split into a short orchestrator and
+  focused helpers (reuse, force-new replacement, notebook creation), with
+  characterization tests for its kernel reuse and ordering; no behavior
+  change.
 
 ## 0.5.0 (Unreleased)
 
