@@ -56,7 +56,10 @@ def _api_path(path: str) -> str:
             manager would read it as relative to the root instead
     """
     api_path = to_api_path(path)
-    if Path(api_path).is_absolute() or api_path.startswith("/"):
+    # Any root or drive (anchor) means it is not relative. On Windows a path
+    # starting with a backslash has no drive, so it is not absolute, but it is
+    # rooted all the same.
+    if Path(api_path).anchor or api_path.startswith(("/", "\\")):
         msg = f"{path} is outside the Jupyter root directory"
         raise ValueError(msg)
     return api_path
