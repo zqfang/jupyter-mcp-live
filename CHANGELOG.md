@@ -50,6 +50,14 @@
 
 ### Bugs fixed
 
+- `shutdown_notebook(shutdown_kernel=False)` reported "kernel still running"
+  but shut the kernel down: Jupyter cannot delete a session without stopping
+  its kernel. The session and kernel are now left running. With the default
+  (`True`), the reply names the kernel that was shut down also when only
+  JupyterLab's session knew it (it said "no kernel was tracked"), and
+  `shutdown_notebook`, `switch_notebook_kernel` and
+  `setup_notebook(force_new_kernel=True)` no longer shut the same kernel down
+  twice (a "Kernel does not exist" warning per call).
 - When no kernel could be started for a notebook (e.g. a path outside the
   Jupyter root directory, which Jupyter's contents manager cannot open),
   `setup_notebook` and `switch_notebook_kernel` failed with a pydantic

@@ -232,11 +232,14 @@ class MockSessionManager:
         return session
 
     async def delete_session(self, session_id):
-        """Mock delete session - mimics real Jupyter Server API.
+        """Mock delete session - like jupyter_server, also shuts the kernel down.
 
         Args:
             session_id: ID of session to delete
         """
+        for session in self.sessions:
+            if session["id"] == session_id and self.kernel_manager is not None:
+                await self.kernel_manager.shutdown_kernel(session["kernel"]["id"])
         self.sessions = [s for s in self.sessions if s["id"] != session_id]
 
     def add_session(self, notebook_path, kernel_id, kernel_name="python3"):

@@ -115,14 +115,8 @@ class KernelManager:
             # and JupyterLab then pick different ones (see _find_session_for_notebook),
             # which breaks the guarantee that both drive the same kernel, and every
             # abandoned kernel keeps its memory (GPU included) until the server stops.
-            stale_id = self.kernel_tracker.get(notebook_path)
-            stale_session = await self._find_session_for_notebook(notebook_path)
-            if stale_session and not stale_id:
-                stale_id = stale_session.get("kernel", {}).get("id")
-            await self._delete_session_for_notebook(notebook_path)
+            stale_id = await self._stop_notebook_kernel(notebook_path)
             if stale_id:
-                await self._shutdown_kernel(stale_id)
-                self.kernel_tracker.untrack(notebook_path)
                 logger.info(
                     f"force_new_kernel: replaced kernel {stale_id} for {notebook_path}"
                 )
@@ -464,14 +458,7 @@ class KernelManager:
             kernel_name, available_kernels.get("kernelspecs", {})
         )
 
-        # Delete the old session first
-        await self._delete_session_for_notebook(notebook_path)
-
-        # Shutdown old kernel if tracked
-        old_kernel_id = self.kernel_tracker.get(notebook_path)
-        if old_kernel_id:
-            await self._shutdown_kernel(old_kernel_id)
-            self.kernel_tracker.untrack(notebook_path)
+        old_kernel_id = await self._stop_notebook_kernel(notebook_path)
 
         # Start new kernel (this will also create a new session)
         new_kernel_id = await self._start_kernel_for_notebook(
@@ -490,42 +477,66 @@ class KernelManager:
     async def shutdown_notebook(
         self, notebook_path: str, shutdown_kernel: bool = True
     ) -> ShutdownResult:
-        """Shutdown notebook session and optionally its kernel.
+        """Close the notebook's session and shut its kernel down.
 
-        Deletes the Jupyter session and optionally shuts down the kernel.
-        This ensures proper cleanup and prevents orphaned sessions.
+        Deleting a Jupyter session always shuts its kernel down
+        (jupyter_server's SessionManager.delete_session), so with
+        ``shutdown_kernel=False`` the session is kept too and only this
+        client's tracking is dropped.
 
         Args:
             notebook_path: Path to notebook
-            shutdown_kernel: Whether to shutdown the kernel
+            shutdown_kernel: Whether to shut the kernel (and session) down
 
         Returns:
-            ShutdownResult with status message
+            ShutdownResult with status message and the notebook's kernel ID
         """
         notebook_path = normalize_path(notebook_path)
 
-        kernel_id = self.kernel_tracker.get(notebook_path)
-
-        # Delete the Jupyter session for this notebook
-        await self._delete_session_for_notebook(notebook_path)
-
-        if kernel_id and shutdown_kernel:
-            await self._shutdown_kernel(kernel_id)
+        if not shutdown_kernel:
+            kernel_id = await self.find_kernel_for_notebook(notebook_path)
             self.kernel_tracker.untrack(notebook_path)
+            return ShutdownResult(
+                message=(
+                    "Kernel left running: its Jupyter session was kept, because "
+                    "closing a session always shuts its kernel down"
+                ),
+                kernel_id=kernel_id,
+            )
+
+        kernel_id = await self._stop_notebook_kernel(notebook_path)
+        if kernel_id:
             return ShutdownResult(
                 message="Notebook session closed and kernel shut down",
                 kernel_id=kernel_id,
             )
-        if kernel_id:
-            self.kernel_tracker.untrack(notebook_path)
-            return ShutdownResult(
-                message="Notebook session closed (kernel still running)",
-                kernel_id=kernel_id,
-            )
         return ShutdownResult(
-            message="Notebook session closed (no kernel was tracked)",
-            kernel_id=None,
+            message="No kernel was running for this notebook", kernel_id=None
         )
+
+    async def _stop_notebook_kernel(self, notebook_path: str) -> str | None:
+        """Delete the notebook's session and stop any kernel it still uses.
+
+        Deleting the session shuts the session's kernel down; a tracked kernel
+        that is still alive afterwards (one without a session) is shut down
+        explicitly. A kernel is never shut down twice.
+
+        Args:
+            notebook_path: Path to notebook (already normalized)
+
+        Returns:
+            The kernel the notebook was using (the session's, else the
+            tracked one), or None if it had none.
+        """
+        session = await self._find_session_for_notebook(notebook_path)
+        session_kernel_id = (session or {}).get("kernel", {}).get("id")
+        tracked_id = self.kernel_tracker.get(notebook_path)
+
+        await self._delete_session_for_notebook(notebook_path)
+        if tracked_id and is_kernel_alive(get_server_context(), tracked_id):
+            await self._shutdown_kernel(tracked_id)
+        self.kernel_tracker.untrack(notebook_path)
+        return session_kernel_id or tracked_id
 
     async def _delete_session_for_notebook(self, notebook_path: str) -> None:
         """Delete the Jupyter session for a notebook.
