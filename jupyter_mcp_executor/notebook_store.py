@@ -1,0 +1,113 @@
+"""Reading and saving notebooks that are not open in JupyterLab.
+
+With a running server this goes through Jupyter's contents manager, as
+JupyterLab's own save does: the notebook is signed when every risky output is
+trusted, its first checkpoint is created, pre/post-save hooks run (e.g.
+jupytext pairing), the write is atomic, and the contents manager's rules
+(``allow_hidden``, non-filesystem backends) apply. Without a server (tests,
+library use) the file is read and written with nbformat.
+
+Open notebooks are never saved here: their YDoc room owns the file (see
+``ydoc_adapter.py``).
+"""
+
+import asyncio
+import inspect
+import os
+import weakref
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from typing import Any
+
+import nbformat
+
+from jupyter_mcp_executor.path_utils import to_api_path
+from jupyter_mcp_executor.server_context import get_server_context
+
+# One lock per notebook being edited, alive while someone holds or waits on it.
+_edit_locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = (
+    weakref.WeakValueDictionary()
+)
+
+
+def _contents_manager() -> Any | None:
+    serverapp = get_server_context()
+    return getattr(serverapp, "contents_manager", None) if serverapp else None
+
+
+async def _call(method: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Call a contents manager method: awaited if async, else in a thread."""
+    if inspect.iscoroutinefunction(method):
+        return await method(*args, **kwargs)
+    return await asyncio.to_thread(method, *args, **kwargs)
+
+
+async def load_notebook(path: str) -> Any:
+    """Return the notebook at ``path`` (normalized) as a NotebookNode.
+
+    Through a contents manager, code cells carry ``metadata.trusted`` (whether
+    the notebook's signature is valid); ``save_notebook`` signs it again only
+    if every risky output is still trusted.
+
+    Raises:
+        tornado.web.HTTPError: 404 if the contents manager cannot open it
+            (missing, hidden, ...)
+        FileNotFoundError: Without a server, if the file does not exist
+    """
+    contents_manager = _contents_manager()
+    if contents_manager is None:
+        return await asyncio.to_thread(nbformat.read, path, as_version=4)
+    model = await _call(
+        contents_manager.get, to_api_path(path), content=True, type="notebook"
+    )
+    return model["content"]
+
+
+async def save_notebook(path: str, nb: Any) -> None:
+    """Save ``nb`` to ``path`` (normalized), creating the file if needed."""
+    contents_manager = _contents_manager()
+    if contents_manager is None:
+        await asyncio.to_thread(nbformat.write, nb, path)
+        return
+    model = {"type": "notebook", "format": "json", "content": nb}
+    await _call(contents_manager.save, model, to_api_path(path))
+
+
+async def notebook_exists(path: str) -> bool:
+    """Whether a notebook exists at ``path`` (normalized)."""
+    contents_manager = _contents_manager()
+    if contents_manager is None:
+        return await asyncio.to_thread(os.path.isfile, path)
+    return bool(await _call(contents_manager.file_exists, to_api_path(path)))
+
+
+async def ensure_directory(path: str) -> None:
+    """Create the directory ``path`` (normalized) and its missing parents."""
+    contents_manager = _contents_manager()
+    if contents_manager is None:
+        await asyncio.to_thread(os.makedirs, path, exist_ok=True)
+        return
+    api_path = to_api_path(path).strip("/")
+    parts = [p for p in api_path.split("/") if p]
+    for i in range(1, len(parts) + 1):
+        directory = "/".join(parts[:i])
+        if not await _call(contents_manager.dir_exists, directory):
+            await _call(contents_manager.save, {"type": "directory"}, directory)
+
+
+@asynccontextmanager
+async def editing_notebook(path: str) -> AsyncIterator[Any]:
+    """Load the notebook, let the caller change it, and save it on clean exit.
+
+    Edits of one notebook are serialized: two concurrent read-modify-write
+    calls (e.g. a Code Mode script gathering several add_code_cell calls)
+    would otherwise each save their own copy and lose the other's change.
+    """
+    lock = _edit_locks.get(path)
+    if lock is None:
+        lock = asyncio.Lock()
+        _edit_locks[path] = lock
+    async with lock:
+        nb = await load_notebook(path)
+        yield nb
+        await save_notebook(path, nb)

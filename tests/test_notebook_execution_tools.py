@@ -9,6 +9,8 @@ from queue import Empty
 import nbformat
 import pytest
 from jupyter_client.session import Session
+from jupyter_server.services.contents.largefilemanager import AsyncLargeFileManager
+from nbformat.sign import NotebookNotary
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
 from jupyter_mcp_executor.execution_progress import ExecutionProgress
@@ -34,7 +36,7 @@ from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
 from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
 from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
 from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG, ProgressConfig
-from jupyter_mcp_executor.notebook_io import read_notebook, write_notebook
+from jupyter_mcp_executor.notebook_store import load_notebook, save_notebook
 from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
 from jupyter_mcp_executor.output_filter import OutputFilter
 from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
@@ -176,15 +178,20 @@ class MockServerApp:
         self.session_manager = MockSessionManager(kernel_manager=self.kernel_manager)
         # Notebooks must be inside the root (normalize_path rejects others)
         self.root_dir = str(root_dir)
-        self.contents_manager = MockContentsManager()
+        # Jupyter's real contents manager: closed notebooks are saved through
+        # it. In-memory signatures and a fixed secret: no files outside root.
+        self.contents_manager = AsyncLargeFileManager(root_dir=str(root_dir))
+        self.contents_manager.notary = NotebookNotary(
+            db_file=":memory:", secret=b"test-secret"
+        )
 
 
-class MockContentsManager:
-    """Minimal contents manager to satisfy KernelManager preflight checks."""
+def read_notebook(path):
+    return nbformat.read(path, as_version=4)
 
-    def get(self, path, content=True, type=None):
-        # Return a minimal notebook model dict similar to Jupyter contents API
-        return {"type": "notebook", "path": path, "name": Path(path).name}
+
+def write_notebook(path, nb):
+    nbformat.write(nb, path)
 
 
 class MockSessionManager:
@@ -357,20 +364,15 @@ class TestHelperFunctions:
         assert resolved == str((real / "sub" / "nb.ipynb").resolve())
         assert to_api_path(resolved) == "sub/nb.ipynb"
 
-    def test_read_write_notebook(self, temp_notebook):
-        """Test reading and writing notebooks."""
-        # Read the notebook
-        nb = read_notebook(temp_notebook)
-        assert nb is not None
+    @pytest.mark.asyncio
+    async def test_store_without_a_server_uses_the_file(self, temp_notebook):
+        """Without a server context (library use) notebooks are plain files."""
+        nb = await load_notebook(temp_notebook)
         assert len(nb.cells) == 0
 
-        # Add a cell
         nb.cells.append(new_code_cell("print('hello')"))
+        await save_notebook(temp_notebook, nb)
 
-        # Write the notebook
-        write_notebook(temp_notebook, nb)
-
-        # Read it again
         nb2 = read_notebook(temp_notebook)
         assert len(nb2.cells) == 1
         assert nb2.cells[0].source == "print('hello')"

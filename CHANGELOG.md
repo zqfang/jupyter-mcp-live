@@ -69,6 +69,18 @@
 
 ### Bugs fixed
 
+- Notebooks that are not open in JupyterLab are now saved through Jupyter's
+  contents manager, as JupyterLab saves them, instead of being written with
+  nbformat directly:
+  - HTML/JavaScript outputs of cells run by the tools are trusted, so
+    JupyterLab renders them instead of sanitizing them. Outputs that were
+    not trusted before stay untrusted.
+  - The notebook's first checkpoint is created, save hooks run (e.g.
+    jupytext pairing), and the write is atomic.
+  - Contents manager rules apply: hidden notebooks are refused unless
+    `allow_hidden`, and non-filesystem contents managers work.
+  - Concurrent edits of one notebook (e.g. a Code Mode script gathering
+    several `add_code_cell` calls) no longer overwrite each other.
 - Without a kernel name, `setup_notebook` (and executing in a notebook whose
   metadata names no kernel) now starts the server's default kernel
   (`MappingKernelManager.default_kernel_name`, as JupyterLab does) instead

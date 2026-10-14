@@ -5,7 +5,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import nbformat
 from jupyter_core.utils import ensure_async
 from nbformat.v4 import new_notebook
 
@@ -16,12 +15,18 @@ from jupyter_mcp_executor.kernel_utils import (
     is_kernel_alive,
     resolve_kernel_name,
 )
-from jupyter_mcp_executor.notebook_io import write_notebook
 from jupyter_mcp_executor.notebook_models import (
     KernelActionResult,
     KernelSwitchResult,
     NotebookSetupResult,
     ShutdownResult,
+)
+from jupyter_mcp_executor.notebook_store import (
+    editing_notebook,
+    ensure_directory,
+    load_notebook,
+    notebook_exists,
+    save_notebook,
 )
 from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
 from jupyter_mcp_executor.server_context import (
@@ -101,8 +106,8 @@ class KernelManager:
             kernel_name = default_kernel_name(get_server_context())
 
         # Step 1: Check if notebook file exists
-        notebook_exists = Path(notebook_path).exists()
-        logger.info(f"Notebook exists: {notebook_exists} - {notebook_path}")
+        exists = await notebook_exists(notebook_path)
+        logger.info(f"Notebook exists: {exists} - {notebook_path}")
 
         available_kernels = await self.list_notebook_kernels()
         kernelspecs = available_kernels.get("kernelspecs", {})
@@ -175,14 +180,11 @@ class KernelManager:
             kernel_name = resolve_kernel_name(kernel_name, kernelspecs)
 
         # Step 3: Handle notebook creation/setup based on existence and kernel state
-        if not notebook_exists:
+        if not exists:
             # Step 3a: Create new notebook and start new kernel
             logger.info(f"Creating new notebook: {notebook_path}")
 
-            # Ensure directory exists
-            dir_path = Path(notebook_path).parent
-            if dir_path and str(dir_path) != ".":
-                dir_path.mkdir(parents=True, exist_ok=True)
+            await ensure_directory(str(Path(notebook_path).parent))
 
             # Determine language info
             language_name, display_name = self._get_kernel_display_info(
@@ -202,7 +204,7 @@ class KernelManager:
                 },
             )
 
-            await asyncio.to_thread(write_notebook, notebook_path, nb)
+            await save_notebook(notebook_path, nb)
 
             # Create the notebook "through the YDoc": seed the empty file on
             # disk above (so file_id_manager / file loaders can resolve it),
@@ -262,7 +264,7 @@ class KernelManager:
         # Return notebook info
         return NotebookSetupResult(
             path=notebook_path,
-            exists=notebook_exists,
+            exists=exists,
             kernel_name=kernel_name,
             kernel_id=kernel_id,
         )
@@ -429,14 +431,11 @@ class KernelManager:
     async def _read_notebook_kernel_name(self, notebook_path: str) -> str | None:
         """Read the kernelspec name from notebook metadata, if present."""
 
-        def _read() -> str | None:
-            try:
-                nb = nbformat.read(notebook_path, as_version=4)
-            except Exception:  # noqa: BLE001 - unreadable notebook: no kernelspec hint
-                return None
-            return nb.metadata.get("kernelspec", {}).get("name")
-
-        return await asyncio.to_thread(_read)
+        try:
+            nb = await load_notebook(notebook_path)
+        except Exception:  # noqa: BLE001 - unreadable notebook: no kernelspec hint
+            return None
+        return nb.metadata.get("kernelspec", {}).get("name")
 
     async def switch_kernel(
         self, notebook_path: str, kernel_name: str
@@ -894,13 +893,9 @@ class KernelManager:
                 logger.info(f"Updated kernel metadata via YDoc for {notebook_path}")
                 return
 
-            # Closed notebook: write to disk off the event loop
-            def _write() -> None:
-                nb = nbformat.read(notebook_path, as_version=4)
+            # Closed notebook: save through the contents manager
+            async with editing_notebook(notebook_path) as nb:
                 nb.metadata["kernelspec"] = kernelspec
-                write_notebook(notebook_path, nb)
-
-            await asyncio.to_thread(_write)
             logger.info(f"Updated kernel metadata in {notebook_path}")
 
         except Exception as e:  # noqa: BLE001 - metadata update is best-effort
