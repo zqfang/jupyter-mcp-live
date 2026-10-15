@@ -104,6 +104,15 @@
 
 ### Bugs fixed
 
+- **Cells added or edited through the tools no longer come back duplicated
+  after the browser reconnects.** The room's first ops before it observed its
+  document (our first edit after creating the room, and on 4.4 the
+  `dirty = False` of its initialization) never reached the ystore, so all
+  later edits of that client stayed pending in it. After the browser was
+  away longer than `document_cleanup_delay`, the recreated room lacked them,
+  reloaded the file as new cells, and the browser added the originals back.
+  The room's full state is now written to its ystore when we first attach
+  to it.
 - Editing a cell of an open notebook no longer replaces its whole metadata
   map: only changed keys are set and removed ones deleted, in one
   transaction. Replacing the map broadcast all of it to every browser and
@@ -239,6 +248,9 @@
 
 ### Maintenance
 
+- Requires jupyter-collaboration 5.x (was 4.4): jupyter-server-ydoc 3.x,
+  jupyter_ydoc >= 4.1.1 and jupyter_server >= 2.19 (what jupyter-server-ydoc
+  3.0 requires). CI's oldest-versions job tests jupyter-collaboration 5.0.0.
 - CI: actions pinned by commit SHA (Dependabot proposes updates), Python
   3.12 and 3.13 added to the matrix (3.11 oldest, 3.x newest), coverage
   reported once per run (unit + integration; `pytest-cov` is now a test

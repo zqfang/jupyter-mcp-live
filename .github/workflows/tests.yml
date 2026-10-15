@@ -16,7 +16,7 @@ jobs:
         deps: ['latest']
         include:
           # Oldest supported versions: Python, fastmcp, Jupyter Server and
-          # jupyter-collaboration (first with get_document(create=True)).
+          # jupyter-collaboration 5.0 (and what it requires).
           - os: ubuntu-latest
             python-version: '3.11'
             deps: 'oldest'
@@ -43,9 +43,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         if [ "${{ matrix.deps }}" = "oldest" ]; then
-          pip install -e .[test] "fastmcp[code-mode]==4.1.0" "jupyter_server==2.16.0" \
-            "jupyter-collaboration==4.4.0" "jupyter-server-ydoc==2.4.0" \
-            "tornado==6.5.9"
+          pip install -e .[test] "fastmcp[code-mode]==4.1.0" "jupyter_server==2.19.0" \
+            "jupyter-collaboration==5.0.0" "jupyter-server-ydoc==3.0.0" \
+            "jupyter_ydoc==4.1.1" "pycrdt-websocket==0.16.4" "tornado==6.5.9"
         else
           pip install -e .[test]
         fi

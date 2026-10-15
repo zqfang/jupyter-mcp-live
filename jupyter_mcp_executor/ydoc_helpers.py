@@ -40,6 +40,9 @@ _cleanups: "weakref.WeakKeyDictionary[Any, _Cleanup]" = weakref.WeakKeyDictionar
 # Rooms whose full state we wrote to their ystore (see _persist_room_state).
 _persisted_rooms: "weakref.WeakSet[Any]" = weakref.WeakSet()
 
+# Seconds to wait for a started room to observe its document.
+_OBSERVED_TIMEOUT = 10.0
+
 
 async def _run_to_completion(aw: Awaitable[_T]) -> _T:
     """Await ``aw``, finishing it even if the caller is cancelled meanwhile.
@@ -345,19 +348,32 @@ async def _ensure_room_initialized(ydoc_extension: Any, api_path: str) -> Any | 
 async def _persist_room_state(room: Any) -> None:
     """Write the room's full state to its ystore, once per room.
 
-    DocumentRoom.initialize() sets ``dirty = False`` after its ystore snapshot
-    but before ``ready``, i.e. before the room forwards updates to the ystore
-    (jupyter-collaboration 4.4.0). That op of the room's own client is never
-    stored, and Yjs integrates a client's ops in clock order, so every later
-    op of that client stays pending when the store is loaded. Our edits are
-    that client's ops: a recreated room lacked them, reloaded the file over
-    the store as new cells, and a reconnecting browser, which holds the
-    originals, added them back (duplicated cells).
+    A room forwards its updates to the ystore only once its ``_watch_ready``
+    task has observed the document, some time after ``ready`` is set. Ops of
+    the room's own client before that are never stored: the ``dirty = False``
+    DocumentRoom.initialize() writes before ``ready`` (jupyter-collaboration
+    4.4), and our first edit after get_document(create=True) returned, which
+    does not wait for the observer (4.4 and 5.0). Yjs integrates a client's
+    ops in clock order, so every later op of that client then stays pending
+    when the store is loaded. Our edits are that client's ops: a recreated
+    room lacked them, reloaded the file over the store as new cells, and a
+    reconnecting browser, which holds the originals, added them back
+    (duplicated cells).
 
-    Must run before our first edit of the room.
+    Waits for the observer when the room tells (pycrdt-websocket >= 0.16.5),
+    then stores everything before it. Must run before our first edit.
     """
     if room.ystore is None or room in _persisted_rooms:
         return
+    observed = getattr(room, "ydoc_observed", None)
+    if observed is not None:
+        try:
+            await asyncio.wait_for(observed.wait(), _OBSERVED_TIMEOUT)
+        except TimeoutError:
+            logger.warning(
+                f"YDoc room {room.room_id} does not observe its document; "
+                "edits may not reach its ystore"
+            )
     await room.ystore.encode_state_as_update(room.ydoc)
     _persisted_rooms.add(room)
 

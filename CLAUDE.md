@@ -357,7 +357,7 @@ position_index), and include a recovery hint for the common failure mode.
 
 ### Test Structure
 
-449 tests total across:
+451 tests total across:
 
 - `tests/test_execution_progress.py` - Progress reporter (throttling, heartbeat,
   messages, failure handling)
@@ -382,7 +382,7 @@ position_index), and include a recovery hint for the common failure mode.
   still finishes
 - `tests/integration/test_ydoc_rooms.py` - `ensure_ynotebook` against a real
   jupyter_server_ydoc (headless room load and reuse, unopened rooms, the
-  configured ystore). Its server config puts the ystore and file ID
+  configured ystore, our edits loadable back from it). Its server config puts the ystore and file ID
   databases under `tmp_path`; by default they land in the process CWD and in
   the user's real Jupyter data dir
 - `tests/test_kernel_reuse.py` - Kernel reuse and session matching against fakes
@@ -542,7 +542,7 @@ appear **duplicated** in JupyterLab. `ensure_ynotebook()` recreates the room
 with the same `file_id` (same ystore path), preserving CRDT history so
 reconnecting browsers sync cleanly. Recreation uses jupyter_server_ydoc's
 official `YDocExtension.get_document(copy=False, create=True)`
-(jupyter-collaboration >= 4.4): it builds the room from the same ystore,
+(jupyter-collaboration 5.x): it builds the room from the same ystore,
 initializes its content, and holds the extension's per-room lock — the same
 lock the browser websocket handler takes — so concurrent callers never create
 duplicate rooms. Until the first browser connects (websocket server not
@@ -574,6 +574,19 @@ that injects the extension's config before the first `create=True` call.
 `get_document()` is the only runtime reader of that trait (handlers got their
 class at startup). `tests/integration/test_ydoc_rooms.py` configures
 `SQLiteYStore.db_path` to catch this.
+
+**Our edits must be loadable from the ystore.** A room forwards updates to
+its ystore only once its `_watch_ready` task observes the document, after
+`ready` is set; `get_document(create=True)` returns before that (4.4–5.0.4),
+and 4.4's `initialize()` also wrote `dirty = False` in between. Such an op
+of the room's own client never reaches the store, and since Yjs integrates a
+client's ops in clock order, every later op of that client — all our edits —
+stays pending when the store is loaded. A recreated room then lacked our
+cells, reloaded the file over the store as new ones, and the reconnecting
+browser added the originals back (duplicated cells). `_persist_room_state()`
+therefore waits for `room.ydoc_observed` (pycrdt-websocket >= 0.16.5; bounded,
+skipped on older versions) and writes the room's full state to its ystore
+once per room, before our first edit.
 
 **Rooms are looked up by API path.** JupyterLab names a notebook by its path
 relative to `root_dir`; `ArbitraryFileIdManager` recognizes an absolute path
