@@ -122,6 +122,38 @@ claude mcp add --transport http jupyter-mcp http://localhost:8888/mcp \
   --header "Authorization: Bearer <your Jupyter token>"
 ```
 
+**Codex Configuration (CLI and IDE extension):**
+
+Add the following to `~/.codex/config.toml` (shared by Codex clients), or to
+`.codex/config.toml` for a trusted project:
+
+```toml
+[mcp_servers.jupyter-mcp-local]
+url = "http://localhost:8888/mcp"
+bearer_token_env_var = "JUPYTER_TOKEN"
+# Optional: allow tool calls to run for up to 10 hours (default: 60 seconds).
+tool_timeout_sec = 36000
+```
+
+Make the same Jupyter token available in the environment that launches Codex:
+
+```bash
+export JUPYTER_TOKEN='<your Jupyter token>'
+codex
+```
+
+For the IDE extension, ensure the IDE process inherits `JUPYTER_TOKEN`, then
+restart the extension after saving the configuration. Codex sends the token
+as `Authorization: Bearer <token>`; the token itself stays out of the TOML file.
+
+Run `codex mcp list` to check the configured server, or use `/mcp` in the
+Codex CLI to inspect active servers. For JupyterHub, replace `url` with
+`https://<hub-host>/user/<username>/mcp` and set `JUPYTER_TOKEN` to your Hub API
+token.
+
+See the [official OpenAI MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+for configuration details.
+
 **Gemini CLI Configuration:**
 
 Add the following to `.gemini/settings.json`:
