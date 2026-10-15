@@ -157,5 +157,8 @@ c.ServerApp.autoreload = False
 # Set Jupyter log level to INFO
 c.ServerApp.log_level = 'INFO'
 
+# Encrypt kernel ZMQ traffic (CurveZMQ) for kernels whose kernelspec supports it
+# c.MappingKernelManager.transport_encryption = "auto"
+
 # Talk to kernels over private Unix sockets instead of unencrypted TCP (Linux/macOS only).
 c.KernelManager.transport = "ipc"
