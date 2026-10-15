@@ -37,6 +37,9 @@ class _Cleanup:
 
 _cleanups: "weakref.WeakKeyDictionary[Any, _Cleanup]" = weakref.WeakKeyDictionary()
 
+# Rooms whose full state we wrote to their ystore (see _persist_room_state).
+_persisted_rooms: "weakref.WeakSet[Any]" = weakref.WeakSet()
+
 
 async def _run_to_completion(aw: Awaitable[_T]) -> _T:
     """Await ``aw``, finishing it even if the caller is cancelled meanwhile.
@@ -263,6 +266,7 @@ async def _attach_room(
     room = await _ensure_room_initialized(ydoc_extension, api_path)
     if room is None:
         return None
+    await _persist_room_state(room)
     _known_room_ids[file_path] = room.room_id
     notebook_room = NotebookRoom(ydoc, room, ydoc_extension, file_path)
     notebook_room.clean_up_if_unused()
@@ -336,6 +340,26 @@ async def _ensure_room_initialized(ydoc_extension: Any, api_path: str) -> Any | 
             await room.initialize()
         logger.debug(f"Initialized YDoc room the browser had not opened: {api_path}")
     return room
+
+
+async def _persist_room_state(room: Any) -> None:
+    """Write the room's full state to its ystore, once per room.
+
+    DocumentRoom.initialize() sets ``dirty = False`` after its ystore snapshot
+    but before ``ready``, i.e. before the room forwards updates to the ystore
+    (jupyter-collaboration 4.4.0). That op of the room's own client is never
+    stored, and Yjs integrates a client's ops in clock order, so every later
+    op of that client stays pending when the store is loaded. Our edits are
+    that client's ops: a recreated room lacked them, reloaded the file over
+    the store as new cells, and a reconnecting browser, which holds the
+    originals, added them back (duplicated cells).
+
+    Must run before our first edit of the room.
+    """
+    if room.ystore is None or room in _persisted_rooms:
+        return
+    await room.ystore.encode_state_as_update(room.ydoc)
+    _persisted_rooms.add(room)
 
 
 def _has_room(ydoc_extension: Any, file_path: str) -> bool | None:

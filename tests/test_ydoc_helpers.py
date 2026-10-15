@@ -45,6 +45,7 @@ def _make_room(*, ready: bool = True):
         room.ready = True
 
     room.initialize = AsyncMock(side_effect=initialize)
+    room.ystore.encode_state_as_update = AsyncMock()
     return room
 
 

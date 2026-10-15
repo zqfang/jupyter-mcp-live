@@ -11,6 +11,8 @@ import nbformat
 import pytest
 from jupyter_server_ydoc.rooms import DocumentRoom
 from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_path
+from jupyter_ydoc import YNotebook
+from pycrdt import Doc
 
 from jupyter_mcp_executor.server_context import set_server_context
 from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
@@ -166,6 +168,56 @@ async def test_recreated_room_uses_the_configured_ystore(
         )
         room = ydoc_extension.ywebsocket_server.rooms[room_id]
         assert room.ystore.db_path == ystore_db_path
+    finally:
+        await ydoc_extension.stop_extension()
+        server_task.cancel()
+
+
+async def _load_from_ystore(ydoc_extension, room) -> YNotebook:
+    """The notebook as a room recreated from the ystore would load it."""
+    ystore = ydoc_extension.ywebsocket_server.ystore_class(
+        path=room.ystore.path, log=ydoc_extension.log
+    )
+    task = asyncio.create_task(ystore.start())
+    try:
+        await ystore.started.wait()
+        ynb = YNotebook(Doc())
+        await ystore.apply_updates(ynb.ydoc)
+        return ynb
+    finally:
+        task.cancel()
+
+
+@pytest.mark.parametrize("opened_by_browser", [False, True])
+async def test_our_edits_can_be_loaded_back_from_the_ystore(
+    ydoc_extension, notebook_path, opened_by_browser
+):
+    """Edits through the room's document must survive a room recreation.
+
+    DocumentRoom.initialize() sets ``dirty = False`` before the room forwards
+    updates to its ystore, so that op of the room's own client never reaches
+    the store. Yjs integrates a client's ops in clock order: every later op of
+    that client — each of our edits — stayed pending when the store was
+    loaded. A recreated room then lacked our cells, reloaded them from the
+    file as new ones, and a reconnecting browser added the originals back
+    (duplicated cells).
+    """
+    server_task = await _start_websocket_server(ydoc_extension)
+    try:
+        if opened_by_browser:
+            room = await _register_unopened_room(ydoc_extension, notebook_path)
+            await room.initialize()
+        ydoc = await ensure_ynotebook(notebook_path)
+        ydoc.append_cell(nbformat.v4.new_code_cell("y = 2"))
+        room = next(iter(ydoc_extension.ywebsocket_server.rooms.values()))
+        for _ in range(50):  # the room writes its ystore in the background
+            loaded = await _load_from_ystore(ydoc_extension, room)
+            if loaded.cell_number == 3:
+                break
+            await asyncio.sleep(0.05)
+
+        assert loaded.cell_number == 3
+        assert str(loaded.ycells[2]["source"]) == "y = 2"
     finally:
         await ydoc_extension.stop_extension()
         server_task.cancel()
