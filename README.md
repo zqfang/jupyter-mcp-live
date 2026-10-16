@@ -96,7 +96,7 @@ c.MCPExtensionApp.mcp_tools = [
 export JUPYTER_TOKEN=<your Jupyter token>
 jupyter lab --config jupyter_config.py
 ## or use example config here
-# jupyter lab --config examples/jupyter_config_with_excution_tools.py
+# jupyter lab --config examples/jupyter_config_with_execution_tools.py
 ```
 
 The MCP endpoint is served by Jupyter itself at `{base_url}mcp` on the Jupyter
@@ -412,33 +412,65 @@ c.MCPExtensionApp.mcp_tools = [
 ### Running Tests
 
 ```bash
-# Install development dependencies
-pip install -e ".[dev]"
+# Install test dependencies (pytest and plugins; the [dev] extra is only ruff)
+pip install -e ".[test]"
 
-# Run tests
-pytest tests/ -v
+# Unit tests (mocked; no kernels or servers started)
+pytest -m "not integration"
+
+# Integration tests (start a real Jupyter Server and kernels)
+pytest -m integration
 
 # Run with coverage
-pytest --cov=jupyter_mcp_live tests/
+pytest --cov=jupyter_mcp_live
 ```
 
 ### Project Structure
 
 ```
-jupyter_mcp_live/
+jupyter-mcp-live/
 ├── jupyter_mcp_live/
-│   ├── __init__.py
-│   ├── mcp_server.py      # Core MCP server implementation
-│   ├── mcp_handler.py     # Authenticated {base_url}mcp endpoint
-│   ├── asgi_bridge.py     # Runs the FastMCP app inside Tornado
-│   └── extension.py       # Jupyter Server extension
+│   │  # Server and endpoint
+│   ├── extension.py           # Jupyter Server extension (MCPExtensionApp)
+│   ├── mcp_handler.py         # Authenticated {base_url}mcp endpoint
+│   ├── asgi_bridge.py         # Runs the FastMCP app inside Tornado
+│   ├── mcp_server.py          # FastMCP server (Code Mode, tool registry)
+│   ├── code_mode_images.py    # Forwards images from Code Mode tool calls
+│   │  # MCP tools
+│   ├── execution_tools.py     # The 16 public tools
+│   │  # Services
+│   ├── service_container.py   # Service singletons
+│   ├── kernel_manager.py      # Kernel lifecycle and reuse
+│   ├── execution_engine.py    # Runs cells, streams outputs live
+│   ├── cell_operations.py     # Add / edit / delete cells
+│   ├── query_service.py       # Read-only notebook queries
+│   │  # Notebook adapters
+│   ├── notebook_adapter.py    # Adapter protocol + factory
+│   ├── ydoc_adapter.py        # Open notebooks (live YDoc edits)
+│   ├── ydoc_helpers.py        # YDoc room lookup and lifecycle
+│   ├── nbformat_adapter.py    # Closed notebooks
+│   ├── notebook_store.py      # Load/save via the contents manager
+│   │  # Utilities
+│   ├── execution_utils.py     # Kernel execute + output collection
+│   ├── execution_progress.py  # MCP progress notifications
+│   ├── output_filter.py       # Trims large outputs in responses
+│   ├── output_converter.py    # Output format conversion
+│   ├── cell_images.py         # Images for view_cell_image
+│   ├── kernel_utils.py        # Kernel name resolution
+│   ├── kernel_tracker.py      # Kernel sessions per notebook
+│   ├── notebook_config.py     # Configuration constants
+│   ├── notebook_models.py     # Dataclasses
+│   ├── path_utils.py          # Path validation (.ipynb, inside root)
+│   └── server_context.py      # Server context
 ├── tests/
-│   ├── test_mcp_server.py # MCPServer tests
-│   └── test_extension.py  # Extension tests  
-├── demo/
-│   ├── jupyter_config.py  # Example configuration
-│   └── *.py              # Debug/diagnostic scripts
-└── pyproject.toml         # Package configuration
+│   ├── test_*.py              # Unit tests (mocked)
+│   └── integration/           # Real Jupyter Server and kernels
+├── examples/
+│   └── jupyter_config_with_execution_tools.py  # Example configuration
+├── jupyter-config/            # Enables the server extension on install
+├── INSTALL.md                 # Installation guide
+├── JUPYTERHUB.md              # JupyterHub setup
+└── pyproject.toml             # Package configuration
 ```
 
 ## Contributing
