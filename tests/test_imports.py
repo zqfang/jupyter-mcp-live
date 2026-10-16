@@ -5,7 +5,7 @@ import pytest
 
 def test_import_main_module():
     """Test that main module imports correctly."""
-    import jupyter_mcp_executor.execution_tools as tools  # noqa: PLC0415
+    import jupyter_mcp_live.execution_tools as tools  # noqa: PLC0415
 
     # Verify all MCP-exported functions exist
     assert hasattr(tools, "list_notebook_sessions")
@@ -27,10 +27,10 @@ def test_import_main_module():
 
 def test_import_services():
     """Test that all service modules import correctly."""
-    from jupyter_mcp_executor.cell_operations import CellOperations  # noqa: PLC0415
-    from jupyter_mcp_executor.execution_engine import ExecutionEngine  # noqa: PLC0415
-    from jupyter_mcp_executor.kernel_manager import KernelManager  # noqa: PLC0415
-    from jupyter_mcp_executor.query_service import QueryService  # noqa: PLC0415
+    from jupyter_mcp_live.cell_operations import CellOperations  # noqa: PLC0415
+    from jupyter_mcp_live.execution_engine import ExecutionEngine  # noqa: PLC0415
+    from jupyter_mcp_live.kernel_manager import KernelManager  # noqa: PLC0415
+    from jupyter_mcp_live.query_service import QueryService  # noqa: PLC0415
 
     # Verify classes can be instantiated
     execution_engine = ExecutionEngine()
@@ -48,12 +48,12 @@ def test_import_services():
 
 def test_import_adapters():
     """Test that adapter modules import correctly."""
-    from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter  # noqa: PLC0415
-    from jupyter_mcp_executor.notebook_adapter import (  # noqa: PLC0415
+    from jupyter_mcp_live.nbformat_adapter import NbformatAdapter  # noqa: PLC0415
+    from jupyter_mcp_live.notebook_adapter import (  # noqa: PLC0415
         NotebookAdapter,
         get_notebook_adapter,
     )
-    from jupyter_mcp_executor.ydoc_adapter import YDocAdapter  # noqa: PLC0415
+    from jupyter_mcp_live.ydoc_adapter import YDocAdapter  # noqa: PLC0415
 
     # Verify classes exist
     assert NotebookAdapter is not None
@@ -64,7 +64,7 @@ def test_import_adapters():
 
 def test_import_models():
     """Test that model modules import correctly."""
-    from jupyter_mcp_executor.notebook_models import (  # noqa: PLC0415
+    from jupyter_mcp_live.notebook_models import (  # noqa: PLC0415
         CellIdentifier,
     )
 
@@ -88,16 +88,16 @@ def test_import_models():
 
 def test_import_utilities():
     """Test that utility modules import correctly."""
-    from jupyter_mcp_executor.notebook_store import (  # noqa: PLC0415
+    from jupyter_mcp_live.notebook_store import (  # noqa: PLC0415
         editing_notebook,
         load_notebook,
         save_notebook,
     )
-    from jupyter_mcp_executor.output_converter import (  # noqa: PLC0415
+    from jupyter_mcp_live.output_converter import (  # noqa: PLC0415
         convert_outputs_to_notebook_nodes,
     )
-    from jupyter_mcp_executor.output_filter import OutputFilter  # noqa: PLC0415
-    from jupyter_mcp_executor.path_utils import normalize_path  # noqa: PLC0415
+    from jupyter_mcp_live.output_filter import OutputFilter  # noqa: PLC0415
+    from jupyter_mcp_live.path_utils import normalize_path  # noqa: PLC0415
 
     # Verify functions exist
     assert normalize_path is not None
@@ -110,7 +110,7 @@ def test_import_utilities():
 
 def test_import_config():
     """Test that config module imports correctly."""
-    from jupyter_mcp_executor.notebook_config import (  # noqa: PLC0415
+    from jupyter_mcp_live.notebook_config import (  # noqa: PLC0415
         EXECUTION_CONFIG,
         OUTPUT_FILTER_CONFIG,
     )
@@ -122,7 +122,7 @@ def test_import_config():
 
 def test_kernel_tracker():
     """Test kernel tracker functionality."""
-    from jupyter_mcp_executor.kernel_tracker import (  # noqa: PLC0415
+    from jupyter_mcp_live.kernel_tracker import (  # noqa: PLC0415
         KernelTracker,
         get_kernel_tracker,
     )
@@ -144,7 +144,7 @@ def test_kernel_tracker():
 
 def test_output_filter():
     """Test output filtering logic."""
-    from jupyter_mcp_executor.output_filter import OutputFilter  # noqa: PLC0415
+    from jupyter_mcp_live.output_filter import OutputFilter  # noqa: PLC0415
 
     # Test should_filter logic
     assert not OutputFilter.should_filter(["text/plain"], 100)
@@ -162,7 +162,7 @@ def test_output_filter():
 
 def test_cell_content_model():
     """Test CellContent model."""
-    from jupyter_mcp_executor.notebook_models import CellContent  # noqa: PLC0415
+    from jupyter_mcp_live.notebook_models import CellContent  # noqa: PLC0415
 
     # Test with string source
     cell1 = CellContent(source="print('hello')", cell_type="code")
@@ -175,7 +175,7 @@ def test_cell_content_model():
 
 def test_execution_result_model():
     """Test ExecutionResult model."""
-    from jupyter_mcp_executor.notebook_models import ExecutionResult  # noqa: PLC0415
+    from jupyter_mcp_live.notebook_models import ExecutionResult  # noqa: PLC0415
 
     result = ExecutionResult(
         execution_count=1,

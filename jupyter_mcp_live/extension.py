@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class MCPExtensionApp(ExtensionApp):
     """The Jupyter Server MCP extension app."""
 
-    name = "jupyter_mcp_executor"
+    name = "jupyter_mcp_live"
     description = "Jupyter Server extension providing MCP server for tool registration"
 
     # Configurable traits
@@ -167,7 +167,7 @@ class MCPExtensionApp(ExtensionApp):
             entrypoints = importlib.metadata.entry_points()
             # Handle both Python 3.10+ and 3.9 style entrypoint APIs
             if hasattr(entrypoints, "select"):
-                tools_group = entrypoints.select(group="jupyter_mcp_executor.tools")
+                tools_group = entrypoints.select(group="jupyter_mcp_live.tools")
             else:
                 tools_group = entrypoints.get("jupyter_mcp_ex.tools", [])
 
@@ -309,7 +309,7 @@ class MCPExtensionApp(ExtensionApp):
     def _bridge_package_logging(self) -> None:
         """Make package loggers use Jupyter Server's logging handlers/level."""
         # Parent logger for the whole package
-        pkg_logger = logging.getLogger("jupyter_mcp_executor")
+        pkg_logger = logging.getLogger("jupyter_mcp_live")
         # Mirror server logger handlers and level
         pkg_logger.handlers.clear()
         for h in self.serverapp.log.handlers:

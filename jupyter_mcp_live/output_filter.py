@@ -3,7 +3,7 @@
 import logging
 from typing import Any, ClassVar
 
-from jupyter_mcp_executor.notebook_config import IMAGE_CONFIG, OUTPUT_FILTER_CONFIG
+from jupyter_mcp_live.notebook_config import IMAGE_CONFIG, OUTPUT_FILTER_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -90,23 +90,29 @@ class OutputFilter:
         return any(mt in OutputFilter.FILTERABLE_TYPES for mt in mime_types)
 
     @staticmethod
-    def create_placeholder(mime_types: list[str]) -> dict[str, Any]:
+    def create_placeholder(
+        mime_types: list[str], output_type: str = "display_data"
+    ) -> dict[str, Any]:
         """Create a placeholder for filtered output.
 
         Args:
             mime_types: Original MIME types that were filtered
+            output_type: The filtered output's type (``display_data`` or
+                ``execute_result``), kept so the response reports it truthfully
 
         Returns:
             Placeholder output dict
         """
         viewable = any(mt in IMAGE_CONFIG.viewable_mime_types for mt in mime_types)
         hint = "call view_cell_image to see it" if viewable else "available in notebook"
-        return {
-            "output_type": "execute_result",
+        placeholder: dict[str, Any] = {
+            "output_type": output_type,
             "data": {"text/plain": f"[Filtered {', '.join(mime_types)} - {hint}]"},
             "metadata": {},
-            "execution_count": None,
         }
+        if output_type == "execute_result":
+            placeholder["execution_count"] = None
+        return placeholder
 
     @staticmethod
     def _filter_data_output(output: dict[str, Any]) -> dict[str, Any]:
@@ -126,7 +132,9 @@ class OutputFilter:
             logger.debug(
                 f"Filtering output with types {mime_types} (size ~{size_estimate} bytes)"
             )
-            placeholder = OutputFilter.create_placeholder(mime_types)
+            placeholder = OutputFilter.create_placeholder(
+                mime_types, output.get("output_type", "display_data")
+            )
 
             # Preserve execution_count if present
             if "execution_count" in output:

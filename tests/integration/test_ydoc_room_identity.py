@@ -14,11 +14,11 @@ import pytest
 from jupyter_server_ydoc.rooms import DocumentRoom
 from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_path
 
-from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
-from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.server_context import set_server_context
-from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook
+from jupyter_mcp_live.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_live.notebook_models import CellContent
+from jupyter_mcp_live.path_utils import normalize_path
+from jupyter_mcp_live.server_context import set_server_context
+from jupyter_mcp_live.ydoc_helpers import ensure_ynotebook
 
 API_PATH = "nb.ipynb"
 

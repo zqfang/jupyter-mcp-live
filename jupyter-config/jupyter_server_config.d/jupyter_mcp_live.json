@@ -1,7 +1,7 @@
 {
   "ServerApp": {
     "jpserver_extensions": {
-      "jupyter_mcp_executor": true
+      "jupyter_mcp_live": true
     }
   }
 }

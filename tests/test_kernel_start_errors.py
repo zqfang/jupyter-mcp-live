@@ -11,11 +11,11 @@ from unittest.mock import patch
 import pytest
 from tornado import web
 
-from jupyter_mcp_executor.execution_engine import ExecutionEngine
-from jupyter_mcp_executor.kernel_manager import KernelManager, KernelStartError
+from jupyter_mcp_live.execution_engine import ExecutionEngine
+from jupyter_mcp_live.kernel_manager import KernelManager, KernelStartError
 from tests.test_kernel_reuse import FakeServerApp
 
-_KM = "jupyter_mcp_executor.kernel_manager"
+_KM = "jupyter_mcp_live.kernel_manager"
 
 
 class RejectingContentsManager:
@@ -72,7 +72,7 @@ def _patched(app):
         patch(f"{_KM}.get_server_context", return_value=app),
         patch(f"{_KM}.require_server_context", return_value=app),
         patch(
-            "jupyter_mcp_executor.execution_engine.get_server_context",
+            "jupyter_mcp_live.execution_engine.get_server_context",
             return_value=app,
         ),
     )

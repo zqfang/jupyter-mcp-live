@@ -9,20 +9,20 @@ from typing import Any
 from jupyter_client.session import Session
 from jupyter_core.utils import ensure_async
 
-from jupyter_mcp_executor.execution_progress import ExecutionProgress
-from jupyter_mcp_executor.execution_utils import (
+from jupyter_mcp_live.execution_progress import ExecutionProgress
+from jupyter_mcp_live.execution_utils import (
     OutputCallback,
     ResetCallback,
     execute_code_on_kernel,
 )
-from jupyter_mcp_executor.kernel_manager import KernelManager
-from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
-from jupyter_mcp_executor.kernel_utils import is_kernel_alive
-from jupyter_mcp_executor.notebook_adapter import NotebookAdapter, get_notebook_adapter
-from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
-from jupyter_mcp_executor.notebook_models import ExecutionResult
-from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.server_context import get_server_context
+from jupyter_mcp_live.kernel_manager import KernelManager
+from jupyter_mcp_live.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_live.kernel_utils import is_kernel_alive
+from jupyter_mcp_live.notebook_adapter import NotebookAdapter, get_notebook_adapter
+from jupyter_mcp_live.notebook_config import EXECUTION_CONFIG
+from jupyter_mcp_live.notebook_models import ExecutionResult
+from jupyter_mcp_live.path_utils import normalize_path
+from jupyter_mcp_live.server_context import get_server_context
 
 logger = logging.getLogger(__name__)
 

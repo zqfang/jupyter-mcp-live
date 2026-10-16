@@ -12,17 +12,17 @@ import pytest
 from jupyter_ydoc import YNotebook
 from nbformat.v4 import new_code_cell, new_notebook
 
-from jupyter_mcp_executor.execution_tools import (
+from jupyter_mcp_live.execution_tools import (
     list_notebook_kernels,
     list_notebook_sessions,
     read_cell,
     view_notebook,
 )
-from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
-from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.output_filter import OutputFilter
-from jupyter_mcp_executor.server_context import set_server_context
-from jupyter_mcp_executor.ydoc_adapter import YDocAdapter
+from jupyter_mcp_live.nbformat_adapter import NbformatAdapter
+from jupyter_mcp_live.notebook_models import CellContent
+from jupyter_mcp_live.output_filter import OutputFilter
+from jupyter_mcp_live.server_context import set_server_context
+from jupyter_mcp_live.ydoc_adapter import YDocAdapter
 from tests.test_notebook_execution_tools import MockKernelSpecManager, MockServerApp
 
 
@@ -124,6 +124,39 @@ def test_filtered_content_the_model_cannot_view_does_not(mime):
 
     assert mime in text
     assert "view_cell_image" not in text
+
+
+_LARGE_PNG = "iVBORw0KGgo" + "A" * 5000
+
+
+def test_filtered_display_data_keeps_its_output_type():
+    """A plot from plt.show() is display_data; its placeholder must not claim
+    to be an execute_result (which would also need an execution_count)."""
+    output = {
+        "output_type": "display_data",
+        "data": {"image/png": _LARGE_PNG, "text/plain": "<Figure>"},
+        "metadata": {},
+    }
+
+    filtered = OutputFilter.filter_single_output(output)
+
+    assert filtered["output_type"] == "display_data"
+    assert "execution_count" not in filtered
+    assert "view_cell_image" in filtered["data"]["text/plain"]
+
+
+def test_filtered_execute_result_keeps_its_execution_count():
+    output = {
+        "output_type": "execute_result",
+        "execution_count": 5,
+        "data": {"image/png": _LARGE_PNG, "text/plain": "<Figure>"},
+        "metadata": {},
+    }
+
+    filtered = OutputFilter.filter_single_output(output)
+
+    assert filtered["output_type"] == "execute_result"
+    assert filtered["execution_count"] == 5
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@
 
 import pytest
 
-from jupyter_mcp_executor.kernel_utils import (
+from jupyter_mcp_live.kernel_utils import (
     detect_kernel_language_from_name,
     detect_kernel_language_from_spec,
     find_kernel_by_language,

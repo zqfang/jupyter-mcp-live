@@ -13,8 +13,8 @@ from jupyter_server.services.contents.largefilemanager import AsyncLargeFileMana
 from nbformat.sign import NotebookNotary
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
 
-from jupyter_mcp_executor.execution_progress import ExecutionProgress
-from jupyter_mcp_executor.execution_tools import (
+from jupyter_mcp_live.execution_progress import ExecutionProgress
+from jupyter_mcp_live.execution_tools import (
     add_code_cell,
     add_markdown_cell,
     delete_cell,
@@ -30,18 +30,18 @@ from jupyter_mcp_executor.execution_tools import (
     switch_notebook_kernel,
     view_notebook,
 )
-from jupyter_mcp_executor.execution_utils import execute_code_on_kernel
+from jupyter_mcp_live.execution_utils import execute_code_on_kernel
 
 # Import from new modular structure
-from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
-from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
-from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG, ProgressConfig
-from jupyter_mcp_executor.notebook_store import load_notebook, save_notebook
-from jupyter_mcp_executor.output_converter import convert_outputs_to_notebook_nodes
-from jupyter_mcp_executor.output_filter import OutputFilter
-from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
-from jupyter_mcp_executor.server_context import _server_context
-from jupyter_mcp_executor.service_container import container
+from jupyter_mcp_live.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_live.nbformat_adapter import NbformatAdapter
+from jupyter_mcp_live.notebook_config import EXECUTION_CONFIG, ProgressConfig
+from jupyter_mcp_live.notebook_store import load_notebook, save_notebook
+from jupyter_mcp_live.output_converter import convert_outputs_to_notebook_nodes
+from jupyter_mcp_live.output_filter import OutputFilter
+from jupyter_mcp_live.path_utils import normalize_path, to_api_path
+from jupyter_mcp_live.server_context import _server_context
+from jupyter_mcp_live.service_container import container
 
 
 class MockKernelManager:
@@ -1347,7 +1347,7 @@ class TestTimeoutInterruptAndCancel:
         until the deadline, which can be hours away.
         """
         monkeypatch.setattr(
-            "jupyter_mcp_executor.execution_utils.SHELL_REPLY_GRACE_SECS", 0.2
+            "jupyter_mcp_live.execution_utils.SHELL_REPLY_GRACE_SECS", 0.2
         )
 
         class NoReplyClient:
@@ -1396,7 +1396,7 @@ class TestTimeoutInterruptAndCancel:
     async def test_timeout_without_interrupt_keeps_previous_behavior(self, monkeypatch):
         # Shorten the existing post-deadline drain window to keep this fast.
         monkeypatch.setattr(
-            "jupyter_mcp_executor.execution_utils.IOPUB_DRAIN_GRACE_SECS", 0.2
+            "jupyter_mcp_live.execution_utils.IOPUB_DRAIN_GRACE_SECS", 0.2
         )
         client = HangingKernelClient()
 
@@ -1520,7 +1520,7 @@ class TestTimeoutInterruptAndCancel:
             return {"execution_count": 1, "outputs": [], "status": "ok"}
 
         monkeypatch.setattr(
-            "jupyter_mcp_executor.execution_engine.execute_code_on_kernel",
+            "jupyter_mcp_live.execution_engine.execute_code_on_kernel",
             fake_execute,
         )
         engine = container.execution_engine
@@ -1987,7 +1987,7 @@ class TestLiveOutputStreaming:
             )
 
         monkeypatch.setattr(
-            "jupyter_mcp_executor.execution_engine.ExecutionProgress.from_request",
+            "jupyter_mcp_live.execution_engine.ExecutionProgress.from_request",
             from_request,
         )
 
@@ -2048,7 +2048,7 @@ class TestLiveOutputStreaming:
         set_server_context(mock_serverapp)
         mock_serverapp.kernel_manager.kernels["kernel-live"] = OutputtingKernel()
         monkeypatch.setattr(
-            "jupyter_mcp_executor.execution_engine.EXECUTION_CONFIG",
+            "jupyter_mcp_live.execution_engine.EXECUTION_CONFIG",
             dataclasses.replace(EXECUTION_CONFIG, room_keepalive_interval=0.01),
         )
 
@@ -2057,7 +2057,7 @@ class TestLiveOutputStreaming:
             return {"execution_count": 1, "outputs": [], "status": "ok"}
 
         monkeypatch.setattr(
-            "jupyter_mcp_executor.execution_engine.execute_code_on_kernel",
+            "jupyter_mcp_live.execution_engine.execute_code_on_kernel",
             silent_execute,
         )
 

@@ -7,7 +7,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
-from jupyter_mcp_executor.path_utils import to_api_path
+from jupyter_mcp_live.path_utils import to_api_path
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ except ImportError:
 
 def _get_ydoc_extension() -> Any | None:
     """Return the YDocExtension instance from the running Jupyter server, or None."""
-    from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
+    from jupyter_mcp_live.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     if not serverapp:

@@ -23,8 +23,8 @@ import nbformat
 from jupyter_core.utils import ensure_async
 from tornado.web import HTTPError
 
-from jupyter_mcp_executor.path_utils import to_api_path
-from jupyter_mcp_executor.server_context import get_server_context
+from jupyter_mcp_live.path_utils import to_api_path
+from jupyter_mcp_live.server_context import get_server_context
 
 # One lock per notebook being edited, alive while someone holds or waits on it.
 _edit_locks: "weakref.WeakValueDictionary[str, asyncio.Lock]" = (

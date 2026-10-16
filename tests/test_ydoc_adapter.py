@@ -11,8 +11,8 @@ pytest.importorskip("jupyter_ydoc")
 
 from jupyter_ydoc import YNotebook
 
-from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.ydoc_adapter import YDocAdapter
+from jupyter_mcp_live.notebook_models import CellContent
+from jupyter_mcp_live.ydoc_adapter import YDocAdapter
 
 
 async def make_adapter_with_code_cell() -> tuple[YDocAdapter, int]:

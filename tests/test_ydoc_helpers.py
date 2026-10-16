@@ -17,11 +17,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_path
 
-from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
-from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
-from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
+from jupyter_mcp_live.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_live.path_utils import normalize_path, to_api_path
+from jupyter_mcp_live.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
-_HELPERS = "jupyter_mcp_executor.ydoc_helpers"
+_HELPERS = "jupyter_mcp_live.ydoc_helpers"
 
 
 class _FakeYNotebook:
@@ -393,10 +393,10 @@ async def test_get_notebook_adapter_uses_the_room_it_recreates():
     # YDocAdapter is a local import inside get_notebook_adapter(); patch at source.
     with (
         patch(
-            "jupyter_mcp_executor.notebook_adapter.ensure_notebook_room",
+            "jupyter_mcp_live.notebook_adapter.ensure_notebook_room",
             new=AsyncMock(return_value=notebook_room),
         ) as mock_ensure,
-        patch("jupyter_mcp_executor.ydoc_adapter.YDocAdapter") as mock_ydoc_cls,
+        patch("jupyter_mcp_live.ydoc_adapter.YDocAdapter") as mock_ydoc_cls,
     ):
         await get_notebook_adapter("/tmp/nb.ipynb")
 

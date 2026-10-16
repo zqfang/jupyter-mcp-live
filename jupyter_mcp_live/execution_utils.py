@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from queue import Empty
 from typing import Any
 
-from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
+from jupyter_mcp_live.notebook_config import EXECUTION_CONFIG
 
 logger = logging.getLogger(__name__)
 

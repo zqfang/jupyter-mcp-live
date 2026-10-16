@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
-**Project**: Jupyter MCP Executor
+**Project**: Jupyter MCP Live
 **Version**: 0.6.0
 **Python**: 3.11+
 **Status**: Production Ready
@@ -46,7 +46,7 @@ pytest tests/test_notebook_execution_tools.py -v
 pytest tests/test_notebook_execution_tools.py::TestExecuteCell::test_execute_cell -v
 
 # Run with coverage (pytest-cov is in the [test] extra; CI reports it once per run)
-pytest --cov=jupyter_mcp_executor --cov-report=html
+pytest --cov=jupyter_mcp_live --cov-report=html
 
 # Run specific test pattern
 pytest -k "test_execute" -v
@@ -56,13 +56,13 @@ pytest -k "test_execute" -v
 
 ```bash
 # Run ruff linter
-ruff check jupyter_mcp_executor/
+ruff check jupyter_mcp_live/
 
 # Run ruff formatter
-ruff format jupyter_mcp_executor/
+ruff format jupyter_mcp_live/
 
 # Auto-fix issues
-ruff check --fix jupyter_mcp_executor/
+ruff check --fix jupyter_mcp_live/
 ```
 
 ### Running the Server
@@ -119,7 +119,7 @@ Jupyter Server Infrastructure (kernels, YDoc, .ipynb files)
 When a notebook is open in JupyterLab, all changes go through YDoc only:
 
 ```python
-from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_live.notebook_adapter import get_notebook_adapter
 
 # Auto-selects YDocAdapter or NbformatAdapter
 adapter = await get_notebook_adapter(notebook_path)
@@ -133,7 +133,7 @@ Writing directly to the .ipynb file while a notebook is open causes JupyterLab t
 Supports custom kernel names via intelligent resolution:
 
 ```python
-from jupyter_mcp_executor.kernel_utils import resolve_kernel_name
+from jupyter_mcp_live.kernel_utils import resolve_kernel_name
 
 # Handles exact matches, language matches, and custom kernels
 kernel_name = resolve_kernel_name("rapids", kernelspecs)  # → "rapids"
@@ -241,33 +241,33 @@ All functions in `execution_tools.py` (16 tools):
    only — no argv/env) and the server's `default_kernel` (the ONLY way to list
    kernels; `KernelManager.describe_kernels()`)
 2. **list_notebook_sessions()** - List active kernel sessions (the ONLY way to list sessions)
-3. **setup_notebook(path, kernel_name, force_new_kernel)** - Create notebook and start/reuse kernel
-4. **switch_notebook_kernel(path, kernel_name)** - Switch to different kernel
-5. **shutdown_notebook(path, shutdown_kernel)** - Shutdown kernel session
-6. **interrupt_notebook_kernel(path)** - Stop the running cell (KeyboardInterrupt); variables kept
-7. **restart_notebook_kernel(path)** - Restart the same kernel; all state cleared
+3. **setup_notebook(notebook_path, kernel_name, force_new_kernel)** - Create notebook and start/reuse kernel
+4. **switch_notebook_kernel(notebook_path, kernel_name)** - Switch to different kernel
+5. **shutdown_notebook(notebook_path, shutdown_kernel)** - Shutdown kernel session
+6. **interrupt_notebook_kernel(notebook_path)** - Stop the running cell (KeyboardInterrupt); variables kept
+7. **restart_notebook_kernel(notebook_path)** - Restart the same kernel; all state cleared
 
 **Cell operations (fine-grained, one tool per operation):**
 
-8. **add_code_cell(path, source, position_index, execute)** - Add code cell (executes by default).
+8. **add_code_cell(notebook_path, source, position_index, execute)** - Add code cell (executes by default).
    Both add tools: `position_index` 0..cell count or omitted (append); other
    values raise `IndexError` (`resolve_insert_position`), never a silent append
-9. **edit_code_cell(path, position_index, source, execute)** - Edit code cell (re-executes by default)
-10. **add_markdown_cell(path, source, position_index)** - Add markdown cell
-11. **edit_markdown_cell(path, position_index, source)** - Edit markdown cell
-12. **delete_cell(path, position_index)** - Delete cell (later cells shift down)
-13. **execute_cell(path, position_index)** - Execute an existing code cell
+9. **edit_code_cell(notebook_path, position_index, source, execute)** - Edit code cell (re-executes by default)
+10. **add_markdown_cell(notebook_path, source, position_index)** - Add markdown cell
+11. **edit_markdown_cell(notebook_path, position_index, source)** - Edit markdown cell
+12. **delete_cell(notebook_path, position_index)** - Delete cell (later cells shift down)
+13. **execute_cell(notebook_path, position_index)** - Execute an existing code cell
 
 **Read-only queries:**
 
-14. **view_notebook(path)** - All cells in order (list index == position_index)
-15. **read_cell(path, position_index/cell_id/execution_count)** - One cell;
+14. **view_notebook(notebook_path)** - All cells in order (list index == position_index)
+15. **read_cell(notebook_path, position_index/cell_id/execution_count)** - One cell;
     the returned dict includes `position` and `cell_id` (also as `id`, like
     `view_notebook`'s cells), so ids pass straight back as `cell_id`.
     Tools returning a list (`view_notebook`, `list_notebook_sessions`) reach
     clients as `{"result": [...]}` (FastMCP wraps non-object results); their
     docstrings say so
-16. **view_cell_image(path, position_index/cell_id/execution_count)** - The
+16. **view_cell_image(notebook_path, position_index/cell_id/execution_count)** - The
     cell's plots, or a markdown cell's embedded images, as MCP image content
     (works inside Code Mode scripts)
 
@@ -294,7 +294,7 @@ All functions in `execution_tools.py` (16 tools):
 - Use dataclasses from `notebook_models.py`:
 
   ```python
-  from jupyter_mcp_executor.notebook_models import CellIdentifier, CellContent
+  from jupyter_mcp_live.notebook_models import CellIdentifier, CellContent
 
   identifier = CellIdentifier(position_index=0)
   content = CellContent(source="print('hello')", cell_type="code")
@@ -306,7 +306,7 @@ All functions in `execution_tools.py` (16 tools):
 - Import from `notebook_config.py`:
 
   ```python
-  from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
+  from jupyter_mcp_live.notebook_config import EXECUTION_CONFIG
 
   timeout = EXECUTION_CONFIG.default_timeout
   ```
@@ -316,7 +316,7 @@ All functions in `execution_tools.py` (16 tools):
 Never read/write notebooks directly. Use the adapter factory:
 
 ```python
-from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_live.notebook_adapter import get_notebook_adapter
 
 adapter = await get_notebook_adapter(notebook_path)
 # Automatically selects YDocAdapter (open notebooks) or NbformatAdapter (closed notebooks)
@@ -329,7 +329,7 @@ adapter = await get_notebook_adapter(notebook_path)
    add it to `__all__`
 3. Register it: tools are loaded from the `c.MCPExtensionApp.mcp_tools` config list
    (`"module:function"` strings — see `examples/jupyter_config_with_execution_tools.py`)
-   or via `jupyter_mcp_executor.tools` entrypoints
+   or via `jupyter_mcp_live.tools` entrypoints
 4. Add tests to `test_notebook_execution_tools.py`
 5. Update this documentation
 
@@ -346,7 +346,7 @@ async def get_notebook_metadata(notebook_path: str) -> dict:
     """Get notebook metadata."""
     return await container.query_service.get_notebook_metadata(notebook_path)
 
-# 3. Add "jupyter_mcp_executor.execution_tools:get_notebook_metadata" to mcp_tools config
+# 3. Add "jupyter_mcp_live.execution_tools:get_notebook_metadata" to mcp_tools config
 # 4. Add test in test_notebook_execution_tools.py
 ```
 
@@ -432,7 +432,7 @@ position_index), and include a recovery hint for the common failure mode.
   unit test
 
 **Warnings are errors** (`pytest.ini` `filterwarnings`): any warning raised
-from `jupyter_mcp_executor` (e.g. a deprecated API we call), and resource
+from `jupyter_mcp_live` (e.g. a deprecated API we call), and resource
 leaks (`ResourceWarning`, also when reported from `__del__` as
 `PytestUnraisableExceptionWarning`) outside `tests/integration/`. Fixtures
 that create a contents manager must close its notary store
@@ -453,7 +453,7 @@ logging.basicConfig(level=logging.DEBUG)
 **Check which adapter is being used**:
 
 ```python
-from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
+from jupyter_mcp_live.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
 # get_ynotebook: returns the live YNotebook only if a room currently exists
 # ensure_ynotebook: same, but recreates the room (from ystore) if it was
@@ -469,7 +469,7 @@ else:
 **Inspect tracked kernels**:
 
 ```python
-from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_live.kernel_tracker import get_kernel_tracker
 
 tracker = get_kernel_tracker()
 print(tracker.get_all_tracked())
@@ -868,7 +868,7 @@ before touching disk.
 
 - [README.md](README.md) - User-facing documentation
 - [pyproject.toml](pyproject.toml) - Package configuration
-- [jupyter_mcp_executor/execution_tools.py](jupyter_mcp_executor/execution_tools.py) - Public API
-- [jupyter_mcp_executor/notebook_adapter.py](jupyter_mcp_executor/notebook_adapter.py) - Adapter pattern
-- [jupyter_mcp_executor/ydoc_helpers.py](jupyter_mcp_executor/ydoc_helpers.py) - YDoc room lifecycle
+- [jupyter_mcp_live/execution_tools.py](jupyter_mcp_live/execution_tools.py) - Public API
+- [jupyter_mcp_live/notebook_adapter.py](jupyter_mcp_live/notebook_adapter.py) - Adapter pattern
+- [jupyter_mcp_live/ydoc_helpers.py](jupyter_mcp_live/ydoc_helpers.py) - YDoc room lifecycle
 - [tests/conftest.py](tests/conftest.py) - Test fixtures and mocks

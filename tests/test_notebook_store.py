@@ -20,15 +20,15 @@ from jupyter_server.services.contents.largefilemanager import (
 from nbformat.sign import NotebookNotary
 from nbformat.v4 import new_code_cell, new_notebook, new_output
 
-from jupyter_mcp_executor.nbformat_adapter import NbformatAdapter
-from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.notebook_store import (
+from jupyter_mcp_live.nbformat_adapter import NbformatAdapter
+from jupyter_mcp_live.notebook_models import CellContent
+from jupyter_mcp_live.notebook_store import (
     editing_notebook,
     ensure_directory,
     load_notebook,
     notebook_exists,
 )
-from jupyter_mcp_executor.server_context import set_server_context
+from jupyter_mcp_live.server_context import set_server_context
 
 HTML_OUTPUT = {
     "output_type": "display_data",

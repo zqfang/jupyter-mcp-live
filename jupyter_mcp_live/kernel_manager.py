@@ -8,28 +8,28 @@ from typing import Any
 from jupyter_core.utils import ensure_async
 from nbformat.v4 import new_notebook
 
-from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
-from jupyter_mcp_executor.kernel_utils import (
+from jupyter_mcp_live.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_live.kernel_utils import (
     default_kernel_name,
     get_kernel_info,
     is_kernel_alive,
     resolve_kernel_name,
 )
-from jupyter_mcp_executor.notebook_models import (
+from jupyter_mcp_live.notebook_models import (
     KernelActionResult,
     KernelSwitchResult,
     NotebookSetupResult,
     ShutdownResult,
 )
-from jupyter_mcp_executor.notebook_store import (
+from jupyter_mcp_live.notebook_store import (
     editing_notebook,
     ensure_directory,
     load_notebook,
     notebook_exists,
     save_notebook,
 )
-from jupyter_mcp_executor.path_utils import normalize_path, to_api_path
-from jupyter_mcp_executor.server_context import (
+from jupyter_mcp_live.path_utils import normalize_path, to_api_path
+from jupyter_mcp_live.server_context import (
     get_server_context,
     require_server_context,
 )
@@ -355,7 +355,7 @@ class KernelManager:
             notebook_path: Path to notebook (already normalized and on disk)
         """
         try:
-            from jupyter_mcp_executor.ydoc_helpers import (  # noqa: PLC0415
+            from jupyter_mcp_live.ydoc_helpers import (  # noqa: PLC0415
                 ensure_ynotebook,
             )
 
@@ -984,7 +984,7 @@ class KernelManager:
             }
 
             # Open notebook: update through YDoc only
-            from jupyter_mcp_executor.ydoc_helpers import (  # noqa: PLC0415
+            from jupyter_mcp_live.ydoc_helpers import (  # noqa: PLC0415
                 ensure_ynotebook,
             )
 

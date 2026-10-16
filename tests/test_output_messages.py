@@ -15,13 +15,13 @@ from queue import Empty
 import pytest
 from jupyter_ydoc import YNotebook
 
-from jupyter_mcp_executor.execution_engine import _CellOutputStreamer
-from jupyter_mcp_executor.execution_progress import ExecutionProgress
-from jupyter_mcp_executor.execution_utils import _CellOutputs, collect_outputs
-from jupyter_mcp_executor.notebook_config import OUTPUT_FILTER_CONFIG
-from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.output_filter import OutputFilter
-from jupyter_mcp_executor.ydoc_adapter import YDocAdapter
+from jupyter_mcp_live.execution_engine import _CellOutputStreamer
+from jupyter_mcp_live.execution_progress import ExecutionProgress
+from jupyter_mcp_live.execution_utils import _CellOutputs, collect_outputs
+from jupyter_mcp_live.notebook_config import OUTPUT_FILTER_CONFIG
+from jupyter_mcp_live.notebook_models import CellContent
+from jupyter_mcp_live.output_filter import OutputFilter
+from jupyter_mcp_live.ydoc_adapter import YDocAdapter
 
 MSG_ID = "exec-1"
 

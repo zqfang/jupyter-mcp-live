@@ -56,8 +56,8 @@ jobs:
         pip install "ruff==0.17.0"
         # Check linting and formatting (fix locally with `ruff check --fix` and
         # `ruff format`)
-        ruff check jupyter_mcp_executor tests
-        ruff format --check jupyter_mcp_executor tests
+        ruff check jupyter_mcp_live tests
+        ruff format --check jupyter_mcp_live tests
     
     # Once per run: the installed (latest) dependencies have no known
     # vulnerabilities.
@@ -72,7 +72,7 @@ jobs:
       shell: bash
       run: |
         if [ "${{ matrix.os }}-${{ matrix.deps }}-${{ matrix.python-version }}" = "ubuntu-latest-latest-3.x" ]; then
-          COV="--cov=jupyter_mcp_executor --cov-report="
+          COV="--cov=jupyter_mcp_live --cov-report="
         fi
         pytest tests/ -v -m "not slow and not integration" $COV
 
@@ -82,7 +82,7 @@ jobs:
       shell: bash
       run: |
         if [ "${{ matrix.os }}-${{ matrix.deps }}-${{ matrix.python-version }}" = "ubuntu-latest-latest-3.x" ]; then
-          COV="--cov=jupyter_mcp_executor --cov-append --cov-report="
+          COV="--cov=jupyter_mcp_live --cov-append --cov-report="
         fi
         pytest tests/ -v -m "integration" $COV
 

@@ -1,10 +1,10 @@
-# Jupyter MCP Executor
+# Jupyter MCP Live
 
 A powerful MCP (Model Context Protocol) server for executing code in Jupyter notebooks. This extension enables AI assistants and other MCP clients to programmatically create, modify, and execute code across multiple kernel types (Python, R, Julia, and more) through a running Jupyter Server.
 
 ## Overview
 
-Jupyter MCP Executor provides a comprehensive toolkit for AI-assisted coding workflows. It enables AI assistants to:
+Jupyter MCP Live provides a comprehensive toolkit for AI-assisted coding workflows. It enables AI assistants to:
 
 - **Execute code** in any Jupyter kernel (Python, R, Julia, etc.)
 - **Create and modify** notebook cells programmatically
@@ -32,18 +32,23 @@ Perfect for building AI-powered data analysis tools, automated notebook workflow
 
 ### 1. Installation
 
-Not published to PyPI yet. Install from GitHub into the environment that runs
-Jupyter:
+Install into the environment that runs Jupyter:
 
 ```bash
-uv pip install "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+pip install jupyter-mcp-live
+```
+
+For the latest unreleased changes, install `main` from GitHub:
+
+```bash
+uv pip install "git+https://github.com/zqfang/jupyter-mcp-live.git"
 ```
 
 Or, for development, from a clone:
 
 ```bash
-git clone https://github.com/zqfang/jupyter-mcp-executor
-cd jupyter-mcp-executor
+git clone https://github.com/zqfang/jupyter-mcp-live
+cd jupyter-mcp-live
 uv sync --extra test
 ```
 
@@ -66,22 +71,22 @@ c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
 # Register tools from existing packages
 c.MCPExtensionApp.mcp_tools = [
     # Notebook execution and kernel management tools
-    "jupyter_mcp_executor.execution_tools:list_notebook_sessions",
-    "jupyter_mcp_executor.execution_tools:list_notebook_kernels",
-    "jupyter_mcp_executor.execution_tools:execute_cell",
-    "jupyter_mcp_executor.execution_tools:setup_notebook",
-    "jupyter_mcp_executor.execution_tools:switch_notebook_kernel",
-    "jupyter_mcp_executor.execution_tools:shutdown_notebook",
-    "jupyter_mcp_executor.execution_tools:interrupt_notebook_kernel",
-    "jupyter_mcp_executor.execution_tools:restart_notebook_kernel",
-    "jupyter_mcp_executor.execution_tools:add_code_cell",
-    "jupyter_mcp_executor.execution_tools:edit_code_cell",
-    "jupyter_mcp_executor.execution_tools:add_markdown_cell",
-    "jupyter_mcp_executor.execution_tools:edit_markdown_cell",
-    "jupyter_mcp_executor.execution_tools:delete_cell",
-    "jupyter_mcp_executor.execution_tools:view_notebook",
-    "jupyter_mcp_executor.execution_tools:read_cell",
-    "jupyter_mcp_executor.execution_tools:view_cell_image"
+    "jupyter_mcp_live.execution_tools:list_notebook_sessions",
+    "jupyter_mcp_live.execution_tools:list_notebook_kernels",
+    "jupyter_mcp_live.execution_tools:execute_cell",
+    "jupyter_mcp_live.execution_tools:setup_notebook",
+    "jupyter_mcp_live.execution_tools:switch_notebook_kernel",
+    "jupyter_mcp_live.execution_tools:shutdown_notebook",
+    "jupyter_mcp_live.execution_tools:interrupt_notebook_kernel",
+    "jupyter_mcp_live.execution_tools:restart_notebook_kernel",
+    "jupyter_mcp_live.execution_tools:add_code_cell",
+    "jupyter_mcp_live.execution_tools:edit_code_cell",
+    "jupyter_mcp_live.execution_tools:add_markdown_cell",
+    "jupyter_mcp_live.execution_tools:edit_markdown_cell",
+    "jupyter_mcp_live.execution_tools:delete_cell",
+    "jupyter_mcp_live.execution_tools:view_notebook",
+    "jupyter_mcp_live.execution_tools:read_cell",
+    "jupyter_mcp_live.execution_tools:view_cell_image"
 ]
 ```
 
@@ -171,7 +176,7 @@ Add the following to `.gemini/settings.json`:
 
 ### JupyterHub
 
-Install `jupyter-mcp-executor` in the **single-user server environment** (the
+Install `jupyter-mcp-live` in the **single-user server environment** (the
 user image). Each user's server then exposes its own endpoint through the Hub
 proxy — no extra ports or proxy configuration:
 
@@ -259,12 +264,12 @@ but it still has no authentication — anyone who can connect can run code.
 
 ### Core Components
 
-#### MCPServer (`jupyter_mcp_executor.mcp_server.MCPServer`)
+#### MCPServer (`jupyter_mcp_live.mcp_server.MCPServer`)
 
 A simplified LoggingConfigurable class that manages FastMCP integration:
 
 ```python
-from jupyter_mcp_executor.mcp_server import MCPServer
+from jupyter_mcp_live.mcp_server import MCPServer
 
 # Create server
 server = MCPServer(name="My Server", port=8080)
@@ -286,7 +291,7 @@ await server.start_server()
 - `list_tools()` - Get list of registered tools
 - `start_server(host=None)` - Start the HTTP MCP server
 
-#### MCPExtensionApp (`jupyter_mcp_executor.extension.MCPExtensionApp`)
+#### MCPExtensionApp (`jupyter_mcp_live.extension.MCPExtensionApp`)
 
 Jupyter Server extension that manages the MCP server lifecycle:
 
@@ -318,12 +323,12 @@ c.MCPExtensionApp.mcp_tools = [
 
 #### 2. Automatic Discovery via Entrypoints
 
-Python packages can expose tools automatically using the `jupyter_mcp_executor.tools` entrypoint group.
+Python packages can expose tools automatically using the `jupyter_mcp_live.tools` entrypoint group.
 
 **In your package's `pyproject.toml`:**
 
 ```toml
-[project.entry-points."jupyter_mcp_executor.tools"]
+[project.entry-points."jupyter_mcp_live.tools"]
 my_package_tools = "my_package.tools:TOOLS"
 ```
 
@@ -414,14 +419,14 @@ pip install -e ".[dev]"
 pytest tests/ -v
 
 # Run with coverage
-pytest --cov=jupyter_mcp_executor tests/
+pytest --cov=jupyter_mcp_live tests/
 ```
 
 ### Project Structure
 
 ```
-jupyter_mcp_executor/
-├── jupyter_mcp_executor/
+jupyter_mcp_live/
+├── jupyter_mcp_live/
 │   ├── __init__.py
 │   ├── mcp_server.py      # Core MCP server implementation
 │   ├── mcp_handler.py     # Authenticated {base_url}mcp endpoint

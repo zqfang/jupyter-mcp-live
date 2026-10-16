@@ -6,19 +6,19 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from jupyter_mcp_executor.notebook_adapter import (
+from jupyter_mcp_live.notebook_adapter import (
     NotebookAdapter,
     resolve_insert_position,
 )
-from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.ydoc_helpers import (
+from jupyter_mcp_live.notebook_models import CellContent
+from jupyter_mcp_live.ydoc_helpers import (
     YDOC_AVAILABLE,
     YText,
     get_cell_index_by_id_ydoc,
 )
 
 if TYPE_CHECKING:
-    from jupyter_mcp_executor.ydoc_helpers import NotebookRoom
+    from jupyter_mcp_live.ydoc_helpers import NotebookRoom
 
 logger = logging.getLogger(__name__)
 

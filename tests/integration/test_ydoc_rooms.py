@@ -14,8 +14,8 @@ from jupyter_server_ydoc.utils import encode_file_path, room_id_from_encoded_pat
 from jupyter_ydoc import YNotebook
 from pycrdt import Doc
 
-from jupyter_mcp_executor.server_context import set_server_context
-from jupyter_mcp_executor.ydoc_helpers import ensure_ynotebook, get_ynotebook
+from jupyter_mcp_live.server_context import set_server_context
+from jupyter_mcp_live.ydoc_helpers import ensure_ynotebook, get_ynotebook
 
 
 @pytest.fixture

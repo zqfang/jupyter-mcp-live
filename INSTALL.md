@@ -1,8 +1,4 @@
-# Installation Guide for Jupyter MCP Executor
-
-> **Not on PyPI yet.** `jupyter-mcp-executor` has not been published to PyPI,
-> so `pip install jupyter-mcp-executor` will fail. Install it from GitHub
-> (Option 1) or from a local clone (Option 2).
+# Installation Guide for Jupyter MCP Live
 
 This guide uses [uv](https://github.com/astral-sh/uv), a fast Python package
 installer and resolver; plain `pip` works too (see the end of this guide).
@@ -10,35 +6,41 @@ installer and resolver; plain `pip` works too (see the end of this guide).
 ## Prerequisites
 
 - Python 3.11 or higher
-- Git
+- Git (only for Options 2 and 3)
 
 ## Installation Options
 
-### Option 1: Install from GitHub (for users)
+In every option, install into the environment that runs Jupyter. The Jupyter
+Server extension is enabled automatically on install.
 
-Install the latest `main` into the environment that runs Jupyter:
+### Option 1: Install from PyPI (recommended)
 
 ```bash
 # Install uv (skip if you already have it)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install jupyter-mcp-executor straight from GitHub
-uv pip install "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+uv pip install jupyter-mcp-live
 ```
 
-To pin a specific version, add a tag or commit, e.g.
-`"git+https://github.com/zqfang/jupyter-mcp-executor.git@<tag-or-commit>"`.
+### Option 2: Install the latest `main` from GitHub
 
-The Jupyter Server extension is enabled automatically on install.
+For changes not released yet:
 
-### Option 2: Development installation (from a clone)
+```bash
+uv pip install "git+https://github.com/zqfang/jupyter-mcp-live.git"
+```
+
+To pin a tag or commit, append it, e.g.
+`"git+https://github.com/zqfang/jupyter-mcp-live.git@<tag-or-commit>"`.
+
+### Option 3: Development installation (from a clone)
 
 For working on the code, or running the tests:
 
 ```bash
 # Clone the repository
-git clone https://github.com/zqfang/jupyter-mcp-executor.git
-cd jupyter-mcp-executor
+git clone https://github.com/zqfang/jupyter-mcp-live.git
+cd jupyter-mcp-live
 
 # Create .venv and install the package in editable mode with test tools
 # (pytest, pytest-jupyter, ruff)
@@ -56,13 +58,13 @@ jupyter lab --config examples/jupyter_config_with_execution_tools.py
 
 ```bash
 # Check that the package is installed
-uv pip list | grep jupyter-mcp-executor
+uv pip list | grep jupyter-mcp-live
 
 # Check that the Jupyter Server extension is enabled
 jupyter server extension list
 ```
 
-You should see `jupyter_mcp_executor` listed as enabled.
+You should see `jupyter_mcp_live` listed as enabled.
 
 ## Quick Start After Installation
 
@@ -82,7 +84,7 @@ c.MCPExtensionApp.mcp_name = "My Jupyter MCP Server"
 
 # Register the notebook tools
 c.MCPExtensionApp.mcp_tools = [
-    f"jupyter_mcp_executor.execution_tools:{name}"
+    f"jupyter_mcp_live.execution_tools:{name}"
     for name in [
         "list_notebook_kernels", "list_notebook_sessions", "setup_notebook",
         "switch_notebook_kernel", "shutdown_notebook",
@@ -152,7 +154,7 @@ c.MCPExtensionApp.mcp_tools = [
 
 ## Running Tests
 
-From a development installation (Option 2):
+From a development installation (Option 3):
 
 ```bash
 # Run all tests
@@ -162,25 +164,31 @@ pytest tests/ -v
 pytest tests/test_mcp_server.py -v
 
 # Lint (the version CI uses is pinned in pyproject.toml)
-ruff check jupyter_mcp_executor
-ruff format --check jupyter_mcp_executor
+ruff check jupyter_mcp_live
+ruff format --check jupyter_mcp_live
 ```
 
 For coverage, install `pytest-cov` first (`uv pip install pytest-cov`), then
-run `pytest --cov=jupyter_mcp_executor tests/`.
+run `pytest --cov=jupyter_mcp_live tests/`.
 
 ## Updating
 
-### Installed from GitHub (Option 1)
+### Installed from PyPI (Option 1)
 
 ```bash
-uv pip install --reinstall "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+uv pip install --upgrade jupyter-mcp-live
 ```
 
-### Development installation (Option 2)
+### Installed from GitHub (Option 2)
 
 ```bash
-cd jupyter-mcp-executor
+uv pip install --reinstall "git+https://github.com/zqfang/jupyter-mcp-live.git"
+```
+
+### Development installation (Option 3)
+
+```bash
+cd jupyter-mcp-live
 git pull origin main
 uv sync --extra test
 ```
@@ -189,7 +197,7 @@ uv sync --extra test
 
 ### Extension Not Loading
 
-If `jupyter_mcp_executor` doesn't appear in `jupyter server extension list`,
+If `jupyter_mcp_live` doesn't appear in `jupyter server extension list`,
 make sure the package is installed in the same environment that runs Jupyter:
 
 ```bash
@@ -238,18 +246,21 @@ source ~/.bashrc  # or source ~/.zshrc
 ## Uninstallation
 
 ```bash
-uv pip uninstall jupyter-mcp-executor
+uv pip uninstall jupyter-mcp-live
 ```
 
 ## Alternative: Using pip
 
 ```bash
-# Install from GitHub
-pip install "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+# Install from PyPI
+pip install jupyter-mcp-live
+
+# Install the latest main from GitHub
+pip install "git+https://github.com/zqfang/jupyter-mcp-live.git"
 
 # Development installation
-git clone https://github.com/zqfang/jupyter-mcp-executor.git
-cd jupyter-mcp-executor
+git clone https://github.com/zqfang/jupyter-mcp-live.git
+cd jupyter-mcp-live
 pip install -e ".[test]"
 ```
 

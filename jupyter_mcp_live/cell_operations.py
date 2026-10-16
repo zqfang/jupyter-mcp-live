@@ -2,15 +2,15 @@
 
 import logging
 
-from jupyter_mcp_executor.execution_engine import ExecutionEngine
-from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
-from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG
-from jupyter_mcp_executor.notebook_models import (
+from jupyter_mcp_live.execution_engine import ExecutionEngine
+from jupyter_mcp_live.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_live.notebook_config import EXECUTION_CONFIG
+from jupyter_mcp_live.notebook_models import (
     CellContent,
     CellOperationResult,
     ExecutionResult,
 )
-from jupyter_mcp_executor.path_utils import normalize_path
+from jupyter_mcp_live.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
 

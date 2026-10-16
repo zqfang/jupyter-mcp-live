@@ -12,10 +12,10 @@ import nbformat
 import pytest
 from jupyter_server_ydoc.utils import decode_file_path
 
-from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
-from jupyter_mcp_executor.notebook_models import CellContent
-from jupyter_mcp_executor.server_context import set_server_context
-from jupyter_mcp_executor.ydoc_helpers import (
+from jupyter_mcp_live.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_live.notebook_models import CellContent
+from jupyter_mcp_live.server_context import set_server_context
+from jupyter_mcp_live.ydoc_helpers import (
     CLEANUP_SAVE_MARGIN,
     ensure_notebook_room,
 )

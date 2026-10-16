@@ -13,10 +13,10 @@ from typing import Any
 from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 
-from jupyter_mcp_executor.notebook_models import CellIdentifier
-from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.server_context import get_server_context, set_server_context
-from jupyter_mcp_executor.service_container import container
+from jupyter_mcp_live.notebook_models import CellIdentifier
+from jupyter_mcp_live.path_utils import normalize_path
+from jupyter_mcp_live.server_context import get_server_context, set_server_context
+from jupyter_mcp_live.service_container import container
 
 
 # ============================================================================

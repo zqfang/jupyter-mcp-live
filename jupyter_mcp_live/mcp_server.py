@@ -24,8 +24,8 @@ from pydantic_monty import ResourceLimits
 from traitlets import Int, Unicode
 from traitlets.config.configurable import LoggingConfigurable
 
-from jupyter_mcp_executor.asgi_bridge import EmbeddedASGIApp
-from jupyter_mcp_executor.code_mode_images import CodeModeImageForwarder
+from jupyter_mcp_live.asgi_bridge import EmbeddedASGIApp
+from jupyter_mcp_live.code_mode_images import CodeModeImageForwarder
 
 # Budget for a Code Mode script's own execution time. Monty (fastmcp >= 4.1)
 # pauses its clock while the script waits on tool calls, so kernel
@@ -161,9 +161,9 @@ class MCPServer(LoggingConfigurable):
         # Set by start_embedded(): the FastMCP app served in-process through
         # the authenticated Jupyter Server handler (see mcp_handler.py).
         self.embedded_app: EmbeddedASGIApp | None = None
-        self.log.info(
-            f"Initialized MCP server '{self.name}' on {self.host}:{self.port}"
-        )
+        # No address here: nothing listens yet. The extension logs the
+        # endpoint it actually serves (Jupyter handler and/or standalone).
+        self.log.info(f"Initialized MCP server '{self.name}'")
 
     def register_tool(
         self,

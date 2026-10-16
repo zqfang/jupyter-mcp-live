@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 import pytest
 
-from jupyter_mcp_executor.kernel_manager import KernelManager
+from jupyter_mcp_live.kernel_manager import KernelManager
 from tests.test_kernel_reuse import FakeServerApp, FakeSessionManager
 
-_KM = "jupyter_mcp_executor.kernel_manager"
+_KM = "jupyter_mcp_live.kernel_manager"
 
 
 class ClosingSessionManager(FakeSessionManager):

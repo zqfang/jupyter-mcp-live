@@ -7,8 +7,8 @@ other server-side user of the kernel (an extension calling km.client()) then
 took over our execute_reply messages.
 """
 
-from jupyter_mcp_executor.execution_engine import ExecutionEngine
-from jupyter_mcp_executor.server_context import set_server_context
+from jupyter_mcp_live.execution_engine import ExecutionEngine
+from jupyter_mcp_live.server_context import set_server_context
 
 
 async def test_reply_reaches_the_engine_while_another_client_shares_the_kernel(

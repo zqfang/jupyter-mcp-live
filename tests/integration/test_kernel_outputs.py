@@ -1,7 +1,7 @@
 """Output messages from a real ipykernel end up as JupyterLab would show them."""
 
-from jupyter_mcp_executor.execution_engine import ExecutionEngine
-from jupyter_mcp_executor.server_context import set_server_context
+from jupyter_mcp_live.execution_engine import ExecutionEngine
+from jupyter_mcp_live.server_context import set_server_context
 
 PROGRESS_AND_DISPLAY = """
 from IPython.display import clear_output, display
