@@ -4,6 +4,23 @@
 
 ## 0.6.0 (Unreleased)
 
+### Breaking changes
+
+- **Renamed to `jupyter-mcp-live`** (import name `jupyter_mcp_live`). Update:
+  - `mcp_tools` entries: `"jupyter_mcp_executor.execution_tools:..."` →
+    `"jupyter_mcp_live.execution_tools:..."`;
+  - the server extension: `jpserver_extensions` key `jupyter_mcp_live`
+    (enabled automatically by the installed
+    `jupyter_server_config.d/jupyter_mcp_live.json`);
+  - the extension's own config file: `jupyter_jupyter_mcp_executor_config.py`
+    → `jupyter_jupyter_mcp_live_config.py` (`c.MCPExtensionApp` settings in
+    `jupyter_server_config.py` or a `--config` file are unaffected);
+  - third-party tool entry points: group `jupyter_mcp_live.tools`;
+  - the logger: `jupyter_mcp_live`.
+
+  Uninstall `jupyter_mcp_executor` before installing: with both installed,
+  two extensions would serve the same MCP endpoint.
+
 ### Enhancements made
 
 - **New tools `interrupt_notebook_kernel` and `restart_notebook_kernel`.**
@@ -104,6 +121,13 @@
 
 ### Bugs fixed
 
+- **Filtered plots keep their output type in tool responses.** The placeholder
+  for a large image or HTML output always said `execute_result` (with
+  `execution_count: null`), even for `display_data` such as `plt.show()`. It
+  now keeps the original type; the notebook itself was never affected.
+- **The startup log no longer names an unused port.** "Initialized MCP
+  server ... on localhost:3001" was logged even with the standalone listener
+  off; the endpoint actually served is logged separately.
 - **Cells added or edited through the tools no longer come back duplicated
   after the browser reconnects.** The room's first ops before it observed its
   document (our first edit after creating the room, and on 4.4 the

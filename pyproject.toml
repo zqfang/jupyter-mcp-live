@@ -3,9 +3,9 @@ requires = ["hatchling>=1.5"]
 build-backend = "hatchling.build"
 
 [project]
-name = "jupyter_mcp_executor"
+name = "jupyter-mcp-live"
 authors = [{name = "Zhuoqing Fang", email = "fzq518@gmail.com"}]
-description = "MCP server extension for Jupyter Server to execute code and manage notebooks via AI assistants"
+description = "MCP server built into Jupyter Server: AI agents edit and run the notebooks open in JupyterLab, with outputs streaming into cells live."
 dynamic = ["version"]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,7 +37,7 @@ dependencies = [
     "jupyter-collaboration>=5.0,<6",
     # >=4.1.1: what jupyter-server-ydoc 3.0 requires
     "jupyter_ydoc>=4.1.1",
-    "pycrdt>=0.8.0",
+    "pycrdt>=0.14.0",
 ]
 
 [project.optional-dependencies]
@@ -58,19 +58,27 @@ dev = [
 file="LICENSE"
 
 [project.urls]
-Homepage = "https://github.com/zqfang/jupyter-mcp-executor"
-Repository = "https://github.com/zqfang/jupyter-mcp-executor"
-"Bug Tracker" = "https://github.com/zqfang/jupyter-mcp-executor/issues"
-Changelog = "https://github.com/zqfang/jupyter-mcp-executor/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/zqfang/jupyter-mcp-live"
+Repository = "https://github.com/zqfang/jupyter-mcp-live"
+"Bug Tracker" = "https://github.com/zqfang/jupyter-mcp-live/issues"
+Changelog = "https://github.com/zqfang/jupyter-mcp-live/blob/main/CHANGELOG.md"
 
 [project.entry-points."jupyter_server.extension_points"]
-jupyter_mcp_executor = "jupyter_mcp_executor.extension:MCPExtensionApp"
+jupyter_mcp_live = "jupyter_mcp_live.extension:MCPExtensionApp"
 
 [tool.hatch.version]
-path = "jupyter_mcp_executor/__init__.py"
+path = "jupyter_mcp_live/__init__.py"
 
 [tool.hatch.build.targets.wheel.shared-data]
 "jupyter-config" = "etc/jupyter"
+
+# Keep internal notes and CI config out of the source distribution on PyPI
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "CLAUDE.md",
+  "docs/",
+  ".github/",
+]
 
 [tool.ruff]
 line-length = 88

@@ -15,8 +15,8 @@ from unittest.mock import patch
 import pytest
 from tornado import web
 
-from jupyter_mcp_executor.kernel_manager import KernelManager
-from jupyter_mcp_executor.kernel_utils import is_kernel_alive
+from jupyter_mcp_live.kernel_manager import KernelManager
+from jupyter_mcp_live.kernel_utils import is_kernel_alive
 
 
 class FakeKernelManager:
@@ -115,9 +115,7 @@ async def test_dead_tracked_kernel_falls_back_to_the_live_session(tmp_path):
     mgr = KernelManager()
     mgr.kernel_tracker.track(path, "dead-kernel")
 
-    with patch(
-        "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
-    ):
+    with patch("jupyter_mcp_live.kernel_manager.get_server_context", return_value=app):
         kernel_id, started_new = await mgr.get_kernel_for_notebook(path)
 
     assert kernel_id == "live-kernel"
@@ -145,16 +143,12 @@ async def test_force_new_kernel_replaces_the_session_instead_of_adding_one(tmp_p
     mgr.kernel_tracker.track(path, "old-kernel")
 
     with (
+        patch("jupyter_mcp_live.kernel_manager.get_server_context", return_value=app),
         patch(
-            "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
-        ),
-        patch(
-            "jupyter_mcp_executor.kernel_manager.require_server_context",
+            "jupyter_mcp_live.kernel_manager.require_server_context",
             return_value=app,
         ),
-        patch(
-            "jupyter_mcp_executor.kernel_manager.to_api_path", return_value="nb.ipynb"
-        ),
+        patch("jupyter_mcp_live.kernel_manager.to_api_path", return_value="nb.ipynb"),
     ):
         await mgr.setup_notebook(path, kernel_name="python3", force_new_kernel=True)
 
@@ -198,16 +192,12 @@ async def test_duplicate_sessions_resolve_to_the_one_a_jupyterlab_tab_is_on(tmp_
     )
     mgr = KernelManager()
 
-    with patch(
-        "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
-    ):
+    with patch("jupyter_mcp_live.kernel_manager.get_server_context", return_value=app):
         session = await mgr._find_session_for_notebook(path)
     assert session["kernel"]["id"] == "jupyterlab-tab"  # was "orphan" (list order)
 
     # ...unless this client already has a kernel for the notebook, which stays stable.
     mgr.kernel_tracker.track(path, "orphan")
-    with patch(
-        "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
-    ):
+    with patch("jupyter_mcp_live.kernel_manager.get_server_context", return_value=app):
         session = await mgr._find_session_for_notebook(path)
     assert session["kernel"]["id"] == "orphan"

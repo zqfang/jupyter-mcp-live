@@ -18,7 +18,7 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import ToolResult
 from mcp.types import ImageContent, TextContent
 
-from jupyter_mcp_executor.notebook_config import IMAGE_CONFIG
+from jupyter_mcp_live.notebook_config import IMAGE_CONFIG
 
 # Images collected from nested calls of the execute request in progress;
 # None outside an execute request. The list is shared (not copied) with the

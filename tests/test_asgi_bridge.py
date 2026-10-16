@@ -11,7 +11,7 @@ from starlette.routing import Route
 from tornado.httputil import HTTPHeaders, HTTPServerRequest
 from tornado.iostream import StreamClosedError
 
-from jupyter_mcp_executor.asgi_bridge import EmbeddedASGIApp, run_asgi
+from jupyter_mcp_live.asgi_bridge import EmbeddedASGIApp, run_asgi
 
 
 class FakeHandler:

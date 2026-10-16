@@ -7,7 +7,7 @@ import pytest
 from fastmcp import Client
 from pydantic_monty import ResourceLimits
 
-from jupyter_mcp_executor.mcp_server import (
+from jupyter_mcp_live.mcp_server import (
     SANDBOX_EXECUTION_BUDGET_SECS,
     SANDBOX_MAX_MEMORY_BYTES,
     MCPServer,
@@ -245,7 +245,7 @@ class TestCodeModeSandboxLimits:
         on tool calls (kernel execution) does not count against it.
         """
         monkeypatch.setattr(
-            "jupyter_mcp_executor.mcp_server.SANDBOX_EXECUTION_BUDGET_SECS", 0.5
+            "jupyter_mcp_live.mcp_server.SANDBOX_EXECUTION_BUDGET_SECS", 0.5
         )
 
         async def slow_tool() -> str:

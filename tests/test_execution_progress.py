@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from jupyter_mcp_executor.execution_progress import ExecutionProgress
-from jupyter_mcp_executor.notebook_config import ProgressConfig
+from jupyter_mcp_live.execution_progress import ExecutionProgress
+from jupyter_mcp_live.notebook_config import ProgressConfig
 
 # Long intervals so only the explicit clock drives throttling in sync tests.
 QUIET = ProgressConfig(heartbeat_interval=3600, min_interval=1.0, message_max_chars=120)

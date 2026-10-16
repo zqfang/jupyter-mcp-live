@@ -11,7 +11,7 @@ def _jupyter_server_extension_points() -> list[dict[str, Any]]:
     # pragma: no cover
     return [
         {
-            "module": "jupyter_mcp_executor.extension",
+            "module": "jupyter_mcp_live.extension",
             "app": MCPExtensionApp,
         },
     ]

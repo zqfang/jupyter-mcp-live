@@ -5,10 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
-from jupyter_mcp_executor import execution_tools
-from jupyter_mcp_executor.kernel_manager import KernelManager
-from jupyter_mcp_executor.notebook_models import KernelActionResult
-from jupyter_mcp_executor.service_container import container
+from jupyter_mcp_live import execution_tools
+from jupyter_mcp_live.kernel_manager import KernelManager
+from jupyter_mcp_live.notebook_models import KernelActionResult
+from jupyter_mcp_live.service_container import container
 from tests.test_kernel_reuse import FakeKernelManager, FakeServerApp
 
 
@@ -48,7 +48,7 @@ def _patched(app):
     stack = ExitStack()
     for name in ("get_server_context", "require_server_context"):
         stack.enter_context(
-            patch(f"jupyter_mcp_executor.kernel_manager.{name}", return_value=app)
+            patch(f"jupyter_mcp_live.kernel_manager.{name}", return_value=app)
         )
     return stack
 

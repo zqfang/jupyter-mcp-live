@@ -16,12 +16,12 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from tornado.simple_httpclient import HTTPStreamClosedError
 
-from jupyter_mcp_executor.notebook_config import EXECUTION_CONFIG, ProgressConfig
+from jupyter_mcp_live.notebook_config import EXECUTION_CONFIG, ProgressConfig
 
-EXTENSION = "jupyter_mcp_executor"
+EXTENSION = "jupyter_mcp_live"
 TOY_TOOL = "tests.integration.toy_tools:add"
 EXECUTION_TOOLS = [
-    f"jupyter_mcp_executor.execution_tools:{name}"
+    f"jupyter_mcp_live.execution_tools:{name}"
     for name in (
         "setup_notebook",
         "add_code_cell",
@@ -171,9 +171,7 @@ class TestDefaultEndpoint:
             msg = "app crashed mid-stream"
             raise RuntimeError(msg)
 
-        monkeypatch.setattr(
-            "jupyter_mcp_executor.mcp_handler.run_asgi", crash_mid_stream
-        )
+        monkeypatch.setattr("jupyter_mcp_live.mcp_handler.run_asgi", crash_mid_stream)
 
         # The connection is dropped instead of ending the chunked body
         # normally, so the client sees a transport error, not a 200.
@@ -282,7 +280,7 @@ class TestProgressNotifications:
         self, jp_serverapp, jp_http_port, jp_base_url, monkeypatch
     ):
         monkeypatch.setattr(
-            "jupyter_mcp_executor.execution_progress.PROGRESS_CONFIG",
+            "jupyter_mcp_live.execution_progress.PROGRESS_CONFIG",
             ProgressConfig(
                 heartbeat_interval=0.5, min_interval=0.2, message_max_chars=120
             ),
@@ -379,9 +377,7 @@ class TestInterruptAndRestart:
     ):
         short = dataclasses.replace(EXECUTION_CONFIG, default_timeout=2)
         for module in ("cell_operations", "execution_engine", "execution_utils"):
-            monkeypatch.setattr(
-                f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short
-            )
+            monkeypatch.setattr(f"jupyter_mcp_live.{module}.EXECUTION_CONFIG", short)
 
         args = _execute_args(
             "t.ipynb",
@@ -411,9 +407,7 @@ class TestInterruptAndRestart:
         """
         short = dataclasses.replace(EXECUTION_CONFIG, default_timeout=5)
         for module in ("cell_operations", "execution_engine", "execution_utils"):
-            monkeypatch.setattr(
-                f"jupyter_mcp_executor.{module}.EXECUTION_CONFIG", short
-            )
+            monkeypatch.setattr(f"jupyter_mcp_live.{module}.EXECUTION_CONFIG", short)
 
         args = _execute_args(
             "s.ipynb",

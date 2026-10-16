@@ -35,7 +35,7 @@ def normalize_path(path: str) -> str:
     decoded_path = Path(unquote(path))
 
     # Deferred import to avoid circular dependencies at module load time
-    from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
+    from jupyter_mcp_live.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     root_dir: Path | None = None
@@ -93,7 +93,7 @@ def to_api_path(absolute_path: str) -> str:
 
     abs_path = Path(absolute_path)
 
-    from jupyter_mcp_executor.server_context import get_server_context  # noqa: PLC0415
+    from jupyter_mcp_live.server_context import get_server_context  # noqa: PLC0415
 
     serverapp = get_server_context()
     if serverapp and hasattr(serverapp, "root_dir"):

@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from traitlets import TraitError
 
-from jupyter_mcp_executor.extension import MCPExtensionApp
-from jupyter_mcp_executor.mcp_handler import MCPHandler
-from jupyter_mcp_executor.mcp_server import MCPServer
+from jupyter_mcp_live.extension import MCPExtensionApp
+from jupyter_mcp_live.mcp_handler import MCPHandler
+from jupyter_mcp_live.mcp_server import MCPServer
 
 
 async def _run_until_cancelled():
@@ -40,7 +40,7 @@ class TestMCPExtensionApp:
         """Test creating extension with defaults."""
         extension = MCPExtensionApp()
 
-        assert extension.name == "jupyter_mcp_executor"
+        assert extension.name == "jupyter_mcp_live"
         assert extension.mcp_port == 3001
         assert extension.mcp_name == "Jupyter MCP Server"
 
@@ -120,7 +120,7 @@ class TestMCPExtensionLifecycle:
         extension.mcp_name = "Test Server"
 
         # Mock the MCP server creation to avoid actual server startup
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server()
             mock_mcp_class.return_value = mock_server
             extension._confirm_mcp_server_started = AsyncMock()
@@ -148,7 +148,7 @@ class TestMCPExtensionLifecycle:
         extension = MCPExtensionApp()
 
         # Mock server creation to raise an exception
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_mcp_class.side_effect = Exception("Server creation failed")
 
             with pytest.raises(Exception, match="Server creation failed"):
@@ -162,7 +162,7 @@ class TestMCPExtensionLifecycle:
         """Test startup failure from the background MCP server task."""
         extension = _standalone_extension()
 
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server()
             mock_server.start_server = AsyncMock(
                 side_effect=RuntimeError("Port 3001 is already in use")
@@ -263,7 +263,7 @@ class TestMCPExtensionLifecycle:
         extension.mcp_name = "Lifecycle Test Server"
 
         # Mock the MCP server
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server()
             mock_mcp_class.return_value = mock_server
             extension._confirm_mcp_server_started = AsyncMock()
@@ -297,7 +297,7 @@ class TestEmbeddedEndpointLifecycle:
     async def test_default_start_serves_embedded_app_only(self):
         extension = MCPExtensionApp()
 
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server()
             mock_mcp_class.return_value = mock_server
 
@@ -316,7 +316,7 @@ class TestEmbeddedEndpointLifecycle:
     async def test_embedded_start_failure_cleans_up(self):
         extension = MCPExtensionApp()
 
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server()
             mock_server.start_embedded = AsyncMock(
                 side_effect=RuntimeError("lifespan failed")
@@ -336,7 +336,7 @@ class TestEmbeddedEndpointLifecycle:
         extension.mcp_jupyter_endpoint = False
 
         with (
-            patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class,
+            patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class,
             patch.object(extension.log, "warning") as mock_warning,
         ):
             mock_server = _mock_running_server()
@@ -375,7 +375,7 @@ class TestShutdownRobustness:
     async def test_startup_error_not_masked_by_cleanup_error(self):
         extension = _standalone_extension()
 
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server()
             mock_server.start_server = AsyncMock(
                 side_effect=RuntimeError("Port 3001 is already in use")
@@ -479,7 +479,7 @@ class TestToolLoading:
         extension.mcp_tools = ["os:getcwd", "math:sqrt"]
 
         # Capture log output
-        with patch("jupyter_mcp_executor.extension.logger") as mock_logger:
+        with patch("jupyter_mcp_live.extension.logger") as mock_logger:
             extension._register_tools(extension.mcp_tools, source="configuration")
 
             # Should register both tools
@@ -500,7 +500,7 @@ class TestToolLoading:
         extension.mcp_server_instance = Mock()
         extension.mcp_tools = ["os:getcwd", "invalid:function", "math:sqrt"]
 
-        with patch("jupyter_mcp_executor.extension.logger") as mock_logger:
+        with patch("jupyter_mcp_live.extension.logger") as mock_logger:
             extension._register_tools(extension.mcp_tools, source="configuration")
 
             # Should register 2 valid tools (os:getcwd and math:sqrt)
@@ -524,7 +524,7 @@ class TestExtensionWithTools:
         extension.mcp_name = "Test Server With Tools"
         extension.mcp_tools = ["os:getcwd", "math:sqrt"]
 
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server({"getcwd": {}, "sqrt": {}})
             mock_mcp_class.return_value = mock_server
             extension._confirm_mcp_server_started = AsyncMock()
@@ -549,7 +549,7 @@ class TestExtensionWithTools:
         extension.mcp_port = 3088
         extension.mcp_tools = []
 
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server({})
             mock_mcp_class.return_value = mock_server
             extension._confirm_mcp_server_started = AsyncMock()
@@ -621,7 +621,7 @@ class TestEntrypointDiscovery:
                 ]
             )
 
-            with patch("jupyter_mcp_executor.extension.logger"):
+            with patch("jupyter_mcp_live.extension.logger"):
                 tools = extension._discover_entrypoint_tools()
                 # Should only get the valid one
                 assert tools == ["os:getcwd"]
@@ -645,7 +645,7 @@ class TestEntrypointDiscovery:
 
         discovered_tools = ["os:getcwd"]
 
-        with patch("jupyter_mcp_executor.extension.MCPServer") as mock_mcp_class:
+        with patch("jupyter_mcp_live.extension.MCPServer") as mock_mcp_class:
             mock_server = _mock_running_server({"getcwd": {}, "dumps": {}})
             mock_mcp_class.return_value = mock_server
             extension._confirm_mcp_server_started = AsyncMock()

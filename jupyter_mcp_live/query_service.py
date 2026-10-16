@@ -3,12 +3,12 @@
 import logging
 from typing import Any
 
-from jupyter_mcp_executor.cell_images import CellImages
-from jupyter_mcp_executor.notebook_adapter import get_notebook_adapter
-from jupyter_mcp_executor.notebook_models import CellIdentifier, CellInfo
-from jupyter_mcp_executor.output_filter import OutputFilter
-from jupyter_mcp_executor.path_utils import normalize_path
-from jupyter_mcp_executor.server_context import require_server_context
+from jupyter_mcp_live.cell_images import CellImages
+from jupyter_mcp_live.notebook_adapter import get_notebook_adapter
+from jupyter_mcp_live.notebook_models import CellIdentifier, CellInfo
+from jupyter_mcp_live.output_filter import OutputFilter
+from jupyter_mcp_live.path_utils import normalize_path
+from jupyter_mcp_live.server_context import require_server_context
 
 logger = logging.getLogger(__name__)
 

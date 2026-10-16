@@ -1,4 +1,4 @@
-# Using Jupyter MCP Executor on JupyterHub
+# Using Jupyter MCP Live on JupyterHub
 
 Under JupyterHub, the MCP endpoint runs inside each user's own single-user
 server. The Hub proxy routes to it and the Hub's token authenticates it, so you
@@ -16,13 +16,13 @@ Each user's endpoint can only reach that user's own kernels and files.
 ## 1. Install into the single-user environment
 
 Install the package where the user's `jupyter-server` runs, **not** where the
-Hub runs. It is not published to PyPI yet, so install it from GitHub.
+Hub runs.
 
 **Admin, custom user image** (for example Zero to JupyterHub):
 
 ```dockerfile
 FROM quay.io/jupyter/scipy-notebook:latest
-RUN pip install --no-cache-dir "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+RUN pip install --no-cache-dir jupyter-mcp-live
 COPY jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
 ```
 
@@ -30,11 +30,11 @@ COPY jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
 (from a JupyterLab terminal):
 
 ```bash
-pip install "git+https://github.com/zqfang/jupyter-mcp-executor.git"
+pip install jupyter-mcp-live
 ```
 
 The extension enables itself on install; the package ships
-`jupyter_server_config.d/jupyter_mcp_executor.json`.
+`jupyter_server_config.d/jupyter_mcp_live.json`.
 
 ## 2. Register the tools
 
@@ -44,22 +44,22 @@ Put this in `/etc/jupyter/jupyter_server_config.py` (image-wide) or
 
 ```python
 c.MCPExtensionApp.mcp_tools = [
-    "jupyter_mcp_executor.execution_tools:list_notebook_sessions",
-    "jupyter_mcp_executor.execution_tools:list_notebook_kernels",
-    "jupyter_mcp_executor.execution_tools:setup_notebook",
-    "jupyter_mcp_executor.execution_tools:switch_notebook_kernel",
-    "jupyter_mcp_executor.execution_tools:shutdown_notebook",
-    "jupyter_mcp_executor.execution_tools:interrupt_notebook_kernel",
-    "jupyter_mcp_executor.execution_tools:restart_notebook_kernel",
-    "jupyter_mcp_executor.execution_tools:view_notebook",
-    "jupyter_mcp_executor.execution_tools:add_code_cell",
-    "jupyter_mcp_executor.execution_tools:edit_code_cell",
-    "jupyter_mcp_executor.execution_tools:add_markdown_cell",
-    "jupyter_mcp_executor.execution_tools:edit_markdown_cell",
-    "jupyter_mcp_executor.execution_tools:read_cell",
-    "jupyter_mcp_executor.execution_tools:view_cell_image",
-    "jupyter_mcp_executor.execution_tools:execute_cell",
-    "jupyter_mcp_executor.execution_tools:delete_cell",
+    "jupyter_mcp_live.execution_tools:list_notebook_sessions",
+    "jupyter_mcp_live.execution_tools:list_notebook_kernels",
+    "jupyter_mcp_live.execution_tools:setup_notebook",
+    "jupyter_mcp_live.execution_tools:switch_notebook_kernel",
+    "jupyter_mcp_live.execution_tools:shutdown_notebook",
+    "jupyter_mcp_live.execution_tools:interrupt_notebook_kernel",
+    "jupyter_mcp_live.execution_tools:restart_notebook_kernel",
+    "jupyter_mcp_live.execution_tools:view_notebook",
+    "jupyter_mcp_live.execution_tools:add_code_cell",
+    "jupyter_mcp_live.execution_tools:edit_code_cell",
+    "jupyter_mcp_live.execution_tools:add_markdown_cell",
+    "jupyter_mcp_live.execution_tools:edit_markdown_cell",
+    "jupyter_mcp_live.execution_tools:read_cell",
+    "jupyter_mcp_live.execution_tools:view_cell_image",
+    "jupyter_mcp_live.execution_tools:execute_cell",
+    "jupyter_mcp_live.execution_tools:delete_cell",
 ]
 ```
 

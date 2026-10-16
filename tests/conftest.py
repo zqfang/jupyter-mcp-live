@@ -7,7 +7,7 @@ marked ``integration`` automatically.
 
 import pytest
 
-from jupyter_mcp_executor.server_context import set_server_context
+from jupyter_mcp_live.server_context import set_server_context
 
 pytest_plugins = ["pytest_asyncio"]
 

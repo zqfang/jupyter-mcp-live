@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from jupyter_mcp_executor.kernel_manager import KernelManager
-from jupyter_mcp_executor.kernel_utils import default_kernel_name
+from jupyter_mcp_live.kernel_manager import KernelManager
+from jupyter_mcp_live.kernel_utils import default_kernel_name
 from tests.test_kernel_reuse import FakeKernelSpecManager, FakeServerApp
 
 
@@ -40,11 +40,9 @@ def test_default_kernel_name_without_a_server_is_python3():
 
 def _patched(app):
     return (
+        patch("jupyter_mcp_live.kernel_manager.get_server_context", return_value=app),
         patch(
-            "jupyter_mcp_executor.kernel_manager.get_server_context", return_value=app
-        ),
-        patch(
-            "jupyter_mcp_executor.kernel_manager.require_server_context",
+            "jupyter_mcp_live.kernel_manager.require_server_context",
             return_value=app,
         ),
     )

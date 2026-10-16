@@ -15,10 +15,10 @@ from fastmcp.utilities.types import Image
 from mcp.types import ImageContent, TextContent
 from nbformat.v4 import new_code_cell, new_notebook, new_output
 
-from jupyter_mcp_executor.code_mode_images import CodeModeImageForwarder
-from jupyter_mcp_executor.execution_tools import view_cell_image
-from jupyter_mcp_executor.mcp_server import MCPServer
-from jupyter_mcp_executor.notebook_config import IMAGE_CONFIG
+from jupyter_mcp_live.code_mode_images import CodeModeImageForwarder
+from jupyter_mcp_live.execution_tools import view_cell_image
+from jupyter_mcp_live.mcp_server import MCPServer
+from jupyter_mcp_live.notebook_config import IMAGE_CONFIG
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 PNG_B64 = base64.b64encode(PNG_BYTES).decode()

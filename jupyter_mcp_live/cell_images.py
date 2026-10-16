@@ -14,8 +14,8 @@ from urllib.parse import unquote
 
 from mcp.types import ImageContent
 
-from jupyter_mcp_executor.notebook_config import IMAGE_CONFIG
-from jupyter_mcp_executor.notebook_models import CellContent
+from jupyter_mcp_live.notebook_config import IMAGE_CONFIG
+from jupyter_mcp_live.notebook_models import CellContent
 
 _IMAGE_OUTPUT_TYPES = frozenset({"display_data", "execute_result"})
 _SVG_MIME = "image/svg+xml"

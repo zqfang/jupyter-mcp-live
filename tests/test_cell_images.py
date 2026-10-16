@@ -7,12 +7,12 @@ import pytest
 from mcp.types import ImageContent, TextContent
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook, new_output
 
-from jupyter_mcp_executor.cell_images import (
+from jupyter_mcp_live.cell_images import (
     extract_cell_images,
     extract_markdown_images,
 )
-from jupyter_mcp_executor.execution_tools import view_cell_image
-from jupyter_mcp_executor.notebook_config import IMAGE_CONFIG
+from jupyter_mcp_live.execution_tools import view_cell_image
+from jupyter_mcp_live.notebook_config import IMAGE_CONFIG
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 PNG_B64 = base64.b64encode(PNG_BYTES).decode()

@@ -10,10 +10,10 @@ import logging
 from functools import cached_property
 from typing import ClassVar, Protocol, Self
 
-from jupyter_mcp_executor.cell_operations import CellOperations
-from jupyter_mcp_executor.execution_engine import ExecutionEngine
-from jupyter_mcp_executor.kernel_manager import KernelManager
-from jupyter_mcp_executor.query_service import QueryService
+from jupyter_mcp_live.cell_operations import CellOperations
+from jupyter_mcp_live.execution_engine import ExecutionEngine
+from jupyter_mcp_live.kernel_manager import KernelManager
+from jupyter_mcp_live.query_service import QueryService
 
 logger = logging.getLogger(__name__)
 

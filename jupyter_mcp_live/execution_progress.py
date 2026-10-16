@@ -26,7 +26,7 @@ from typing import Any, Self
 
 from fastmcp.server.dependencies import get_context
 
-from jupyter_mcp_executor.notebook_config import PROGRESS_CONFIG, ProgressConfig
+from jupyter_mcp_live.notebook_config import PROGRESS_CONFIG, ProgressConfig
 
 logger = logging.getLogger(__name__)
 

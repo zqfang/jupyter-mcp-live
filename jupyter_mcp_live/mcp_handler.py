@@ -25,10 +25,10 @@ from jupyter_server.auth.decorator import authorized
 from jupyter_server.base.handlers import JupyterHandler
 from tornado.web import HTTPError
 
-from jupyter_mcp_executor.asgi_bridge import run_asgi
+from jupyter_mcp_live.asgi_bridge import run_asgi
 
 if TYPE_CHECKING:
-    from jupyter_mcp_executor.extension import MCPExtensionApp
+    from jupyter_mcp_live.extension import MCPExtensionApp
 
 # MCP tools run code in kernels, so require the same permission as the
 # kernels API rather than mere read access.

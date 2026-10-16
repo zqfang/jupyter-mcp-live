@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 from pytest_jupyter.jupyter_server import *
 
-from jupyter_mcp_executor.kernel_tracker import get_kernel_tracker
-from jupyter_mcp_executor.server_context import set_server_context
-from jupyter_mcp_executor.service_container import container
+from jupyter_mcp_live.kernel_tracker import get_kernel_tracker
+from jupyter_mcp_live.server_context import set_server_context
+from jupyter_mcp_live.service_container import container
 
 _HERE = Path(__file__).parent
 
