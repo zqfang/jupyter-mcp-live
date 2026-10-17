@@ -137,6 +137,16 @@ class NotebookAdapter(ABC):
         """
         await self.update_cell_outputs(position, None, [])
 
+    async def set_cell_execution_state(  # noqa: B027 - optional hook
+        self,
+        position: int,
+        state: str,
+    ) -> None:
+        """Mark a cell "running" (JupyterLab shows [*]) or "idle".
+
+        No-op for files: the state is transient and never saved.
+        """
+
     @abstractmethod
     async def get_all_cells(self) -> list[CellContent]:
         """Get all cells in the notebook.
