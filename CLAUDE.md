@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ---
 
 **Project**: Jupyter MCP Live
-**Version**: 0.6.0
+**Version**: 0.6.1
 **Python**: 3.11+
 **Status**: Production Ready
 

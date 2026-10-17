@@ -2,6 +2,20 @@
 
 
 
+## 0.6.1 (2026-10-17)
+
+### Enhancements made
+
+- **Cells run through MCP show `[*]` in JupyterLab while they execute.** The
+  cell's transient `execution_state` is set to `"running"` at execution
+  start and back to `"idle"` after the final write (in the background if the
+  call fails or is cancelled). Open notebooks only (JupyterLab >= 4.1);
+  jupyter_ydoc never saves the field.
+
+### Documentation
+
+- README: shorter setup section; fixed the link to the full example config.
+
 ## 0.6.0 (2026-10-16)
 
 ### Breaking changes
