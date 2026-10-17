@@ -720,7 +720,10 @@ For collaborative (YDoc) notebooks, outputs are **streamed into the cell as
 the kernel emits them**, so JupyterLab renders progress during long-running
 executions instead of everything appearing when the MCP tool call returns:
 
-- At execution start the cell's stale outputs are cleared.
+- At execution start the cell's stale outputs are cleared and its transient
+  `execution_state` is set to `"running"` (JupyterLab >= 4.1 shows `[*]`);
+  it goes back to `"idle"` after the final write, or in a background task if
+  the call fails or is cancelled. jupyter_ydoc never saves this field.
 - Each iopub output fires an `on_output` callback
   (`execution_utils.collect_outputs`) that appends it to the cell via
   `adapter.append_cell_output()`. The cell is re-located by `cell_id` before

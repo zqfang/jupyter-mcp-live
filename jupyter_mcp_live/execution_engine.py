@@ -100,6 +100,14 @@ class _CellOutputStreamer:
             logger.warning(f"Could not clear outputs before execution: {e}")
             self.streamed_ok = False
 
+    async def set_state(self, state: str) -> None:
+        """Show the cell as "running" ([*] in JupyterLab) or "idle" again."""
+        try:
+            position = await self._locate_cell()
+            await self._adapter.set_cell_execution_state(position, state)
+        except Exception as e:  # noqa: BLE001 - must never abort execution
+            logger.warning(f"Could not set cell execution state to {state}: {e}")
+
     async def on_output(self, output: dict[str, Any]) -> None:
         """Append one output to the cell as it arrives from the kernel."""
         if not self.streamed_ok:
@@ -397,7 +405,40 @@ class ExecutionEngine:
         if cell_id and adapter.is_collaborative:
             streamer = _CellOutputStreamer(adapter, cell_id, cell_position)
             await streamer.clear_outputs()
+            await streamer.set_state("running")
 
+        try:
+            return await self._execute_and_write(
+                adapter,
+                cell_position,
+                code,
+                kernel_id,
+                timeout,
+                cell_id,
+                started_new,
+                streamer,
+            )
+        except BaseException:
+            # Cancelled or failed: reset [*] in the background, since anyio
+            # re-delivers cancellation at every await.
+            if streamer is not None:
+                task = asyncio.create_task(streamer.set_state("idle"))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            raise
+
+    async def _execute_and_write(
+        self,
+        adapter: NotebookAdapter,
+        cell_position: int,
+        code: str,
+        kernel_id: str,
+        timeout: int,
+        cell_id: str | None,
+        started_new: bool,
+        streamer: "_CellOutputStreamer | None",
+    ) -> ExecutionResult:
+        """Run the code and write its results (see execute_and_update_cell)."""
         # Execute code, keeping an open notebook's room alive meanwhile.  The
         # task is only cancelled, never awaited, so a cancelled call does not
         # wait on it (anyio re-delivers cancellation at every await).
@@ -456,6 +497,8 @@ class ExecutionEngine:
             await adapter.update_cell_outputs(
                 update_position, exec_result.execution_count, exec_result.outputs
             )
+        if streamer is not None:
+            await streamer.set_state("idle")
 
         # Return ExecutionResult (caller can convert to dict if needed)
         return exec_result

@@ -1818,6 +1818,7 @@ class RecordingCollabAdapter:
         self.cleared = []
         self.appended = []
         self.updated = []
+        self.events = []
 
     async def find_cell_by_id(self, cell_id):
         return (None, 0)
@@ -1825,11 +1826,16 @@ class RecordingCollabAdapter:
     async def clear_cell_outputs(self, position):
         self.cleared.append(position)
 
+    async def set_cell_execution_state(self, position, state):
+        self.events.append(state)
+
     async def append_cell_output(self, position, output):
         self.appended.append((position, output))
+        self.events.append("output")
 
     async def update_cell_outputs(self, position, execution_count, outputs):
         self.updated.append((position, execution_count, outputs))
+        self.events.append("final")
 
 
 class TestLiveOutputStreaming:
@@ -1918,6 +1924,8 @@ class TestLiveOutputStreaming:
         assert [out["output_type"] for _, out in adapter.appended] == ["stream"]
         # Final write records execution_count only; streamed outputs are kept
         assert adapter.updated == [(0, 1, None)]
+        # JupyterLab shows [*] while the cell runs, the count afterwards
+        assert adapter.events == ["running", "output", "final", "idle"]
 
     @pytest.mark.asyncio
     async def test_append_failure_falls_back_to_batch_write(self, mock_serverapp):

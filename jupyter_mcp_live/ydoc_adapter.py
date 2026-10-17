@@ -313,6 +313,14 @@ class YDocAdapter(NotebookAdapter):
             f"Updated cell {position} outputs in YDoc (execution_count={execution_count})"
         )
 
+    async def set_cell_execution_state(self, position: int, state: str) -> None:
+        """Set the cell's transient execution_state (JupyterLab's [*] prompt)."""
+        await self._live(write=True)
+        if position < 0 or position >= self.ydoc.cell_number:
+            msg = f"Cell index {position} out of range (notebook has {self.ydoc.cell_number} cells)"
+            raise IndexError(msg)
+        self.ydoc.ycells[position]["execution_state"] = state
+
     async def append_cell_output(self, position: int, output: dict[str, Any]) -> None:
         """Append one output to a cell in YDoc (live streaming during execution).
 
