@@ -90,6 +90,8 @@ c.MCPExtensionApp.mcp_tools = [
 ]
 ```
 
+See also the full example config: [config.py](examples/jupyter_config_with_execution_tools.py).
+
 ### 3. Start Jupyter Server
 
 ```bash
@@ -244,22 +246,6 @@ See [Claude Code&#39;s MCP docs](https://code.claude.com/docs/en/mcp) and
 - Use `c.MCPExtensionApp.mcp_endpoint_path` to move the endpoint if another
   extension already serves `/mcp`.
 
-### Upgrading from 0.3.x
-
-0.4.0 serves MCP on the Jupyter port by default and **no longer starts the
-separate listener on `mcp_port`**. Point clients at `http://<jupyter>/mcp` with
-the Jupyter token, as above. To keep the old unauthenticated listener on a
-single-user machine, set:
-
-```python
-c.MCPExtensionApp.mcp_standalone = True  # listens on mcp_port, NO authentication
-c.MCPExtensionApp.mcp_port = 8080
-```
-
-The standalone listener now validates the `Host` and `Origin` headers (421 /
-403 for foreign values), which blocks DNS-rebinding attacks from web pages,
-but it still has no authentication — anyone who can connect can run code.
-
 ## Architecture
 
 ### Core Components
@@ -353,60 +339,6 @@ Tools from entrypoints are discovered automatically when the extension starts. T
 
 ```python
 c.MCPExtensionApp.use_tool_discovery = False
-```
-
-## Configuration Examples
-
-### Minimal Setup
-
-```python
-c = get_config()
-# Nothing else is required: start Jupyter with JUPYTER_TOKEN set (it also
-# authenticates MCP clients) and register tools as shown above.
-```
-
-### Full Configuration
-
-```python
-c = get_config()
-
-# MCP Server Configuration
-c.MCPExtensionApp.mcp_name = "Advanced Jupyter MCP Server"
-c.MCPExtensionApp.mcp_endpoint_path = "mcp"  # served at {base_url}mcp
-# Third-party toolkits are not dependencies of this package; install the ones
-# you list: pip install jupyter-ai-tools jupyterlab-commands-toolkit
-c.MCPExtensionApp.mcp_tools = [
-    # File system operations (jupyter-ai-tools)
-    "jupyter_ai_tools.toolkits.file_system:read",
-    "jupyter_ai_tools.toolkits.file_system:write", 
-    "jupyter_ai_tools.toolkits.file_system:edit",
-    "jupyter_ai_tools.toolkits.file_system:ls",
-    "jupyter_ai_tools.toolkits.file_system:glob",
-  
-    # Notebook operations (jupyter-ai-tools)
-    "jupyter_ai_tools.toolkits.notebook:read_notebook",
-    "jupyter_ai_tools.toolkits.notebook:edit_cell",
-    "jupyter_ai_tools.toolkits.notebook:add_cell", 
-    "jupyter_ai_tools.toolkits.notebook:delete_cell",
-    "jupyter_ai_tools.toolkits.notebook:create_notebook",
-  
-    # Git operations (jupyter-ai-tools)
-    "jupyter_ai_tools.toolkits.git:git_status",
-    "jupyter_ai_tools.toolkits.git:git_add",
-    "jupyter_ai_tools.toolkits.git:git_commit",
-    "jupyter_ai_tools.toolkits.git:git_push",
-  
-    # JupyterLab operations (jupyterlab-commands-toolkit)
-    "jupyterlab_commands_toolkit.tools:clear_all_outputs_in_notebook",
-    "jupyterlab_commands_toolkit.tools:open_document",
-    "jupyterlab_commands_toolkit.tools:open_markdown_file_in_preview_mode",
-    "jupyterlab_commands_toolkit.tools:show_diff_of_current_notebook",
-  
-    # Utility functions  
-    "os:getcwd",
-    "time:time",
-    "platform:system",
-]
 ```
 
 ### Running Tests
