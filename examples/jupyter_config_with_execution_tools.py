@@ -10,7 +10,7 @@ The MCP endpoint is served by Jupyter itself at: http://localhost:8000/mcp
 (Jupyter's port and base_url), authenticated with the Jupyter token
 (set JUPYTER_TOKEN before starting, see below).
 """
-
+from jupyter_core.paths import jupyter_config_dir
 from pathlib import Path
 
 c = get_config()  # noqa: F821
@@ -18,6 +18,25 @@ c = get_config()  # noqa: F821
 # ============================================================================
 # MCP Server Basic Configuration
 # ============================================================================
+## load custom CSS for Jupyter Lab: show each cell's position_index under its prompt
+CELL_INDEX_CSS = """\
+/* Reset on the first cell, not .jp-Notebook: JupyterLab's CSS containment
+   hides a reset on the notebook from the cells (they would count from #1). */
+.jp-Notebook .jp-Cell:first-child { counter-reset: cellidx -1; }
+.jp-Notebook .jp-Cell { counter-increment: cellidx; }
+.jp-Notebook .jp-Cell .jp-InputPrompt { text-align: left; }
+.jp-Notebook .jp-Cell .jp-InputPrompt::after {
+  content: "#" counter(cellidx);
+  display: block;
+  color: #888;
+  font-size: 0.85em;
+  line-height: 1.2;
+}
+"""
+custom_css_path = Path(jupyter_config_dir()) / "custom" / "custom.css"
+custom_css_path.parent.mkdir(parents=True, exist_ok=True)
+custom_css_path.write_text(CELL_INDEX_CSS)
+c.LabApp.custom_css = True
 c.LabApp.extension_manager = "readonly"  # list installed extensions only, never query PyPI
 
 # Name for the MCP server (shown to MCP clients)
@@ -53,76 +72,8 @@ c.MCPExtensionApp.mcp_tools = [
     "jupyter_mcp_live.execution_tools:read_cell",
     "jupyter_mcp_live.execution_tools:view_cell_image",
     "jupyter_mcp_live.execution_tools:execute_cell",
-    "jupyter_mcp_live.execution_tools:delete_cell",
-
-    # Optional: Add file system tools from jupyter-ai-tools (if installed)
-    # "jupyter_ai_tools.toolkits.file_system:read",
-    # "jupyter_ai_tools.toolkits.file_system:write", 
-    # "jupyter_ai_tools.toolkits.file_system:edit",
-    # "jupyter_ai_tools.toolkits.file_system:ls",
-    # "jupyter_ai_tools.toolkits.file_system:glob",
-
-    # JupyterLab operations (jupyterlab-commands-toolkit)
-    # "jupyterlab_commands_toolkit.tools:clear_all_outputs_in_notebook",
-    # "jupyterlab_commands_toolkit.tools:open_document",
-    # "jupyterlab_commands_toolkit.tools:open_markdown_file_in_preview_mode",
-    # "jupyterlab_commands_toolkit.tools:show_diff_of_current_notebook",
-    
-    # Utility functions  
-    # "os:getcwd",
-    # "time:time",
-    # "platform:system",
+    "jupyter_mcp_live.execution_tools:delete_cell"
 ]
-
-# ============================================================================
-# Example Usage with Claude Code
-# ============================================================================
-
-# Add this to your Claude Code MCP configuration:
-#
-# "mcpServers": {
-#   "jupyter-mcp": {
-#     "type": "http",
-#     "url": "http://localhost:8000/mcp",
-#     "headers": {"Authorization": "Bearer <your Jupyter token>"}
-#   }
-# }
-#
-# Or use the claude CLI:
-#   claude mcp add --transport http jupyter-mcp http://localhost:8000/mcp \
-#     --header "Authorization: Bearer <your Jupyter token>"
-
-# ============================================================================
-# Example Usage with Gemini CLI
-# ============================================================================
-
-# Add this to ~/.gemini/settings.json:
-#
-# {
-#   "mcpServers": {
-#     "jupyter-mcp": {
-#       "httpUrl": "http://localhost:8000/mcp",
-#       "headers": {"Authorization": "Bearer <your Jupyter token>"}
-#     }
-#   }
-# }
-
-# ============================================================================
-# Security Notes
-# ============================================================================
-
-# WARNING: These tools allow execution of arbitrary code on your system.
-# Only use this MCP server:
-#   1. On your local machine
-#   2. With trusted AI assistants
-#   3. Behind a firewall (do NOT expose to the internet)
-#   4. In development/testing environments
-#
-# Consider the security implications before deploying in production.
-
-# ============================================================================
-# Optional: Jupyter Server Configuration
-# ============================================================================
 
 # Listen on all interfaces (remote access). WARNING: anyone who can reach the
 # port and has the token can run code as you; only use on trusted networks.
@@ -162,3 +113,22 @@ c.ServerApp.log_level = 'INFO'
 
 # Talk to kernels over private Unix sockets instead of unencrypted TCP (Linux/macOS only).
 c.KernelManager.transport = "ipc"
+
+
+# ============================================================================
+# Example Usage with Claude Code
+# ============================================================================
+
+# Add this to your Claude Code MCP configuration:
+#
+# "mcpServers": {
+#   "jupyter-mcp": {
+#     "type": "http",
+#     "url": "http://localhost:8000/mcp",
+#     "headers": {"Authorization": "Bearer <your Jupyter token>"}
+#   }
+# }
+#
+# Or use the claude CLI:
+#   claude mcp add --transport http jupyter-mcp http://localhost:8000/mcp \
+#     --header "Authorization: Bearer <your Jupyter token>"
