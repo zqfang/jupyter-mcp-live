@@ -378,6 +378,33 @@ async def _persist_room_state(room: Any) -> None:
     _persisted_rooms.add(room)
 
 
+def install_room_persistence() -> None:
+    """Run _persist_room_state for every room, not only those we attach.
+
+    A room the browser opens loses its first op the same way (see
+    _persist_room_state). The next room's client writes over that op in the
+    ``state`` map, so all its later ops, our edits among them, stay pending
+    in a browser loading the store: cells, outputs and execution counts
+    written through MCP are missing from JupyterLab, while the file is
+    complete. Idempotent.
+    """
+    try:
+        from jupyter_server_ydoc.rooms import DocumentRoom  # noqa: PLC0415
+    except ImportError:
+        return
+    if getattr(DocumentRoom.initialize, "_mcp_persists", False):
+        return
+    initialize = DocumentRoom.initialize
+
+    async def initialize_and_persist(self: Any) -> None:
+        await initialize(self)
+        await _persist_room_state(self)
+
+    initialize_and_persist._mcp_persists = True  # type: ignore[attr-defined]
+    initialize_and_persist.__wrapped__ = initialize  # type: ignore[attr-defined]
+    DocumentRoom.initialize = initialize_and_persist
+
+
 def _has_room(ydoc_extension: Any, file_path: str) -> bool | None:
     """Whether the notebook has a room now; None if that cannot be told.
 

@@ -15,7 +15,11 @@ from jupyter_ydoc import YNotebook
 from pycrdt import Doc
 
 from jupyter_mcp_live.server_context import set_server_context
-from jupyter_mcp_live.ydoc_helpers import ensure_ynotebook, get_ynotebook
+from jupyter_mcp_live.ydoc_helpers import (
+    ensure_ynotebook,
+    get_ynotebook,
+    install_room_persistence,
+)
 
 
 @pytest.fixture
@@ -221,3 +225,61 @@ async def test_our_edits_can_be_loaded_back_from_the_ystore(
     finally:
         await ydoc_extension.stop_extension()
         server_task.cancel()
+
+
+
+@pytest.mark.parametrize("persist_every_room", [False, True])
+async def test_a_browser_room_stores_all_its_ops(
+    ydoc_extension, notebook_path, monkeypatch, persist_every_room
+):
+    """A room the browser opens from the ystore must store its first op.
+
+    DocumentRoom writes ``state.path`` in __init__, before the room forwards
+    updates to the store, so that op never got there, while the room's later
+    ``dirty``/``hash`` writes did. The server tolerates the hole; browser Yjs
+    keeps those writes pending, and with them every later op of a room that
+    wrote over them: JupyterLab showed none of the outputs and execution
+    counts written through MCP, while the file had them.
+    """
+    # Other tests may have installed it already (the extension does)
+    initialize = DocumentRoom.initialize
+    monkeypatch.setattr(
+        DocumentRoom, "initialize", getattr(initialize, "__wrapped__", initialize)
+    )
+    if persist_every_room:
+        install_room_persistence()
+    server = ydoc_extension.ywebsocket_server
+    server_task = await _start_websocket_server(ydoc_extension)
+    try:
+        first = await ensure_ynotebook(notebook_path)
+        # The file as the room saves it, so the next room loads the ystore
+        nbformat.write(nbformat.from_dict(first.get()), notebook_path)
+        await server.delete_room(room=next(iter(server.rooms.values())))
+        room = await _register_unopened_room(ydoc_extension, notebook_path)
+        await room.initialize()
+        room._document.dirty = False  # what its saves write
+        await asyncio.sleep(0.2)  # the room writes its ystore in the background
+
+        loaded = await _load_from_ystore(ydoc_extension, room)
+        # Pending ops do not count in the state vector
+        complete = _state_vector(loaded.ydoc) == _state_vector(room.ydoc)
+        assert complete is persist_every_room  # False passing: fixed upstream
+    finally:
+        await ydoc_extension.stop_extension()
+        server_task.cancel()
+
+
+def _state_vector(doc: Doc) -> dict[int, int]:
+    """Decode a state vector: a count, then (client, clock) pairs (varints)."""
+    data, values, i = doc.get_state(), [], 0
+    while i < len(data):
+        value = shift = 0
+        while True:
+            byte = data[i]
+            i += 1
+            value |= (byte & 0x7F) << shift
+            shift += 7
+            if byte < 0x80:
+                break
+        values.append(value)
+    return dict(zip(values[1::2], values[2::2], strict=True))

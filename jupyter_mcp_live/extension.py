@@ -223,6 +223,9 @@ class MCPExtensionApp(ExtensionApp):
         """Initialize the extension."""
         super().initialize()
         # serverapp will be available as self.serverapp after parent initialization
+        from jupyter_mcp_live.ydoc_helpers import install_room_persistence  # noqa: PLC0415
+
+        install_room_persistence()
 
     @validate("mcp_endpoint_path")
     def _validate_endpoint_path(self, proposal):
