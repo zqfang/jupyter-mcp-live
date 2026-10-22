@@ -227,7 +227,6 @@ async def test_our_edits_can_be_loaded_back_from_the_ystore(
         server_task.cancel()
 
 
-
 @pytest.mark.parametrize("persist_every_room", [False, True])
 async def test_a_browser_room_stores_all_its_ops(
     ydoc_extension, notebook_path, monkeypatch, persist_every_room

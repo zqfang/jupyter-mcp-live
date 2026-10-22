@@ -10,8 +10,10 @@ The MCP endpoint is served by Jupyter itself at: http://localhost:8000/mcp
 (Jupyter's port and base_url), authenticated with the Jupyter token
 (set JUPYTER_TOKEN before starting, see below).
 """
-from jupyter_core.paths import jupyter_config_dir
+
 from pathlib import Path
+
+from jupyter_core.paths import jupyter_config_dir
 
 c = get_config()  # noqa: F821
 
@@ -37,7 +39,8 @@ custom_css_path = Path(jupyter_config_dir()) / "custom" / "custom.css"
 custom_css_path.parent.mkdir(parents=True, exist_ok=True)
 custom_css_path.write_text(CELL_INDEX_CSS)
 c.LabApp.custom_css = True
-c.LabApp.extension_manager = "readonly"  # list installed extensions only, never query PyPI
+# List installed extensions only, never query PyPI
+c.LabApp.extension_manager = "readonly"
 
 # Name for the MCP server (shown to MCP clients)
 c.MCPExtensionApp.mcp_name = "Jupyter Code Execution MCP Server"
@@ -72,7 +75,7 @@ c.MCPExtensionApp.mcp_tools = [
     "jupyter_mcp_live.execution_tools:read_cell",
     "jupyter_mcp_live.execution_tools:view_cell_image",
     "jupyter_mcp_live.execution_tools:execute_cell",
-    "jupyter_mcp_live.execution_tools:delete_cell"
+    "jupyter_mcp_live.execution_tools:delete_cell",
 ]
 
 # Listen on all interfaces (remote access). WARNING: anyone who can reach the
@@ -95,7 +98,7 @@ c.ServerApp.port = 8000
 #   export JUPYTER_TOKEN="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 
 # Enable debug logging for troubleshooting
-c.MCPExtensionApp.log_level = 'INFO'
+c.MCPExtensionApp.log_level = "INFO"
 
 # Set Jupyter root directory under the user's home (cross-platform: resolves
 # ~ on Linux/macOS/Windows). The directory is created if it doesn't exist.
@@ -106,7 +109,7 @@ c.ServerApp.root_dir = str(workspace_dir)
 # Enable autoreload for development
 c.ServerApp.autoreload = False
 # Set Jupyter log level to INFO
-c.ServerApp.log_level = 'INFO'
+c.ServerApp.log_level = "INFO"
 
 # Encrypt kernel ZMQ traffic (CurveZMQ) for kernels whose kernelspec supports it
 # c.MappingKernelManager.transport_encryption = "auto"
