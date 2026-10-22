@@ -2,6 +2,26 @@
 
 
 
+## 0.6.2 (2026-10-22)
+
+### Bugs fixed
+
+- **JupyterLab now shows the outputs and execution counts written through
+  MCP after a room reload.** A room the browser opened from the ystore never
+  stored its first op (`DocumentRoom` writes `state.path` before the room
+  forwards updates to the store). Browser Yjs kept every later op of that
+  room pending, so cells' outputs were missing in JupyterLab while the
+  `.ipynb` was complete. The extension now persists every room's full state
+  to its ystore once it is initialized (`install_room_persistence()`), not
+  only the rooms MCP attaches to.
+
+### Documentation
+
+- Example config: JupyterLab custom CSS that shows each cell's
+  `position_index` (`#0`, `#1`, ...) under its prompt, so it is easy to
+  refer to cells when talking to the agent; trimmed the optional
+  third-party tool and client sections.
+
 ## 0.6.1 (2026-10-17)
 
 ### Enhancements made
